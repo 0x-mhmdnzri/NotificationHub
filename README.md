@@ -105,3 +105,23 @@ Configuration is split across:
 - `appsettings.Production.json`
 
 Secrets should come from environment variables or secret manager in production (e.g. `Plugins__Kavenegar__ApiKey`).
+
+## Infrastructure
+
+| Service    | Port        | Notes                                      |
+|------------|-------------|--------------------------------------------|
+| PostgreSQL | 5432        | Primary data store                         |
+| PgBouncer  | 6432→5432   | Transaction pooling, pool size controlled  |
+| RabbitMQ   | 5672 / 15672| Queue + management UI                      |
+| API        | 8080        | NotificationHub.Host                       |
+
+```bash
+docker compose up -d
+```
+
+Connection string uses:
+- `Minimum Pool Size` / `Maximum Pool Size` (app-side pool)
+- `No Reset On Close=true` (required for PgBouncer transaction mode)
+- App connects to **PgBouncer**, not directly to Postgres
+
+> MARS is SQL Server only and is not used. Npgsql pool + PgBouncer handle concurrency.

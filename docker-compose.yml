@@ -1,0 +1,90 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nh-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-notificationhub}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-notificationhub}
+      POSTGRES_DB: ${POSTGRES_DB:-notificationhub}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-notificationhub}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - nh-net
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.22.1-p1
+    container_name: nh-pgbouncer
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-notificationhub}:${POSTGRES_PASSWORD:-notificationhub}@postgres:5432/${POSTGRES_DB:-notificationhub}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 20
+      MIN_POOL_SIZE: 5
+      RESERVE_POOL_SIZE: 5
+      MAX_DB_CONNECTIONS: 50
+      AUTH_TYPE: scram-sha-256
+    ports:
+      - "6432:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nh-net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: nh-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-notificationhub}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-notificationhub}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - nh-net
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nh-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Default: "Host=pgbouncer;Port=5432;Database=${POSTGRES_DB:-notificationhub};Username=${POSTGRES_USER:-notificationhub};Password=${POSTGRES_PASSWORD:-notificationhub};Minimum Pool Size=5;Maximum Pool Size=20;Pooling=true;Timeout=15;Command Timeout=30;No Reset On Close=true"
+      RabbitMQ__HostName: rabbitmq
+      RabbitMQ__Port: 5672
+      RabbitMQ__UserName: ${RABBITMQ_USER:-notificationhub}
+      RabbitMQ__Password: ${RABBITMQ_PASSWORD:-notificationhub}
+      Auth__ApiKey: ${AUTH_API_KEY:-dev-secret-key-change-me}
+    ports:
+      - "8080:8080"
+    depends_on:
+      pgbouncer:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - nh-net
+
+volumes:
+  postgres_data:
+  rabbitmq_data:
+
+networks:
+  nh-net:
+    driver: bridge

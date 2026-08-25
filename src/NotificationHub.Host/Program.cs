@@ -1,6 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Abstractions.Plugins;
 using NotificationHub.Core.Orchestration;
+using NotificationHub.Core.Persistence;
 using NotificationHub.Core.PluginHost;
 using NotificationHub.Core.Queue;
 using NotificationHub.Core.RateLimiting;
@@ -17,26 +19,48 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// Microkernel core
+// PostgreSQL via PgBouncer
+// Note: MARS is SQL Server only. For Npgsql we use pool sizing + No Reset On Close (compatible with PgBouncer transaction mode).
+var connectionString = builder.Configuration.GetConnectionString("Default")
+    ?? throw new InvalidOperationException("Connection string 'Default' is missing.");
+
+builder.Services.AddDbContext<NotificationDbContext>(options =>
+{
+    options.UseNpgsql(connectionString, npgsql =>
+    {
+        npgsql.EnableRetryOnFailure(3);
+        npgsql.CommandTimeout(30);
+    });
+});
+
+// RabbitMQ
+builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
+builder.Services.AddSingleton<INotificationQueue, RabbitMqNotificationQueue>();
+
+// Core services
 builder.Services.AddSingleton<PluginLoader>();
 builder.Services.AddSingleton<ITemplateEngine, InMemoryTemplateEngine>();
-builder.Services.AddSingleton<INotificationStatusStore, InMemoryNotificationStatusStore>();
-builder.Services.AddSingleton<INotificationQueue, InMemoryNotificationQueue>();
+builder.Services.AddScoped<INotificationStatusStore, PostgresNotificationStatusStore>();
 builder.Services.AddSingleton<IRateLimiter, InMemoryRateLimiter>();
-builder.Services.AddSingleton<NotificationOrchestrator>();
+builder.Services.AddScoped<NotificationOrchestrator>();
 
 // Background worker
 builder.Services.AddHostedService<NotificationBackgroundWorker>();
 
-// Plugins - Email
+// Plugins
 builder.Services.AddSingleton<IPlugin, SendGridEmailPlugin>();
 builder.Services.AddSingleton<IPlugin, SmtpEmailPlugin>();
-
-// Plugins - SMS
 builder.Services.AddSingleton<IPlugin, TwilioSmsPlugin>();
 builder.Services.AddSingleton<IPlugin, KavenegarSmsPlugin>();
 
 var app = builder.Build();
+
+// Migrate DB on startup
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
+    await db.Database.EnsureCreatedAsync();
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -57,7 +81,6 @@ using (var scope = app.Services.CreateScope())
     await loader.LoadFromAssembliesAsync(plugins.Select(p => p.GetType().Assembly).Distinct(), context);
 }
 
-// === Unified Send API (async by default) ===
 app.MapPost("/api/v1/notifications", async (
     NotificationRequest request,
     NotificationOrchestrator orchestrator,
@@ -88,7 +111,6 @@ app.MapPost("/api/v1/notifications", async (
 .WithName("SendNotification")
 .WithOpenApi();
 
-// Sync send
 app.MapPost("/api/v1/notifications/sync", async (
     NotificationRequest request,
     NotificationOrchestrator orchestrator,
@@ -112,7 +134,6 @@ app.MapPost("/api/v1/notifications/sync", async (
 .WithName("SendNotificationSync")
 .WithOpenApi();
 
-// Status
 app.MapGet("/api/v1/notifications/{id:guid}", async (Guid id, INotificationStatusStore store, CancellationToken ct) =>
 {
     var status = await store.GetAsync(id, ct);
@@ -121,7 +142,6 @@ app.MapGet("/api/v1/notifications/{id:guid}", async (Guid id, INotificationStatu
 .WithName("GetNotificationStatus")
 .WithOpenApi();
 
-// Plugins list
 app.MapGet("/api/v1/plugins", (PluginLoader loader) =>
 {
     return loader.LoadedPlugins.Select(p => new
@@ -135,7 +155,6 @@ app.MapGet("/api/v1/plugins", (PluginLoader loader) =>
 .WithName("ListPlugins")
 .WithOpenApi();
 
-// Templates
 app.MapPost("/api/v1/templates", async (TemplateDefinition template, ITemplateEngine engine, CancellationToken ct) =>
 {
     await engine.RegisterTemplateAsync(template, ct);
@@ -152,7 +171,17 @@ app.MapGet("/api/v1/templates/{key}", async (string key, string channel, string?
 .WithName("GetTemplate")
 .WithOpenApi();
 
-app.MapGet("/health", () => Results.Ok(new { status = "healthy", service = "NotificationHub", timestamp = DateTimeOffset.UtcNow }));
+app.MapGet("/health", async (NotificationDbContext db, CancellationToken ct) =>
+{
+    var canConnect = await db.Database.CanConnectAsync(ct);
+    return Results.Ok(new
+    {
+        status = canConnect ? "healthy" : "degraded",
+        service = "NotificationHub",
+        database = canConnect ? "up" : "down",
+        timestamp = DateTimeOffset.UtcNow
+    });
+});
 
 app.Run();
 
