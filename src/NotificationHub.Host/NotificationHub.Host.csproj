@@ -26,6 +26,14 @@
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Chat.Slack\NotificationHub.Plugins.Chat.Slack.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Chat.WhatsApp\NotificationHub.Plugins.Chat.WhatsApp.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Push.Fcm\NotificationHub.Plugins.Push.Fcm.csproj" />
+  
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Chat.Telegram\NotificationHub.Plugins.Chat.Telegram.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Chat.Discord\NotificationHub.Plugins.Chat.Discord.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Chat.Teams\NotificationHub.Plugins.Chat.Teams.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Sms.Twilio\NotificationHub.Plugins.Sms.Twilio.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Email.Resend\NotificationHub.Plugins.Email.Resend.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Email.Ses\NotificationHub.Plugins.Email.Ses.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Push.Expo\NotificationHub.Plugins.Push.Expo.csproj" />
   </ItemGroup>
 
 </Project>

@@ -31,5 +31,10 @@
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Chat.Slack\NotificationHub.Plugins.Chat.Slack.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Chat.Telegram\NotificationHub.Plugins.Chat.Telegram.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Chat.Discord\NotificationHub.Plugins.Chat.Discord.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Push.Expo\NotificationHub.Plugins.Push.Expo.csproj" />
+  </ItemGroup>
 </Project>
 

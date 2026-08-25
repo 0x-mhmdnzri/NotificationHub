@@ -41,6 +41,13 @@ using NotificationHub.Plugins.InApp;
 using NotificationHub.Plugins.Push.Fcm;
 using NotificationHub.Plugins.Sms.Kavenegar;
 using NotificationHub.Plugins.Sms.SmsIr;
+using NotificationHub.Plugins.Push.Expo;
+using NotificationHub.Plugins.Email.Ses;
+using NotificationHub.Plugins.Email.Resend;
+using NotificationHub.Plugins.Sms.Twilio;
+using NotificationHub.Plugins.Chat.Teams;
+using NotificationHub.Plugins.Chat.Discord;
+using NotificationHub.Plugins.Chat.Telegram;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -93,7 +100,8 @@ builder.Services.AddDbContext<NotificationDbContext>(opt =>
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
 builder.Services.Configure<ProviderOptions>(builder.Configuration.GetSection("Providers"));
 builder.Services.Configure<ProviderHealthOptions>(builder.Configuration.GetSection(ProviderHealthOptions.SectionName));
-builder.Services.AddSingleton<IProviderHealthTracker, InMemoryProviderHealthTracker>();
+builder.Services.Configure<CircuitBreakerOptions>(builder.Configuration.GetSection(CircuitBreakerOptions.SectionName));
+builder.Services.AddSingleton<IProviderHealthTracker, CircuitBreakerProviderHealthTracker>();
 builder.Services.AddSingleton<IProviderRouter, HealthAwareProviderRouter>();
 builder.Services.AddScoped<IOutbox, EfOutbox>();
 builder.Services.AddScoped<IInbox, EfInbox>();
@@ -167,12 +175,19 @@ builder.Services.AddHostedService<WorkflowBackgroundWorker>();
 
 builder.Services.AddSingleton<IPlugin, SendGridEmailPlugin>();
 builder.Services.AddSingleton<IPlugin, SmtpEmailPlugin>();
+builder.Services.AddSingleton<IPlugin, ResendEmailPlugin>();
+builder.Services.AddSingleton<IPlugin, SesEmailPlugin>();
 builder.Services.AddSingleton<IPlugin, KavenegarSmsPlugin>();
 builder.Services.AddSingleton<IPlugin, SmsIrPlugin>();
+builder.Services.AddSingleton<IPlugin, TwilioSmsPlugin>();
 builder.Services.AddSingleton<IPlugin, InAppPlugin>();
 builder.Services.AddSingleton<IPlugin, SlackPlugin>();
 builder.Services.AddSingleton<IPlugin, WhatsAppPlugin>();
+builder.Services.AddSingleton<IPlugin, TelegramPlugin>();
+builder.Services.AddSingleton<IPlugin, DiscordPlugin>();
+builder.Services.AddSingleton<IPlugin, TeamsPlugin>();
 builder.Services.AddSingleton<IPlugin, FcmPushPlugin>();
+builder.Services.AddSingleton<IPlugin, ExpoPushPlugin>();
 
 var app = builder.Build();
 
@@ -674,6 +689,18 @@ app.MapDelete("/api/v1/admin/api-keys/{id:guid}", async (Guid id, HttpContext ht
     var ok = await store.RevokeAsync(id, ct);
     return ok ? Results.NoContent() : Results.NotFound();
 }).WithName("RevokeApiKey").WithOpenApi();
+
+
+app.MapPost("/api/v1/admin/plugins/reload", async (HttpContext http, PluginLoader loader, IConfiguration config, ILoggerFactory logFactory, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    var dir = config["Plugins:Directory"];
+    if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+        return Results.BadRequest(new { error = "Plugins:Directory not configured or missing" });
+    var ctx = new SimplePluginContext(http.RequestServices, config, logFactory.CreateLogger("PluginReload"));
+    await loader.ReloadDirectoryAsync(dir, ctx, ct);
+    return Results.Ok(new { loaded = loader.LoadedPlugins.Count });
+}).WithName("ReloadPlugins").WithOpenApi();
 
 app.MapGet("/api/v1/admin/providers", (HttpContext http, PluginLoader loader) =>
 {
