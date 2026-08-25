@@ -28,4 +28,14 @@ public class OutboxInboxTests
         (await inbox.TryMarkProcessedAsync("msg-1")).Should().BeTrue();
         (await inbox.TryMarkProcessedAsync("msg-1")).Should().BeFalse();
     }
+
+    [Fact]
+    public async Task TC_MSG_003_Inbox_Exists_BeforeAndAfterMark()
+    {
+        await using var db = TestFixtures.CreateDbContext();
+        var inbox = new EfInbox(db);
+        (await inbox.ExistsAsync("x")).Should().BeFalse();
+        await inbox.TryMarkProcessedAsync("x");
+        (await inbox.ExistsAsync("x")).Should().BeTrue();
+    }
 }

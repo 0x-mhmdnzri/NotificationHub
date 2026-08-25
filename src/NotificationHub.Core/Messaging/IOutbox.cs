@@ -10,5 +10,6 @@ public interface IOutbox
 
 public interface IInbox
 {
+    Task<bool> ExistsAsync(string messageId, CancellationToken ct = default);
     Task<bool> TryMarkProcessedAsync(string messageId, CancellationToken ct = default);
 }

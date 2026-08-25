@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Persistence;
 
@@ -31,6 +32,9 @@ public sealed class EfInbox : IInbox
     public EfInbox(NotificationDbContext db) => _db = db;
 
     /// <summary>Returns false if already processed (duplicate).</summary>
+    public Task<bool> ExistsAsync(string messageId, CancellationToken ct = default)
+        => _db.InboxMessages.AnyAsync(x => x.MessageId == messageId, ct);
+
     public async Task<bool> TryMarkProcessedAsync(string messageId, CancellationToken ct = default)
     {
         if (await _db.InboxMessages.FindAsync([messageId], ct) is not null)

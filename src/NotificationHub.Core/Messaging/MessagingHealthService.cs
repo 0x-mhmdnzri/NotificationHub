@@ -43,6 +43,7 @@ public sealed class MessagingHealthService : IMessagingHealthService
 
         uint? workDepth = null;
         uint? dlqDepth = null;
+        uint? retryDepth = null;
         var rabbit = _sp.GetService<RabbitMqNotificationQueue>();
         if (rabbit is not null)
         {
@@ -51,6 +52,7 @@ public sealed class MessagingHealthService : IMessagingHealthService
                 var depths = await rabbit.GetQueueDepthsAsync(ct);
                 workDepth = depths.WorkQueue;
                 dlqDepth = depths.DeadLetterQueue;
+                retryDepth = depths.RetryQueue;
             }
             catch (Exception ex)
             {
@@ -78,6 +80,7 @@ public sealed class MessagingHealthService : IMessagingHealthService
             OldestPendingAgeSeconds = oldestAge,
             WorkQueueDepth = workDepth,
             DlqDepth = dlqDepth,
+            RetryQueueDepth = retryDepth,
             ConfiguredPrefetchCount = _rabbitOptions.PrefetchCount,
             OutboxLagWarning = outboxLag,
             DlqWarning = dlqWarn,

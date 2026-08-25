@@ -22,16 +22,21 @@ public sealed class RabbitMqOptions
     public string DeadLetterExchange { get; set; } = "notifications.dlx";
     public string DeadLetterQueue { get; set; } = "notifications.dlq";
     public string DeadLetterRoutingKey { get; set; } = "notification.dead";
+    public string RetryExchangeName { get; set; } = "notifications.retry";
+    /// <summary>Backoff steps in seconds for delayed redelivery (TTL queues).</summary>
+    public int[] RetryDelaySeconds { get; set; } = [5, 15, 30, 60, 120];
     public ushort PrefetchCount { get; set; } = 10;
     public int MaxRedeliveryCount { get; set; } = 5;
-    /// <summary>When true, channel awaits broker publisher confirms on publish.</summary>
     public bool PublisherConfirms { get; set; } = true;
     public int PublisherConfirmTimeoutSeconds { get; set; } = 10;
 }
 
 /// <summary>
-/// AMQP transport: durable exchange/queue, DLX, manual ack after processing.
-/// Publish path is also used by Outbox relay.
+/// AMQP transport with:
+/// - durable work queue + DLQ
+/// - delayed redelivery via per-delay TTL queues that dead-letter back to the work queue
+/// - publisher confirms
+/// - manual ack after processing
 /// </summary>
 public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDisposable
 {
@@ -39,6 +44,7 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
     private readonly ILogger<RabbitMqNotificationQueue> _logger;
     private readonly IConnection _connection;
     private readonly IChannel _channel;
+    private readonly int[] _retryDelays;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     public const string HeaderRedeliveryCount = "x-redelivery-count";
@@ -47,6 +53,9 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
     {
         _options = options.Value;
         _logger = logger;
+        _retryDelays = (_options.RetryDelaySeconds is { Length: > 0 }
+            ? _options.RetryDelaySeconds
+            : [5, 15, 30, 60, 120]).OrderBy(x => x).ToArray();
 
         var factory = new ConnectionFactory
         {
@@ -65,67 +74,114 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
             publisherConfirmationTrackingEnabled: _options.PublisherConfirms);
         _channel = _connection.CreateChannelAsync(channelOpts).GetAwaiter().GetResult();
 
-        // DLX topology
+        DeclareTopology();
+        _logger.LogInformation(
+            "RabbitMQ connected. Queue={Queue} DLQ={Dlq} Prefetch={Prefetch} Confirms={Confirms} RetryDelays=[{Delays}]",
+            _options.QueueName, _options.DeadLetterQueue, _options.PrefetchCount, _options.PublisherConfirms,
+            string.Join(',', _retryDelays));
+    }
+
+    private void DeclareTopology()
+    {
+        // Final DLQ for poison messages
         _channel.ExchangeDeclareAsync(_options.DeadLetterExchange, ExchangeType.Direct, durable: true).GetAwaiter().GetResult();
         _channel.QueueDeclareAsync(_options.DeadLetterQueue, durable: true, exclusive: false, autoDelete: false).GetAwaiter().GetResult();
         _channel.QueueBindAsync(_options.DeadLetterQueue, _options.DeadLetterExchange, _options.DeadLetterRoutingKey).GetAwaiter().GetResult();
 
-        var args = new Dictionary<string, object?>
+        // Main work exchange/queue (failed permanent → DLQ)
+        var workArgs = new Dictionary<string, object?>
         {
             ["x-dead-letter-exchange"] = _options.DeadLetterExchange,
             ["x-dead-letter-routing-key"] = _options.DeadLetterRoutingKey
         };
-
         _channel.ExchangeDeclareAsync(_options.ExchangeName, ExchangeType.Direct, durable: true).GetAwaiter().GetResult();
-        _channel.QueueDeclareAsync(_options.QueueName, durable: true, exclusive: false, autoDelete: false, arguments: args).GetAwaiter().GetResult();
+        _channel.QueueDeclareAsync(_options.QueueName, durable: true, exclusive: false, autoDelete: false, arguments: workArgs).GetAwaiter().GetResult();
         _channel.QueueBindAsync(_options.QueueName, _options.ExchangeName, _options.RoutingKey).GetAwaiter().GetResult();
         _channel.BasicQosAsync(0, _options.PrefetchCount, false).GetAwaiter().GetResult();
 
-        _logger.LogInformation("RabbitMQ connected. Queue={Queue} DLQ={Dlq} Prefetch={Prefetch} Confirms={Confirms}", _options.QueueName, _options.DeadLetterQueue, _options.PrefetchCount, _options.PublisherConfirms);
+        // Retry exchange + per-delay TTL queues that dead-letter back to the work queue
+        _channel.ExchangeDeclareAsync(_options.RetryExchangeName, ExchangeType.Direct, durable: true).GetAwaiter().GetResult();
+        foreach (var delay in _retryDelays)
+        {
+            var q = RetryQueueName(delay);
+            var rk = RetryRoutingKey(delay);
+            var args = new Dictionary<string, object?>
+            {
+                ["x-message-ttl"] = delay * 1000,
+                ["x-dead-letter-exchange"] = _options.ExchangeName,
+                ["x-dead-letter-routing-key"] = _options.RoutingKey
+            };
+            _channel.QueueDeclareAsync(q, durable: true, exclusive: false, autoDelete: false, arguments: args).GetAwaiter().GetResult();
+            _channel.QueueBindAsync(q, _options.RetryExchangeName, rk).GetAwaiter().GetResult();
+        }
     }
 
+    private string RetryQueueName(int delaySeconds) => $"{_options.QueueName}.retry.{delaySeconds}s";
+    private static string RetryRoutingKey(int delaySeconds) => $"notification.retry.{delaySeconds}";
+
     public async ValueTask EnqueueAsync(NotificationRequest request, CancellationToken ct = default)
-    {
-        // Direct publish (used by outbox relay). Prefer outbox for API path.
-        await PublishAsync(request, redeliveryCount: 0, ct);
-    }
+        => await PublishAsync(request, redeliveryCount: 0, ct);
 
     public async Task PublishAsync(NotificationRequest request, int redeliveryCount, CancellationToken ct = default)
     {
         var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, JsonOptions));
-        var props = new BasicProperties
-        {
-            Persistent = true,
-            MessageId = request.Id.ToString(),
-            CorrelationId = request.CorrelationId,
-            ContentType = "application/json",
-            Headers = new Dictionary<string, object?>
-            {
-                [HeaderRedeliveryCount] = redeliveryCount
-            }
-        };
+        var props = BuildProps(request, redeliveryCount);
+        await PublishWithConfirmAsync(_options.ExchangeName, _options.RoutingKey, props, body, ct);
+        _logger.LogDebug("Published+confirmed notification {Id} redelivery={Count}", request.Id, redeliveryCount);
+    }
 
+    /// <summary>
+    /// Schedules delayed redelivery via TTL retry queue. Does not requeue the original delivery.
+    /// Caller must ack the original message after this succeeds.
+    /// </summary>
+    public async Task ScheduleDelayedRedeliveryAsync(NotificationRequest request, int currentRedeliveryCount, CancellationToken ct = default)
+    {
+        var next = currentRedeliveryCount + 1;
+        if (next > _options.MaxRedeliveryCount)
+            throw new InvalidOperationException($"Max redelivery exceeded for {request.Id}");
+
+        var delay = _retryDelays[Math.Min(next - 1, _retryDelays.Length - 1)];
+        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, JsonOptions));
+        var props = BuildProps(request, next);
+        var rk = RetryRoutingKey(delay);
+
+        await PublishWithConfirmAsync(_options.RetryExchangeName, rk, props, body, ct);
+        _logger.LogInformation(
+            "Scheduled delayed redelivery for {Id} attempt={Attempt} delay={Delay}s",
+            request.Id, next, delay);
+    }
+
+    private BasicProperties BuildProps(NotificationRequest request, int redeliveryCount) => new()
+    {
+        Persistent = true,
+        MessageId = request.Id.ToString(),
+        CorrelationId = request.CorrelationId,
+        ContentType = "application/json",
+        Headers = new Dictionary<string, object?>
+        {
+            [HeaderRedeliveryCount] = redeliveryCount
+        }
+    };
+
+    private async Task PublishWithConfirmAsync(string exchange, string routingKey, BasicProperties props, byte[] body, CancellationToken ct)
+    {
         using var confirmCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         if (_options.PublisherConfirms)
             confirmCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _options.PublisherConfirmTimeoutSeconds)));
 
         try
         {
-            // With publisherConfirmationTrackingEnabled, awaiting BasicPublishAsync waits for broker confirm.
             await _channel.BasicPublishAsync(
-                exchange: _options.ExchangeName,
-                routingKey: _options.RoutingKey,
+                exchange: exchange,
+                routingKey: routingKey,
                 mandatory: true,
                 basicProperties: props,
                 body: body,
                 cancellationToken: confirmCts.Token);
-
-            _logger.LogDebug("Published+confirmed notification {Id} redelivery={Count}", request.Id, redeliveryCount);
         }
         catch (OperationCanceledException) when (_options.PublisherConfirms && !ct.IsCancellationRequested)
         {
-            throw new TimeoutException(
-                $"Publisher confirm timeout after {_options.PublisherConfirmTimeoutSeconds}s for notification {request.Id}");
+            throw new TimeoutException($"Publisher confirm timeout after {_options.PublisherConfirmTimeoutSeconds}s");
         }
     }
 
@@ -143,7 +199,7 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
                 var request = JsonSerializer.Deserialize<NotificationRequest>(json, JsonOptions);
                 if (request is null)
                 {
-                    await _channel.BasicNackAsync(ea.DeliveryTag, false, false, ct); // to DLQ (requeue=false)
+                    await _channel.BasicNackAsync(ea.DeliveryTag, false, false, ct);
                     return;
                 }
 
@@ -174,7 +230,6 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
             yield return item;
     }
 
-    // Legacy interface: not used by worker anymore when Rabbit is active
     public async IAsyncEnumerable<NotificationRequest> DequeueAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
@@ -185,12 +240,17 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         }
     }
 
-    
-    public async Task<(uint WorkQueue, uint DeadLetterQueue)> GetQueueDepthsAsync(CancellationToken ct = default)
+    public async Task<(uint WorkQueue, uint DeadLetterQueue, uint RetryQueue)> GetQueueDepthsAsync(CancellationToken ct = default)
     {
         var work = await _channel.QueueDeclarePassiveAsync(_options.QueueName, ct);
         var dlq = await _channel.QueueDeclarePassiveAsync(_options.DeadLetterQueue, ct);
-        return (work.MessageCount, dlq.MessageCount);
+        uint retry = 0;
+        foreach (var delay in _retryDelays)
+        {
+            var q = await _channel.QueueDeclarePassiveAsync(RetryQueueName(delay), ct);
+            retry += q.MessageCount;
+        }
+        return (work.MessageCount, dlq.MessageCount, retry);
     }
 
     public Task AckAsync(ulong deliveryTag, CancellationToken ct = default)

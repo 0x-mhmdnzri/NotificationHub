@@ -19,6 +19,7 @@ public sealed record MessagingHealthSnapshot
     public double? OldestPendingAgeSeconds { get; init; }
     public uint? WorkQueueDepth { get; init; }
     public uint? DlqDepth { get; init; }
+    public uint? RetryQueueDepth { get; init; }
     public ushort ConfiguredPrefetchCount { get; init; }
     public bool OutboxLagWarning { get; init; }
     public bool DlqWarning { get; init; }

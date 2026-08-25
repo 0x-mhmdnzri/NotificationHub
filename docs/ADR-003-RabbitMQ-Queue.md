@@ -108,7 +108,7 @@ We will use **RabbitMQ** as the notification transport, combined with a **Postgr
 - ~~Add publisher confirms for stronger publish durability~~ → `CreateChannelOptions(publisherConfirmationsEnabled: true)` + await confirm on publish
 - ~~Retention job for old inbox/outbox rows~~ → `RetentionService` (`OutboxPublishedDays`, `InboxDays`)
 - ~~Load-test prefetch vs provider RPS~~ → `tools/loadtest` + `docs/ops/prefetch-tuning.md`
-- Optional future: delayed redelivery exchange instead of requeue for backoff
+- ~~Optional future: delayed redelivery exchange instead of requeue for backoff~~ → TTL retry queues (`notifications.retry.{N}s`) dead-letter back to work queue
 - Optional future: MassTransit if multi-message sagas dominate
 
 ### Implemented reliability controls (post-decision)
@@ -120,6 +120,7 @@ We will use **RabbitMQ** as the notification transport, combined with a **Postgr
 | Poison messages | DLX/DLQ + max redelivery |
 | Correct ack | Ack only after process success |
 | Ops visibility | Messaging health snapshot + log alerts |
+| Delayed redelivery | TTL retry queues → DLX back to work queue (not immediate requeue) |
 | Storage growth | Retention sweep for published outbox / old inbox |
 
 ## References
