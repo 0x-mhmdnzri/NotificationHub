@@ -115,6 +115,10 @@ public sealed class InAppMessageEntity
     public string Title { get; set; } = "";
     public string Body { get; set; } = "";
     public bool IsRead { get; set; }
+    public bool IsArchived { get; set; }
+    public Guid? NotificationId { get; set; }
+    public string? Category { get; set; }
+    public string? ActionUrl { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -232,6 +236,13 @@ public sealed class NotificationDbContext : DbContext
     public DbSet<EngagementEventEntity> EngagementEvents => Set<EngagementEventEntity>();
     public DbSet<OutboxMessageEntity> OutboxMessages => Set<OutboxMessageEntity>();
     public DbSet<InboxMessageEntity> InboxMessages => Set<InboxMessageEntity>();
+    public DbSet<DigestPolicyEntity> DigestPolicies => Set<DigestPolicyEntity>();
+    public DbSet<DigestBufferEntity> DigestBuffers => Set<DigestBufferEntity>();
+    public DbSet<ThrottlePolicyEntity> ThrottlePolicies => Set<ThrottlePolicyEntity>();
+    public DbSet<ThrottleCounterEntity> ThrottleCounters => Set<ThrottleCounterEntity>();
+    public DbSet<TopicEntity> Topics => Set<TopicEntity>();
+    public DbSet<TopicSubscriberEntity> TopicSubscribers => Set<TopicSubscriberEntity>();
+    public DbSet<DeviceTokenEntity> DeviceTokens => Set<DeviceTokenEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -379,6 +390,21 @@ public sealed class NotificationDbContext : DbContext
         ob.HasIndex(x => x.NotificationId);
 
         var ib = modelBuilder.Entity<InboxMessageEntity>();
+        // phase1 configured in Phase1Schema + fluent below
+        var dp = modelBuilder.Entity<DigestPolicyEntity>();
+        dp.HasIndex(x => new { x.Key, x.TenantId }).IsUnique();
+        var dbuf = modelBuilder.Entity<DigestBufferEntity>();
+        dbuf.HasIndex(x => new { x.PolicyKey, x.Recipient, x.FlushedAt });
+        var tp = modelBuilder.Entity<ThrottlePolicyEntity>();
+        tp.HasIndex(x => new { x.Key, x.TenantId }).IsUnique();
+        var tc = modelBuilder.Entity<ThrottleCounterEntity>();
+        tc.HasIndex(x => new { x.PolicyKey, x.Recipient, x.WindowStart });
+        var topic = modelBuilder.Entity<TopicEntity>();
+        topic.HasIndex(x => new { x.Key, x.TenantId }).IsUnique();
+        var tsub = modelBuilder.Entity<TopicSubscriberEntity>();
+        tsub.HasIndex(x => new { x.TopicKey, x.SubscriberId, x.TenantId });
+        var dev = modelBuilder.Entity<DeviceTokenEntity>();
+        dev.HasIndex(x => new { x.UserId, x.Platform, x.Token });
         ib.ToTable("inbox_messages");
         ib.HasKey(x => x.MessageId);
         ib.Property(x => x.MessageId).HasMaxLength(128);

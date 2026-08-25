@@ -24,6 +24,12 @@ using NotificationHub.Core.Workflow;
 using NotificationHub.Core.Workflow.Handlers;
 using NotificationHub.Core.Expressions;
 using NotificationHub.Core.Validation;
+using NotificationHub.Core.Activity;
+using NotificationHub.Core.Devices;
+using NotificationHub.Core.Topics;
+using NotificationHub.Core.Throttle;
+using NotificationHub.Core.Digest;
+using NotificationHub.Core.Inbox;
 using NotificationHub.Host.Middleware;
 using NotificationHub.Plugins.Chat.Slack;
 using NotificationHub.Plugins.Chat.WhatsApp;
@@ -134,6 +140,13 @@ builder.Services.AddScoped<IWorkflowStepHandler, SendStepHandler>();
 builder.Services.AddScoped<IWorkflowEngine, WorkflowEngine>();
 builder.Services.AddScoped<ISegmentService, SegmentService>();
 builder.Services.AddScoped<IEngagementService, EngagementService>();
+builder.Services.AddScoped<IInboxFeedService, InboxFeedService>();
+builder.Services.AddScoped<IDigestService, DigestService>();
+builder.Services.AddHostedService<DigestFlushWorker>();
+builder.Services.AddScoped<IThrottleService, ThrottleService>();
+builder.Services.AddScoped<ITopicService, TopicService>();
+builder.Services.AddScoped<IDeviceService, DeviceService>();
+builder.Services.AddScoped<IActivityService, ActivityService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddScoped<IConsentService, ConsentService>();
 builder.Services.AddScoped<IComplianceService, ComplianceService>();
@@ -161,6 +174,7 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
     await db.Database.MigrateAsync();
+    await Phase1Schema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Phase1Schema"));
     var seeder = scope.ServiceProvider.GetRequiredService<TemplateSeeder>();
     await seeder.SeedDefaultsAsync();
     var keyBootstrap = scope.ServiceProvider.GetRequiredService<ApiKeyBootstrapper>();
@@ -205,6 +219,7 @@ app.MapPost("/api/v1/notifications", async (
     NotificationOrchestrator orch,
     INotificationQueue queue,
     IRateLimiter rl,
+    IThrottleService throttle,
     IConfiguration config,
     NotificationDbContext db,
     CancellationToken ct) =>
@@ -217,6 +232,8 @@ app.MapPost("/api/v1/notifications", async (
         return Results.StatusCode(429);
     if (!RequestValidators.TryValidate(request, out var valErr))
         return Results.BadRequest(new { error = valErr });
+    var (thOk, thReason) = await throttle.CheckAndIncrementAsync(request.Recipient, request.Channel, tenantId, ct);
+    if (!thOk) return Results.Json(new { error = thReason }, statusCode: 429);
 
     // Single transaction: status (Queued) + outbox row commit together (no dual-write window).
     // Execution strategy required when EnableRetryOnFailure is on and we use explicit transactions.
@@ -661,6 +678,198 @@ app.MapGet("/api/v1/admin/monitoring", async (HttpContext http, IAnalyticsServic
         plugins = loader.LoadedPlugins.Select(p => new { p.Id, p.Name })
     });
 }).WithName("AdminMonitoring").WithOpenApi();
+
+
+// ===== Phase 1: Inbox (F01) =====
+app.MapGet("/api/v1/inbox/{userId}", async (string userId, string? tenantId, bool includeArchived, int take, HttpContext http, IInboxFeedService inbox, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    return Results.Ok(await inbox.GetFeedAsync(userId, tid, includeArchived, take <= 0 ? 50 : take, ct));
+}).WithName("GetInboxFeed").WithOpenApi();
+
+app.MapPost("/api/v1/inbox/{userId}", async (string userId, InboxItem body, HttpContext http, IInboxFeedService inbox, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(body.TenantId);
+    var item = await inbox.PushAsync(body with { UserId = userId, TenantId = tid }, ct);
+    return Results.Created($"/api/v1/inbox/{userId}", item);
+}).WithName("PushInboxItem").WithOpenApi();
+
+app.MapPost("/api/v1/inbox/{userId}/read-all", async (string userId, string? tenantId, HttpContext http, IInboxFeedService inbox, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var n = await inbox.MarkAllReadAsync(userId, tid, ct);
+    return Results.Ok(new { marked = n });
+}).WithName("MarkInboxAllRead").WithOpenApi();
+
+app.MapPost("/api/v1/inbox/items/{id:guid}/read", async (Guid id, string userId, string? tenantId, HttpContext http, IInboxFeedService inbox, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    return await inbox.MarkReadAsync(id, userId, tid, ct) ? Results.NoContent() : Results.NotFound();
+}).WithName("MarkInboxRead").WithOpenApi();
+
+app.MapPost("/api/v1/inbox/items/{id:guid}/archive", async (Guid id, string userId, string? tenantId, HttpContext http, IInboxFeedService inbox, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    return await inbox.ArchiveAsync(id, userId, tid, ct) ? Results.NoContent() : Results.NotFound();
+}).WithName("ArchiveInboxItem").WithOpenApi();
+
+app.MapGet("/api/v1/inbox/{userId}/stream", async (string userId, string? tenantId, HttpContext http, IInboxFeedService inbox, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    http.Response.Headers.ContentType = "text/event-stream";
+    await foreach (var item in inbox.StreamAsync(userId, tid, ct))
+    {
+        var json = System.Text.Json.JsonSerializer.Serialize(item);
+        await http.Response.WriteAsync($"data: {json}\n\n", ct);
+        await http.Response.Body.FlushAsync(ct);
+    }
+}).WithName("InboxSseStream").ExcludeFromDescription();
+
+// ===== F02 Digest =====
+app.MapPost("/api/v1/digest/policies", async (DigestPolicy policy, HttpContext http, IDigestService digest, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    policy = policy with { TenantId = http.ResolveTenantId(policy.TenantId) };
+    return Results.Ok(await digest.SavePolicyAsync(policy, ct));
+}).WithName("SaveDigestPolicy").WithOpenApi();
+
+app.MapPost("/api/v1/digest/buffer", async (string policyKey, string recipient, string? tenantId, Dictionary<string, object?> payload, HttpContext http, IDigestService digest, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    await digest.BufferAsync(policyKey, recipient, tid, payload, ct);
+    return Results.Accepted(null, new { buffered = true });
+}).WithName("BufferDigest").WithOpenApi();
+
+app.MapPost("/api/v1/admin/digest/flush", async (HttpContext http, IDigestService digest, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    return Results.Ok(new { flushed = await digest.FlushDueAsync(ct) });
+}).WithName("FlushDigest").WithOpenApi();
+
+// ===== F03 Throttle =====
+app.MapPost("/api/v1/throttle/policies", async (ThrottlePolicy policy, HttpContext http, IThrottleService throttle, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    policy = policy with { TenantId = http.ResolveTenantId(policy.TenantId) };
+    return Results.Ok(await throttle.SavePolicyAsync(policy, ct));
+}).WithName("SaveThrottlePolicy").WithOpenApi();
+
+// ===== F04 Topics =====
+app.MapPost("/api/v1/topics", async (TopicDefinition topic, HttpContext http, ITopicService topics, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    topic = topic with { TenantId = http.ResolveTenantId(topic.TenantId) };
+    return Results.Created($"/api/v1/topics/{topic.Key}", await topics.SaveTopicAsync(topic, ct));
+}).WithName("SaveTopic").WithOpenApi();
+
+app.MapGet("/api/v1/topics", async (string? tenantId, HttpContext http, ITopicService topics, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    return Results.Ok(await topics.ListTopicsAsync(http.ResolveTenantId(tenantId), ct));
+}).WithName("ListTopics").WithOpenApi();
+
+app.MapPost("/api/v1/topics/{key}/subscribe", async (string key, string subscriberId, string? channel, string? address, string? tenantId, HttpContext http, ITopicService topics, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    await topics.SubscribeAsync(key, subscriberId, tid, channel, address, ct);
+    return Results.NoContent();
+}).WithName("SubscribeTopic").WithOpenApi();
+
+app.MapDelete("/api/v1/topics/{key}/subscribers/{subscriberId}", async (string key, string subscriberId, string? tenantId, HttpContext http, ITopicService topics, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    await topics.UnsubscribeAsync(key, subscriberId, http.ResolveTenantId(tenantId), ct);
+    return Results.NoContent();
+}).WithName("UnsubscribeTopic").WithOpenApi();
+
+app.MapGet("/api/v1/topics/{key}/subscribers", async (string key, string? tenantId, HttpContext http, ITopicService topics, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    return Results.Ok(await topics.ListSubscribersAsync(key, http.ResolveTenantId(tenantId), ct));
+}).WithName("ListTopicSubscribers").WithOpenApi();
+
+app.MapPost("/api/v1/topics/broadcast", async (TopicBroadcastRequest req, HttpContext http, ITopicService topics, NotificationOrchestrator orch, INotificationQueue queue, NotificationDbContext db, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(req.TenantId);
+    var subs = await topics.ListSubscribersAsync(req.TopicKey, tid, ct);
+    var accepted = 0;
+    foreach (var s in subs)
+    {
+        var recipient = s.Address ?? s.SubscriberId;
+        var channel = req.Channel ?? s.Channel ?? "email";
+        var nreq = new NotificationRequest
+        {
+            Recipient = recipient,
+            Channel = channel,
+            TemplateKey = req.TemplateKey,
+            Data = req.Data,
+            TenantId = tid,
+            Category = $"topic:{req.TopicKey}"
+        };
+        var strategy = db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            var (ok, status) = await orch.AcceptAsync(nreq, ct);
+            if (!ok) { await tx.RollbackAsync(ct); return; }
+            if (status.Status == DeliveryStatus.Queued)
+            {
+                await queue.EnqueueAsync(nreq, ct);
+                await db.SaveChangesAsync(ct);
+            }
+            await tx.CommitAsync(ct);
+            Interlocked.Increment(ref accepted);
+        });
+    }
+    return Results.Accepted(null, new { topic = req.TopicKey, accepted, subscribers = subs.Count });
+}).WithName("BroadcastTopic").WithOpenApi();
+
+// ===== F05 Devices =====
+app.MapPost("/api/v1/devices", async (RegisterDeviceRequest req, HttpContext http, IDeviceService devices, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    req = req with { TenantId = http.ResolveTenantId(req.TenantId) };
+    try
+    {
+        var d = await devices.RegisterAsync(req, ct);
+        return Results.Created($"/api/v1/devices/{d.Id}", d);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).WithName("RegisterDevice").WithOpenApi();
+
+app.MapGet("/api/v1/devices/{userId}", async (string userId, string? tenantId, HttpContext http, IDeviceService devices, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    return Results.Ok(await devices.ListAsync(userId, http.ResolveTenantId(tenantId), ct));
+}).WithName("ListDevices").WithOpenApi();
+
+app.MapDelete("/api/v1/devices/{userId}", async (string userId, string token, string? tenantId, HttpContext http, IDeviceService devices, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var ok = await devices.UnregisterAsync(userId, token, http.ResolveTenantId(tenantId), ct);
+    return ok ? Results.NoContent() : Results.NotFound();
+}).WithName("UnregisterDevice").WithOpenApi();
+
+// ===== F06 Activity =====
+app.MapGet("/api/v1/admin/activity", async (string? tenantId, int take, HttpContext http, IActivityService activity, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    return Results.Ok(await activity.ListAsync(tid, take <= 0 ? 50 : take, ct));
+}).WithName("AdminActivity").WithOpenApi();
+
 
 // SEC-28: public health is minimal; detailed checks under admin messaging health
 app.MapGet("/health", (HttpContext http) =>
