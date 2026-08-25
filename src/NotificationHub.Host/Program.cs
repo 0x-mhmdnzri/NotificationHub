@@ -23,6 +23,7 @@ using NotificationHub.Core.Webhooks;
 using NotificationHub.Core.Workflow;
 using NotificationHub.Core.Workflow.Handlers;
 using NotificationHub.Core.Expressions;
+using NotificationHub.Core.Validation;
 using NotificationHub.Host.Middleware;
 using NotificationHub.Plugins.Chat.Slack;
 using NotificationHub.Plugins.Chat.WhatsApp;
@@ -161,6 +162,8 @@ app.MapPost("/api/v1/notifications", async (
     var limit = config.GetValue("RateLimiting:PerMinute", 60);
     if (!await rl.IsAllowedAsync($"tenant:{tenantId ?? "default"}:{request.Channel ?? "any"}", limit, ct))
         return Results.StatusCode(429);
+    if (!RequestValidators.TryValidate(request, out var valErr))
+        return Results.BadRequest(new { error = valErr });
 
     // Single transaction: status (Queued) + outbox row commit together (no dual-write window).
     // Execution strategy required when EnableRetryOnFailure is on and we use explicit transactions.
@@ -206,6 +209,8 @@ app.MapPost("/api/v1/notifications/sync", async (NotificationRequest request, Ht
     var limit = config.GetValue("RateLimiting:PerMinute", 60);
     if (!await rl.IsAllowedAsync($"tenant:{tenantId ?? "default"}:{request.Channel ?? "any"}", limit, ct))
         return Results.StatusCode(429);
+    if (!RequestValidators.TryValidate(request, out var valErr))
+        return Results.BadRequest(new { error = valErr });
     var (accepted, status) = await orch.AcceptAsync(request, ct);
     if (!accepted) return Results.Conflict(status);
     if (status.Status == DeliveryStatus.Suppressed)
@@ -233,6 +238,8 @@ app.MapPost("/api/v1/templates", async (TemplateDefinition t, HttpContext http, 
 {
     if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
     t = t with { TenantId = http.ResolveTenantId(t.TenantId) };
+    if (!RequestValidators.TryValidate(t, out var valErr))
+        return Results.BadRequest(new { error = valErr });
     await engine.RegisterTemplateAsync(t, ct);
     return Results.Created($"/api/v1/templates/{t.Key}", t);
 }).WithName("RegisterTemplate").WithOpenApi();
@@ -264,6 +271,8 @@ app.MapPost("/api/v1/templates/preview", async (NotificationRequest request, Htt
 {
     if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
     request = request with { TenantId = http.ResolveTenantId(request.TenantId) };
+    if (!RequestValidators.TryValidate(request, out var valErr))
+        return Results.BadRequest(new { error = valErr });
     return Results.Ok(await engine.RenderAsync(request, ct));
 }).WithName("PreviewTemplate").WithOpenApi();
 
@@ -286,6 +295,8 @@ app.MapPut("/api/v1/preferences", async (UserPreference pref, HttpContext http, 
 app.MapPost("/api/v1/webhooks", async (WebhookSubscription sub, HttpContext http, NotificationDbContext db, CancellationToken ct) =>
 {
     if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    if (!RequestValidators.TryValidate(sub, out var valErr))
+        return Results.BadRequest(new { error = valErr });
     if (!WebhookUrlValidator.IsSafe(sub.Url, out var urlError))
         return Results.BadRequest(new { error = urlError });
     var tenantId = http.ResolveTenantId(sub.TenantId);
@@ -409,8 +420,13 @@ app.MapGet("/api/v1/notifications/{id:guid}/engagements", async (Guid id, HttpCo
 }).WithName("ListEngagements").WithOpenApi();
 
 // Public tracking endpoints (no API key) — open pixel + click redirect
-app.MapGet("/t/o/{notificationId:guid}", async (Guid notificationId, HttpContext http, IEngagementService engagement, CancellationToken ct) =>
+app.MapGet("/t/o/{notificationId:guid}", async (Guid notificationId, HttpContext http, IEngagementService engagement, IRateLimiter rl, IConfiguration config, CancellationToken ct) =>
 {
+    var ip = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    var trackLimit = config.GetValue("RateLimiting:TrackingPerMinute", 120);
+    if (!await rl.IsAllowedAsync($"track:ip:{ip}:{notificationId}", trackLimit, ct))
+        return Results.StatusCode(429);
+
     await engagement.TrackAsync(new EngagementEvent
     {
         NotificationId = notificationId,
@@ -425,15 +441,15 @@ app.MapGet("/t/o/{notificationId:guid}", async (Guid notificationId, HttpContext
     return Results.File(gif, "image/gif");
 }).WithName("TrackOpenPixel").ExcludeFromDescription();
 
-app.MapGet("/t/c/{notificationId:guid}", async (Guid notificationId, string url, HttpContext http, IEngagementService engagement, CancellationToken ct) =>
+app.MapGet("/t/c/{notificationId:guid}", async (Guid notificationId, string url, HttpContext http, IEngagementService engagement, IRateLimiter rl, IConfiguration config, CancellationToken ct) =>
 {
-    if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var target))
-        return Results.BadRequest(new { error = "Valid absolute url query parameter required" });
-    if (!string.Equals(target.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
-        && !string.Equals(target.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
-        return Results.BadRequest(new { error = "Only http/https redirect targets allowed" });
-    if (target.IsLoopback)
-        return Results.BadRequest(new { error = "Loopback redirect targets are not allowed" });
+    var ip = http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    var trackLimit = config.GetValue("RateLimiting:TrackingPerMinute", 120);
+    if (!await rl.IsAllowedAsync($"track:ip:{ip}:{notificationId}", trackLimit, ct))
+        return Results.StatusCode(429);
+
+    if (!RedirectUrlValidator.IsSafe(url, out var redirectError, out var target) || target is null)
+        return Results.BadRequest(new { error = redirectError });
 
     await engagement.TrackAsync(new EngagementEvent
     {
@@ -545,7 +561,8 @@ app.MapPost("/api/v1/admin/api-keys", async (CreateApiKeyRequest request, HttpCo
     var auth = http.GetAuthContext()!;
     var tenantId = auth.TenantId ?? request.TenantId;
     if (!auth.IsAdmin) return Results.Forbid();
-    var plain = ApiKeyHasher.GeneratePlainKey();
+    var keyId = Guid.NewGuid();
+    var plain = ApiKeyHasher.GeneratePlainKey(keyId);
     var hash = ApiKeyHasher.Hash(plain);
     var created = await store.CreateAsync(request with { TenantId = tenantId }, plain, hash, ct);
     return Results.Created($"/api/v1/admin/api-keys/{created.Id}", created);
