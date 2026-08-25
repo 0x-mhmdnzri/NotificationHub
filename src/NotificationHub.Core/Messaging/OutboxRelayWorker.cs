@@ -44,32 +44,67 @@ public sealed class OutboxRelayWorker : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
         var queue = scope.ServiceProvider.GetService<RabbitMqNotificationQueue>();
+
+        // Claim a batch exclusively so multi-instance relays do not double-publish.
+        // Status "publishing" is short-lived; failed publishes revert to pending with backoff.
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+        var claimed = await db.OutboxMessages
+            .FromSqlRaw("""
+                SELECT * FROM outbox_messages
+                WHERE "Status" = 'pending'
+                  AND ("NextAttemptAt" IS NULL OR "NextAttemptAt" <= NOW())
+                ORDER BY "CreatedAt"
+                FOR UPDATE SKIP LOCKED
+                LIMIT 50
+                """)
+            .ToListAsync(ct);
+
+        if (claimed.Count == 0)
+        {
+            await tx.CommitAsync(ct);
+            return;
+        }
+
+        foreach (var msg in claimed)
+            msg.Status = "publishing";
+
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+
         if (queue is null)
         {
-            // In-memory mode: drain outbox into in-memory queue
+            // In-memory mode: drain into in-memory queue
             var inMemory = scope.ServiceProvider.GetRequiredService<INotificationQueue>();
-            var pendingMem = await db.OutboxMessages
-                .Where(x => x.Status == "pending" && (x.NextAttemptAt == null || x.NextAttemptAt <= DateTimeOffset.UtcNow))
-                .OrderBy(x => x.CreatedAt).Take(50).ToListAsync(ct);
-            foreach (var msg in pendingMem)
+            foreach (var msg in claimed)
             {
-                var request = JsonSerializer.Deserialize<NotificationRequest>(msg.PayloadJson, JsonOptions);
-                if (request is null) { msg.Status = "failed"; msg.LastError = "null payload"; continue; }
-                await inMemory.EnqueueAsync(request, ct);
-                msg.Status = "published";
-                msg.PublishedAt = DateTimeOffset.UtcNow;
+                try
+                {
+                    var request = JsonSerializer.Deserialize<NotificationRequest>(msg.PayloadJson, JsonOptions);
+                    if (request is null)
+                    {
+                        msg.Status = "failed";
+                        msg.LastError = "null payload";
+                        continue;
+                    }
+                    await inMemory.EnqueueAsync(request, ct);
+                    msg.Status = "published";
+                    msg.PublishedAt = DateTimeOffset.UtcNow;
+                }
+                catch (Exception ex)
+                {
+                    msg.Attempts++;
+                    msg.LastError = ex.Message;
+                    msg.NextAttemptAt = DateTimeOffset.UtcNow.AddSeconds(Math.Min(60, Math.Pow(2, msg.Attempts)));
+                    msg.Status = msg.Attempts >= 10 ? "failed" : "pending";
+                    _logger.LogWarning(ex, "Outbox in-memory publish failed for {NotificationId}", msg.NotificationId);
+                }
             }
             await db.SaveChangesAsync(ct);
             return;
         }
 
-        var pending = await db.OutboxMessages
-            .Where(x => x.Status == "pending" && (x.NextAttemptAt == null || x.NextAttemptAt <= DateTimeOffset.UtcNow))
-            .OrderBy(x => x.CreatedAt)
-            .Take(50)
-            .ToListAsync(ct);
-
-        foreach (var msg in pending)
+        foreach (var msg in claimed)
         {
             try
             {
@@ -85,13 +120,11 @@ public sealed class OutboxRelayWorker : BackgroundService
                 msg.Attempts++;
                 msg.LastError = ex.Message;
                 msg.NextAttemptAt = DateTimeOffset.UtcNow.AddSeconds(Math.Min(60, Math.Pow(2, msg.Attempts)));
-                if (msg.Attempts >= 10)
-                    msg.Status = "failed";
+                msg.Status = msg.Attempts >= 10 ? "failed" : "pending";
                 _logger.LogWarning(ex, "Outbox publish failed for {NotificationId}", msg.NotificationId);
             }
         }
 
-        if (pending.Count > 0)
-            await db.SaveChangesAsync(ct);
+        await db.SaveChangesAsync(ct);
     }
 }

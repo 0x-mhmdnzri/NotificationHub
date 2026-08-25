@@ -12,7 +12,11 @@ public sealed class EfOutbox : IOutbox
 
     public EfOutbox(NotificationDbContext db) => _db = db;
 
-    public async Task AddAsync(NotificationRequest request, CancellationToken ct = default)
+    /// <summary>
+    /// Stages an outbox row on the shared DbContext. Does not call SaveChanges so the
+    /// caller can commit status + outbox in a single transaction (avoids dual-write).
+    /// </summary>
+    public Task AddAsync(NotificationRequest request, CancellationToken ct = default)
     {
         _db.OutboxMessages.Add(new OutboxMessageEntity
         {
@@ -22,7 +26,8 @@ public sealed class EfOutbox : IOutbox
             NextAttemptAt = DateTimeOffset.UtcNow,
             CreatedAt = DateTimeOffset.UtcNow
         });
-        await _db.SaveChangesAsync(ct);
+        // Save is deferred to the ambient unit-of-work / explicit transaction.
+        return Task.CompletedTask;
     }
 }
 
