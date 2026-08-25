@@ -11,6 +11,7 @@ using NotificationHub.Core.PluginHost;
 using NotificationHub.Core.Preferences;
 using NotificationHub.Core.Queue;
 using NotificationHub.Core.RateLimiting;
+using NotificationHub.Core.Routing;
 using NotificationHub.Core.Scheduling;
 using NotificationHub.Core.Segmentation;
 using NotificationHub.Core.Store;
@@ -42,6 +43,9 @@ builder.Services.AddDbContext<NotificationDbContext>(opt =>
 
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
 builder.Services.Configure<ProviderOptions>(builder.Configuration.GetSection("Providers"));
+builder.Services.Configure<ProviderHealthOptions>(builder.Configuration.GetSection(ProviderHealthOptions.SectionName));
+builder.Services.AddSingleton<IProviderHealthTracker, InMemoryProviderHealthTracker>();
+builder.Services.AddSingleton<IProviderRouter, HealthAwareProviderRouter>();
 builder.Services.Configure<CostOptions>(builder.Configuration.GetSection(CostOptions.SectionName));
 
 builder.Services.AddSingleton<INotificationQueue, RabbitMqNotificationQueue>();
@@ -253,6 +257,9 @@ app.MapPost("/api/v1/inapp/{id:guid}/read", async (Guid id, NotificationDbContex
     await db.SaveChangesAsync(ct);
     return Results.NoContent();
 }).WithName("MarkInAppRead").WithOpenApi();
+
+app.MapGet("/api/v1/providers/health", (IProviderHealthTracker health) =>
+    Results.Ok(health.GetAll())).WithName("GetProviderHealth").WithOpenApi();
 
 app.MapGet("/api/v1/admin/providers", (PluginLoader loader) =>
     loader.LoadedPlugins.OfType<IChannelPlugin>().Select(p => new { p.Id, p.Name, p.Channel, Version = p.Version.ToString(), Capabilities = p.Capabilities }))

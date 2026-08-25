@@ -12,6 +12,7 @@ using NotificationHub.Core.PluginHost;
 using NotificationHub.Core.Preferences;
 using NotificationHub.Core.Store;
 using NotificationHub.Core.Templates;
+using NotificationHub.Core.Routing;
 using NotificationHub.Core.Webhooks;
 
 namespace NotificationHub.Core.Tests.Helpers;
@@ -66,6 +67,16 @@ public static class TestFixtures
         foreach (var plugin in plugins)
             loader.Register(plugin);
 
+        var health = new InMemoryProviderHealthTracker(Options.Create(new ProviderHealthOptions()));
+        var providerOptions = Options.Create(new ProviderOptions
+        {
+            PreferredEmailProvider = "email-sendgrid",
+            PreferredSmsProvider = "sms-kavenegar",
+            EmailFallbackOrder = ["email-sendgrid", "email-smtp"],
+            SmsFallbackOrder = ["sms-kavenegar", "sms-smsir"]
+        });
+        var healthOptions = Options.Create(new ProviderHealthOptions());
+        var router = new HealthAwareProviderRouter(loader, health, providerOptions, healthOptions, NullLogger<HealthAwareProviderRouter>.Instance);
         return new NotificationOrchestrator(
             loader,
             new TemplateEngine(new InMemoryTemplateStore(), new PlaceholderTemplateRenderer(), NullLogger<TemplateEngine>.Instance),
@@ -73,13 +84,8 @@ public static class TestFixtures
             new PreferenceService(db),
             new AuditService(db),
             new NoopWebhookDispatcher(),
-            Options.Create(new ProviderOptions
-            {
-                PreferredEmailProvider = "email-sendgrid",
-                PreferredSmsProvider = "sms-kavenegar",
-                EmailFallbackOrder = ["email-sendgrid", "email-smtp"],
-                SmsFallbackOrder = ["sms-kavenegar", "sms-smsir"]
-            }),
+            router,
+            health,
             NullLogger<NotificationOrchestrator>.Instance);
     }
 }

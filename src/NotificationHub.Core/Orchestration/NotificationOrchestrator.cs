@@ -6,6 +6,7 @@ using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Audit;
 using NotificationHub.Core.PluginHost;
 using NotificationHub.Core.Preferences;
+using NotificationHub.Core.Routing;
 using NotificationHub.Core.Store;
 using NotificationHub.Core.Templates;
 using NotificationHub.Core.Webhooks;
@@ -20,7 +21,8 @@ public sealed class NotificationOrchestrator
     private readonly IPreferenceService _preferences;
     private readonly IAuditService _audit;
     private readonly IWebhookDispatcher _webhooks;
-    private readonly ProviderOptions _providerOptions;
+    private readonly IProviderRouter _router;
+    private readonly IProviderHealthTracker _health;
     private readonly ILogger<NotificationOrchestrator> _logger;
     private const int MaxRetries = 3;
 
@@ -31,7 +33,8 @@ public sealed class NotificationOrchestrator
         IPreferenceService preferences,
         IAuditService audit,
         IWebhookDispatcher webhooks,
-        IOptions<ProviderOptions> providerOptions,
+        IProviderRouter router,
+        IProviderHealthTracker health,
         ILogger<NotificationOrchestrator> logger)
     {
         _pluginLoader = pluginLoader;
@@ -40,7 +43,8 @@ public sealed class NotificationOrchestrator
         _preferences = preferences;
         _audit = audit;
         _webhooks = webhooks;
-        _providerOptions = providerOptions.Value;
+        _router = router;
+        _health = health;
         _logger = logger;
     }
 
@@ -93,7 +97,7 @@ public sealed class NotificationOrchestrator
     public async Task<DeliveryResult> ProcessAsync(NotificationRequest request, CancellationToken ct = default)
     {
         var channel = ResolveChannel(request);
-        var plugins = SelectPlugins(channel, request.PreferredProvider, request.AllowFallback);
+        var plugins = _router.Resolve(channel, request.PreferredProvider, request.AllowFallback).ToList();
 
         if (plugins.Count == 0)
         {
@@ -121,16 +125,19 @@ public sealed class NotificationOrchestrator
 
                     if (result.Success)
                     {
+                        _health.RecordSuccess(plugin.Id, channel);
                         await FinalizeAsync(request, result, ct);
                         return result;
                     }
 
+                    _health.RecordFailure(plugin.Id, channel, result.ErrorCode);
                     lastResult = result;
                     _logger.LogWarning("Provider {Plugin} failed: {Error}", plugin.Id, result.ErrorMessage);
                 }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Provider {Plugin} exception", plugin.Id);
+                    _health.RecordFailure(plugin.Id, channel, "EXCEPTION");
                     lastResult = new DeliveryResult { Success = false, ProviderId = plugin.Id, ErrorCode = "EXCEPTION", ErrorMessage = ex.Message, AttemptNumber = attempt };
                 }
 
@@ -183,40 +190,4 @@ public sealed class NotificationOrchestrator
         return "email";
     }
 
-    private List<IChannelPlugin> SelectPlugins(string channel, string? preferredProvider, bool allowFallback)
-    {
-        var all = _pluginLoader.LoadedPlugins.OfType<IChannelPlugin>()
-            .Where(p => p.Channel.Equals(channel, StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        if (all.Count == 0) return all;
-
-        var order = channel.Equals("email", StringComparison.OrdinalIgnoreCase)
-            ? _providerOptions.EmailFallbackOrder
-            : channel.Equals("sms", StringComparison.OrdinalIgnoreCase)
-                ? _providerOptions.SmsFallbackOrder
-                : all.Select(p => p.Id).ToArray();
-
-        if (!string.IsNullOrWhiteSpace(preferredProvider))
-            order = new[] { preferredProvider }.Concat(order.Where(x => x != preferredProvider)).ToArray();
-        else if (channel.Equals("email", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(_providerOptions.PreferredEmailProvider))
-            order = new[] { _providerOptions.PreferredEmailProvider! }.Concat(order.Where(x => x != _providerOptions.PreferredEmailProvider)).ToArray();
-        else if (channel.Equals("sms", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(_providerOptions.PreferredSmsProvider))
-            order = new[] { _providerOptions.PreferredSmsProvider! }.Concat(order.Where(x => x != _providerOptions.PreferredSmsProvider)).ToArray();
-
-        var ordered = order
-            .Select(id => all.FirstOrDefault(p => p.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
-            .Where(p => p is not null)
-            .Cast<IChannelPlugin>()
-            .ToList();
-
-        // append any remaining plugins not in order list
-        foreach (var p in all.Where(p => ordered.All(o => o.Id != p.Id)))
-            ordered.Add(p);
-
-        if (!allowFallback && ordered.Count > 1)
-            return ordered.Take(1).ToList();
-
-        return ordered;
-    }
 }
