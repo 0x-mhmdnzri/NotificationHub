@@ -397,24 +397,73 @@ public sealed class NotificationDbContext : DbContext
         ob.HasIndex(x => x.NotificationId);
 
         var ib = modelBuilder.Entity<InboxMessageEntity>();
-        // phase1 configured in Phase1Schema + fluent below
-        var dp = modelBuilder.Entity<DigestPolicyEntity>();
-        dp.HasIndex(x => new { x.Key, x.TenantId }).IsUnique();
-        var dbuf = modelBuilder.Entity<DigestBufferEntity>();
-        dbuf.HasIndex(x => new { x.PolicyKey, x.Recipient, x.FlushedAt });
-        var tp = modelBuilder.Entity<ThrottlePolicyEntity>();
-        tp.HasIndex(x => new { x.Key, x.TenantId }).IsUnique();
-        var tc = modelBuilder.Entity<ThrottleCounterEntity>();
-        tc.HasIndex(x => new { x.PolicyKey, x.Recipient, x.WindowStart });
-        var topic = modelBuilder.Entity<TopicEntity>();
-        topic.HasIndex(x => new { x.Key, x.TenantId }).IsUnique();
-        var tsub = modelBuilder.Entity<TopicSubscriberEntity>();
-        tsub.HasIndex(x => new { x.TopicKey, x.SubscriberId, x.TenantId });
-        var dev = modelBuilder.Entity<DeviceTokenEntity>();
-        dev.HasIndex(x => new { x.UserId, x.Platform, x.Token });
         ib.ToTable("inbox_messages");
         ib.HasKey(x => x.MessageId);
         ib.Property(x => x.MessageId).HasMaxLength(128);
         ib.HasIndex(x => x.ProcessedAt);
+
+        // Phase 1–5 tables (snake_case names match Phase*Schema.EnsureAsync)
+        var dp = modelBuilder.Entity<DigestPolicyEntity>();
+        dp.ToTable("digest_policies");
+        dp.HasKey(x => x.Id);
+        dp.HasIndex(x => new { x.Key, x.TenantId }).IsUnique();
+
+        var dbuf = modelBuilder.Entity<DigestBufferEntity>();
+        dbuf.ToTable("digest_buffers");
+        dbuf.HasKey(x => x.Id);
+        dbuf.HasIndex(x => new { x.PolicyKey, x.Recipient, x.FlushedAt });
+
+        var tp = modelBuilder.Entity<ThrottlePolicyEntity>();
+        tp.ToTable("throttle_policies");
+        tp.HasKey(x => x.Id);
+        tp.HasIndex(x => new { x.Key, x.TenantId }).IsUnique();
+
+        var tc = modelBuilder.Entity<ThrottleCounterEntity>();
+        tc.ToTable("throttle_counters");
+        tc.HasKey(x => x.Id);
+        tc.HasIndex(x => new { x.PolicyKey, x.Recipient, x.WindowStart });
+
+        var topic = modelBuilder.Entity<TopicEntity>();
+        topic.ToTable("topics");
+        topic.HasKey(x => x.Id);
+        topic.HasIndex(x => new { x.Key, x.TenantId }).IsUnique();
+
+        var tsub = modelBuilder.Entity<TopicSubscriberEntity>();
+        tsub.ToTable("topic_subscribers");
+        tsub.HasKey(x => x.Id);
+        tsub.HasIndex(x => new { x.TopicKey, x.SubscriberId, x.TenantId });
+
+        var dev = modelBuilder.Entity<DeviceTokenEntity>();
+        dev.ToTable("device_tokens");
+        dev.HasKey(x => x.Id);
+        dev.HasIndex(x => new { x.UserId, x.Platform, x.Token });
+
+        var lay = modelBuilder.Entity<NotificationHub.Core.Layouts.LayoutEntity>();
+        lay.ToTable("layouts");
+        lay.HasKey(x => x.Id);
+
+        var par = modelBuilder.Entity<NotificationHub.Core.Layouts.PartialEntity>();
+        par.ToTable("partials");
+        par.HasKey(x => x.Id);
+
+        var cdp = modelBuilder.Entity<NotificationHub.Core.Cdp.CdpProfileEntity>();
+        cdp.ToTable("cdp_profiles");
+        cdp.HasKey(x => x.Id);
+        cdp.HasIndex(x => new { x.UserId, x.TenantId });
+
+        var cdpe = modelBuilder.Entity<NotificationHub.Core.Cdp.CdpEventEntity>();
+        cdpe.ToTable("cdp_events");
+        cdpe.HasKey(x => x.Id);
+        cdpe.HasIndex(x => new { x.UserId, x.EventName });
+
+        var loc = modelBuilder.Entity<NotificationHub.Core.I18n.LocalizationEntryEntity>();
+        loc.ToTable("localization_entries");
+        loc.HasKey(x => x.Id);
+        loc.HasIndex(x => new { x.Key, x.Locale, x.TenantId });
+
+        // Extra columns on existing tables
+        n.Property(x => x.CollapseKey).HasMaxLength(256);
+        n.HasIndex(x => new { x.Recipient, x.CollapseKey });
+        p.Property(x => x.WeeklyScheduleJson);
     }
 }
