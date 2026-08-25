@@ -8,6 +8,8 @@ using NotificationHub.Core.Store;
 using NotificationHub.Core.Templates;
 using NotificationHub.Host.Middleware;
 using NotificationHub.Plugins.Email.SendGrid;
+using NotificationHub.Plugins.Email.Smtp;
+using NotificationHub.Plugins.Sms.Kavenegar;
 using NotificationHub.Plugins.Sms.Twilio;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -26,9 +28,13 @@ builder.Services.AddSingleton<NotificationOrchestrator>();
 // Background worker
 builder.Services.AddHostedService<NotificationBackgroundWorker>();
 
-// Plugins
+// Plugins - Email
 builder.Services.AddSingleton<IPlugin, SendGridEmailPlugin>();
+builder.Services.AddSingleton<IPlugin, SmtpEmailPlugin>();
+
+// Plugins - SMS
 builder.Services.AddSingleton<IPlugin, TwilioSmsPlugin>();
+builder.Services.AddSingleton<IPlugin, KavenegarSmsPlugin>();
 
 var app = builder.Build();
 
@@ -64,9 +70,7 @@ app.MapPost("/api/v1/notifications", async (
     var limit = config.GetValue("RateLimiting:PerMinute", 60);
 
     if (!await rateLimiter.IsAllowedAsync($"tenant:{tenantKey}:{request.Channel}", limit, ct))
-    {
         return Results.StatusCode(StatusCodes.Status429TooManyRequests);
-    }
 
     var (accepted, status) = await orchestrator.AcceptAsync(request, ct);
     if (!accepted)
@@ -84,7 +88,7 @@ app.MapPost("/api/v1/notifications", async (
 .WithName("SendNotification")
 .WithOpenApi();
 
-// Sync send (for testing / critical)
+// Sync send
 app.MapPost("/api/v1/notifications/sync", async (
     NotificationRequest request,
     NotificationOrchestrator orchestrator,
@@ -108,7 +112,7 @@ app.MapPost("/api/v1/notifications/sync", async (
 .WithName("SendNotificationSync")
 .WithOpenApi();
 
-// Status tracking
+// Status
 app.MapGet("/api/v1/notifications/{id:guid}", async (Guid id, INotificationStatusStore store, CancellationToken ct) =>
 {
     var status = await store.GetAsync(id, ct);
@@ -117,7 +121,7 @@ app.MapGet("/api/v1/notifications/{id:guid}", async (Guid id, INotificationStatu
 .WithName("GetNotificationStatus")
 .WithOpenApi();
 
-// List plugins
+// Plugins list
 app.MapGet("/api/v1/plugins", (PluginLoader loader) =>
 {
     return loader.LoadedPlugins.Select(p => new
@@ -131,7 +135,7 @@ app.MapGet("/api/v1/plugins", (PluginLoader loader) =>
 .WithName("ListPlugins")
 .WithOpenApi();
 
-// Template management
+// Templates
 app.MapPost("/api/v1/templates", async (TemplateDefinition template, ITemplateEngine engine, CancellationToken ct) =>
 {
     await engine.RegisterTemplateAsync(template, ct);

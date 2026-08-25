@@ -89,3 +89,19 @@ GET  /api/v1/templates/{key}?channel=email&locale=en
 ## License
 
 MIT
+
+## Providers (Real)
+
+| Channel | Provider   | Plugin Id          | Config Section              |
+|---------|------------|--------------------|-----------------------------|
+| Email   | SendGrid   | email-sendgrid     | Plugins:SendGrid            |
+| Email   | SMTP       | email-smtp         | Plugins:Smtp                |
+| SMS     | Twilio     | sms-twilio         | Plugins:Twilio              |
+| SMS     | Kavenegar  | sms-kavenegar      | Plugins:Kavenegar           |
+
+Configuration is split across:
+- `appsettings.json` (common)
+- `appsettings.Development.json`
+- `appsettings.Production.json`
+
+Secrets should come from environment variables or secret manager in production (e.g. `Plugins__Kavenegar__ApiKey`).

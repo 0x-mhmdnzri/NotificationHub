@@ -4,10 +4,6 @@
     <ProjectReference Include="..\..\src\NotificationHub.Abstractions\NotificationHub.Abstractions.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Twilio" Version="7.14.9" />
-  </ItemGroup>
-
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

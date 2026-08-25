@@ -16,6 +16,8 @@
     <ProjectReference Include="..\NotificationHub.Abstractions\NotificationHub.Abstractions.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Email.SendGrid\NotificationHub.Plugins.Email.SendGrid.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Sms.Twilio\NotificationHub.Plugins.Sms.Twilio.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Email.Smtp\NotificationHub.Plugins.Email.Smtp.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Sms.Kavenegar\NotificationHub.Plugins.Sms.Kavenegar.csproj" />
   </ItemGroup>
 
 </Project>
