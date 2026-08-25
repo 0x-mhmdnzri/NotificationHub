@@ -5,10 +5,9 @@ using NotificationHub.Abstractions.Models;
 
 namespace NotificationHub.Core.Security;
 
-/// <summary>Seeds bootstrap admin key from config when DB has no keys (SEC-01).</summary>
+/// <summary>Seeds bootstrap admin key from config when DB has no keys (SEC-01 / SEC-10).</summary>
 public sealed class ApiKeyBootstrapper
 {
-    /// <summary>Known insecure defaults that must never be used outside local dev.</summary>
     private static readonly HashSet<string> ForbiddenProductionKeys = new(StringComparer.Ordinal)
     {
         "dev-secret-key-change-me",
@@ -41,35 +40,68 @@ public sealed class ApiKeyBootstrapper
         var existing = await _store.ListAsync(null, ct);
         if (existing.Count > 0) return;
 
-        var plain = _config["Auth:BootstrapApiKey"] ?? _config["Auth:ApiKey"];
+        var configured = _config["Auth:BootstrapApiKey"] ?? _config["Auth:ApiKey"];
+        string plain;
+        string hash;
 
-        if (string.IsNullOrWhiteSpace(plain))
+        if (string.IsNullOrWhiteSpace(configured))
         {
             if (_env.IsProduction())
             {
                 throw new InvalidOperationException(
-                    "Auth:BootstrapApiKey (or Auth:ApiKey) must be set via environment/secret when the database has no API keys. " +
-                    "Do not rely on a committed default.");
+                    "Auth:BootstrapApiKey (or Auth:ApiKey) must be set via environment/secret when the database has no API keys.");
             }
 
-            plain = ApiKeyHasher.GeneratePlainKey();
+            var id = Guid.NewGuid();
+            plain = ApiKeyHasher.GeneratePlainKey(id);
+            hash = ApiKeyHasher.Hash(plain);
             _logger.LogWarning(
-                "No Auth:BootstrapApiKey configured. Generated one-time admin key (store it now; it will not be shown again): {Key}",
+                "No Auth:BootstrapApiKey configured. Generated one-time admin key (store it now): {Key}",
                 plain);
         }
-        else if (_env.IsProduction() && ForbiddenProductionKeys.Contains(plain.Trim()))
+        else if (_env.IsProduction() && ForbiddenProductionKeys.Contains(configured.Trim()))
         {
             throw new InvalidOperationException(
-                "Refusing to bootstrap with a known insecure Auth:BootstrapApiKey in Production. " +
-                "Set a strong unique key via environment variable Auth__BootstrapApiKey.");
+                "Refusing to bootstrap with a known insecure Auth:BootstrapApiKey in Production.");
         }
-        else if (ForbiddenProductionKeys.Contains(plain.Trim()))
+        else
         {
-            _logger.LogWarning(
-                "Using a well-known development BootstrapApiKey. Never deploy this value to Production.");
+            if (ForbiddenProductionKeys.Contains(configured.Trim()))
+                _logger.LogWarning("Using a well-known development BootstrapApiKey. Never deploy this value to Production.");
+
+            // Configured bootstrap may be legacy shape; store with PBKDF2 hash.
+            // If it does not embed an id, CreateAsync assigns a new Guid id (validation uses legacy SHA256 path only if hash was legacy).
+            // For configured secrets we always store v2 hash and require id-embedded key OR legacy lookup.
+            // When configured key has no embedded id, also store a legacy hash lookup is impossible with PBKDF2 alone.
+            // → Force generate id-embedded key when config is weak-dev style only; otherwise hash configured value as v2
+            // and additionally store legacy hash is NOT possible in one column.
+            // Practical approach: if TryParseKeyId fails, generate new id-embedded key and log that configured value is ignored in favor of generated (dev only),
+            // OR hash configured with v2 and on validate also try FindByHash legacy - won't find.
+            // Best: if configured has no embedded id, create key with new id and set plain to GeneratePlainKey(id), log both.
+            if (ApiKeyHasher.TryParseKeyId(configured, out _))
+            {
+                plain = configured;
+                hash = ApiKeyHasher.Hash(plain);
+            }
+            else if (_env.IsDevelopment())
+            {
+                // Keep exact configured secret for local DX: store as legacy SHA256 so Validate finds it.
+                plain = configured;
+                hash = ApiKeyHasher.HashLegacySha256(plain);
+                _logger.LogWarning("Bootstrap key stored with legacy SHA256 hash for non-embedded local secret. Rotate to nh_{{guid}}_{{secret}} form for production.");
+            }
+            else
+            {
+                // Production: require embedded-id form or generate
+                var id = Guid.NewGuid();
+                plain = ApiKeyHasher.GeneratePlainKey(id);
+                hash = ApiKeyHasher.Hash(plain);
+                _logger.LogWarning(
+                    "Configured BootstrapApiKey was not in nh_{{guid}}_{{secret}} form. Generated a strong key instead: {Key}",
+                    plain);
+            }
         }
 
-        var hash = ApiKeyHasher.Hash(plain);
         await _store.CreateAsync(new CreateApiKeyRequest
         {
             Name = "bootstrap-admin",

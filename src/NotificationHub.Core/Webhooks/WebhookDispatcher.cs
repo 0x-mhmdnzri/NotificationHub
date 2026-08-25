@@ -1,4 +1,3 @@
-using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -41,13 +40,33 @@ public sealed class WebhookDispatcher : IWebhookDispatcher
 
             try
             {
-                var body = JsonSerializer.Serialize(new { @event = eventName, data = payload, timestamp = DateTimeOffset.UtcNow });
-                using var req = new HttpRequestMessage(HttpMethod.Post, sub.Url) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+                var timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+                var nonce = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
+                var body = JsonSerializer.Serialize(new
+                {
+                    @event = eventName,
+                    data = payload,
+                    timestamp = DateTimeOffset.UtcNow,
+                    nonce
+                });
+
+                using var req = new HttpRequestMessage(HttpMethod.Post, sub.Url)
+                {
+                    Content = new StringContent(body, Encoding.UTF8, "application/json")
+                };
+                req.Headers.TryAddWithoutValidation("X-Timestamp", timestamp);
+                req.Headers.TryAddWithoutValidation("X-Nonce", nonce);
+
                 if (!string.IsNullOrEmpty(sub.Secret))
                 {
-                    var sig = Convert.ToHexString(HMACSHA256.HashData(Encoding.UTF8.GetBytes(sub.Secret), Encoding.UTF8.GetBytes(body)));
+                    // SEC-09: sign timestamp.nonce.body so replays without matching window fail verification
+                    var signed = $"{timestamp}.{nonce}.{body}";
+                    var sig = Convert.ToHexString(
+                        HMACSHA256.HashData(Encoding.UTF8.GetBytes(sub.Secret), Encoding.UTF8.GetBytes(signed)));
                     req.Headers.TryAddWithoutValidation("X-Signature", sig);
+                    req.Headers.TryAddWithoutValidation("X-Signature-Version", "v2");
                 }
+
                 var resp = await client.SendAsync(req, ct);
                 if (!resp.IsSuccessStatusCode)
                     _logger.LogWarning("Webhook {Url} returned {Status}", sub.Url, resp.StatusCode);

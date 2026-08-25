@@ -4,28 +4,23 @@ using System.Text.Json;
 namespace NotificationHub.Core.Expressions;
 
 /// <summary>
-/// Safe expression language (no code execution).
-/// Supports:
-/// - comparisons: ==, !=, &gt;, &gt;=, &lt;, &lt;=
-/// - string ops: contains, startsWith, endsWith
-/// - existence: exists field, !exists field
-/// - logic: and / or / not, parentheses
-/// - literals: true, false, numbers, "quoted strings"
-/// Examples:
-///   plan == "pro"
-///   score >= 10 and country == "IR"
-///   not (status == "blocked")
-///   email contains "@gmail.com"
-///   exists phone
+/// Safe expression language (no code execution) — SEC-13 limits on size/depth.
+/// Supports comparisons, string ops, exists, and/or/not, parentheses.
 /// </summary>
 public sealed class SimpleExpressionEvaluator : IExpressionEvaluator
 {
+    public const int MaxExpressionLength = 512;
+    public const int MaxTokens = 128;
+    public const int MaxParenDepth = 16;
+
     public bool Evaluate(string? expression, IReadOnlyDictionary<string, object?> data)
     {
         if (string.IsNullOrWhiteSpace(expression)) return true;
+        if (expression.Length > MaxExpressionLength) return false;
         try
         {
             var tokens = Tokenizer.Tokenize(expression);
+            if (tokens.Count > MaxTokens + 1) return false; // +1 for EOF
             var parser = new Parser(tokens, data);
             return parser.ParseExpression();
         }
@@ -57,14 +52,19 @@ public sealed class SimpleExpressionEvaluator : IExpressionEvaluator
                 {
                     var q = c; i++;
                     var start = i;
-                    while (i < input.Length && input[i] != q) i++;
+                    var len = 0;
+                    while (i < input.Length && input[i] != q)
+                    {
+                        i++;
+                        len++;
+                        if (len > 256) throw new InvalidOperationException("String literal too long");
+                    }
                     var s = input[start..i];
                     if (i < input.Length) i++;
                     tokens.Add(new Token(TokenKind.String, s));
                     continue;
                 }
 
-                // multi-char operators
                 if (i + 1 < input.Length)
                 {
                     var two = input[i..(i + 2)];
@@ -96,6 +96,7 @@ public sealed class SimpleExpressionEvaluator : IExpressionEvaluator
                     var start = i; i++;
                     while (i < input.Length && (char.IsLetterOrDigit(input[i]) || input[i] == '_' || input[i] == '.')) i++;
                     var word = input[start..i];
+                    if (word.Length > 64) throw new InvalidOperationException("Identifier too long");
                     var lower = word.ToLowerInvariant();
                     if (lower is "and" or "or" or "not" or "contains" or "startswith" or "endswith" or "exists" or "true" or "false")
                         tokens.Add(new Token(TokenKind.Op, lower));
@@ -116,6 +117,7 @@ public sealed class SimpleExpressionEvaluator : IExpressionEvaluator
         private readonly List<Token> _tokens;
         private readonly IReadOnlyDictionary<string, object?> _data;
         private int _pos;
+        private int _depth;
 
         public Parser(List<Token> tokens, IReadOnlyDictionary<string, object?> data)
         {
@@ -173,13 +175,15 @@ public sealed class SimpleExpressionEvaluator : IExpressionEvaluator
             if (Peek().Kind == TokenKind.LParen)
             {
                 Next();
+                _depth++;
+                if (_depth > MaxParenDepth) throw new InvalidOperationException("Expression too deeply nested");
                 var inner = ParseOr();
+                _depth--;
                 if (Peek().Kind != TokenKind.RParen) throw new InvalidOperationException("Expected ')'");
                 Next();
                 return inner;
             }
 
-            // exists field
             if (Peek().Kind == TokenKind.Op && Peek().Text == "exists")
             {
                 Next();
@@ -188,11 +192,9 @@ public sealed class SimpleExpressionEvaluator : IExpressionEvaluator
                 return _data.TryGetValue(field, out var v) && v is not null && !(v is string s && string.IsNullOrEmpty(s));
             }
 
-            // true / false literals as comparison-less primary
             if (Peek().Kind == TokenKind.Op && Peek().Text is "true" or "false")
                 return Next().Text == "true";
 
-            // field op value | field contains value
             if (Peek().Kind != TokenKind.Ident)
                 throw new InvalidOperationException("Expected identifier");
 
@@ -200,10 +202,7 @@ public sealed class SimpleExpressionEvaluator : IExpressionEvaluator
             var leftVal = Resolve(leftField);
 
             if (Peek().Kind != TokenKind.Op)
-            {
-                // bare field truthiness
                 return IsTruthy(leftVal);
-            }
 
             var op = Next().Text;
             if (op is "contains" or "startswith" or "endswith")

@@ -13,7 +13,8 @@ public class ApiKeySecurityTests
         await using var db = TestFixtures.CreateDbContext();
         var store = new PostgresApiKeyStore(db);
         var validator = new ApiKeyValidator(store);
-        var plain = ApiKeyHasher.GeneratePlainKey();
+        var id = Guid.NewGuid();
+        var plain = ApiKeyHasher.GeneratePlainKey(id);
         var hash = ApiKeyHasher.Hash(plain);
 
         var created = await store.CreateAsync(new CreateApiKeyRequest
@@ -25,6 +26,7 @@ public class ApiKeySecurityTests
 
         created.PlainKey.Should().Be(plain);
         created.TenantId.Should().Be("tenant-a");
+        created.Id.Should().Be(id);
 
         var auth = await validator.ValidateAsync(plain);
         auth.Should().NotBeNull();
@@ -48,7 +50,8 @@ public class ApiKeySecurityTests
         await using var db = TestFixtures.CreateDbContext();
         var store = new PostgresApiKeyStore(db);
         var validator = new ApiKeyValidator(store);
-        var plain = ApiKeyHasher.GeneratePlainKey();
+        var id = Guid.NewGuid();
+        var plain = ApiKeyHasher.GeneratePlainKey(id);
         var created = await store.CreateAsync(new CreateApiKeyRequest
         {
             Name = "tmp", Roles = [AppRoles.Reader]
@@ -64,7 +67,8 @@ public class ApiKeySecurityTests
     {
         await using var db = TestFixtures.CreateDbContext();
         var store = new PostgresApiKeyStore(db);
-        var plain = ApiKeyHasher.GeneratePlainKey();
+        var id = Guid.NewGuid();
+        var plain = ApiKeyHasher.GeneratePlainKey(id);
         await store.CreateAsync(new CreateApiKeyRequest
         {
             Name = "admin", Roles = [AppRoles.Admin]
@@ -77,13 +81,29 @@ public class ApiKeySecurityTests
     }
 
     [Fact]
-    public void TC_SEC_005_Hasher_IsDeterministicAndNotPlain()
+    public void TC_SEC_005_Hasher_Pbkdf2_NotPlain_AndVerifies()
     {
-        var plain = "nh_test_key_value";
+        var id = Guid.NewGuid();
+        var plain = ApiKeyHasher.GeneratePlainKey(id);
         var h1 = ApiKeyHasher.Hash(plain);
         var h2 = ApiKeyHasher.Hash(plain);
-        h1.Should().Be(h2);
+        h1.Should().StartWith(ApiKeyHasher.V2Prefix);
+        h1.Should().NotBe(h2); // unique salt per hash
         h1.Should().NotBe(plain);
-        h1.Length.Should().Be(64); // sha256 hex
+        ApiKeyHasher.Verify(plain, h1).Should().BeTrue();
+        ApiKeyHasher.Verify(plain + "x", h1).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TC_SEC_006_LegacySha256_StillValidates()
+    {
+        await using var db = TestFixtures.CreateDbContext();
+        var store = new PostgresApiKeyStore(db);
+        var plain = ApiKeyHasher.GeneratePlainKey(); // no embedded id
+        var hash = ApiKeyHasher.HashLegacySha256(plain);
+        await store.CreateAsync(new CreateApiKeyRequest { Name = "legacy", Roles = [AppRoles.Reader] }, plain, hash);
+
+        var auth = await new ApiKeyValidator(store).ValidateAsync(plain);
+        auth.Should().NotBeNull();
     }
 }
