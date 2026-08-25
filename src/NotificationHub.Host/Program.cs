@@ -43,6 +43,29 @@ builder.Services.AddHttpClient("webhooks", c =>
     c.Timeout = TimeSpan.FromSeconds(10);
 });
 
+// SEC-16 CORS — only when origins are configured
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? Array.Empty<string>();
+if (corsOrigins.Length > 0)
+{
+    builder.Services.AddCors(o => o.AddPolicy("AppCors", p =>
+        p.WithOrigins(corsOrigins)
+            .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
+            .WithHeaders("Content-Type", "X-Api-Key", "X-Correlation-ID", "Authorization")
+            .SetPreflightMaxAge(TimeSpan.FromMinutes(10))));
+}
+
+// Prefer known proxies' X-Forwarded-For when Admin IP allowlist is used
+builder.Services.Configure<Microsoft.AspNetCore.HttpOverrides.ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
+        | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+    // Clear known networks/proxies so operators can restrict via reverse proxy config;
+    // default clears are restrictive — for K8s/ingress allow all forwarded and trust the edge.
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 var cs = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("Connection string 'Default' missing");
 
@@ -123,13 +146,22 @@ using (var scope = app.Services.CreateScope())
     await keyBootstrap.EnsureBootstrapKeyAsync();
 }
 
+app.UseForwardedHeaders();
+
+app.UseMiddleware<CorrelationIdMiddleware>();
+app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-app.UseMiddleware<SecurityHeadersMiddleware>();
+if (corsOrigins.Length > 0)
+    app.UseCors("AppCors");
+
+app.UseMiddleware<AdminIpAllowlistMiddleware>();
 app.UseMiddleware<ApiKeyAuthMiddleware>();
 
 using (var scope = app.Services.CreateScope())
@@ -600,10 +632,16 @@ app.MapGet("/api/v1/admin/monitoring", async (HttpContext http, IAnalyticsServic
     });
 }).WithName("AdminMonitoring").WithOpenApi();
 
-app.MapGet("/health", async (NotificationDbContext db, CancellationToken ct) =>
+app.MapGet("/health", async (HttpContext http, NotificationDbContext db, CancellationToken ct) =>
 {
     var up = await db.Database.CanConnectAsync(ct);
-    return Results.Ok(new { status = up ? "healthy" : "degraded", database = up ? "up" : "down", timestamp = DateTimeOffset.UtcNow });
+    return Results.Ok(new
+    {
+        status = up ? "healthy" : "degraded",
+        database = up ? "up" : "down",
+        timestamp = DateTimeOffset.UtcNow,
+        correlationId = http.GetCorrelationId()
+    });
 });
 
 app.Run();
