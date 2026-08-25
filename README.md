@@ -109,3 +109,15 @@ GET  /api/v1/compliance/export/{userId}
 DELETE /api/v1/compliance/users/{userId}
 GET  /api/v1/admin/monitoring
 ```
+
+## Load testing & prefetch tuning
+
+```bash
+./scripts/loadtest.sh
+# or
+dotnet run --project tools/loadtest -c Release -- --baseUrl http://localhost:8080 --apiKey dev-secret-key-change-me --total 1000 --concurrency 50
+```
+
+See [docs/ops/prefetch-tuning.md](docs/ops/prefetch-tuning.md) and messaging health:
+
+`GET /api/v1/admin/messaging/health`

@@ -107,7 +107,7 @@ We will use **RabbitMQ** as the notification transport, combined with a **Postgr
 - ~~Alert on `outbox_messages` pending age and `notifications.dlq` depth~~ → `MessagingHealthMonitorWorker` + `GET /api/v1/admin/messaging/health`
 - ~~Add publisher confirms for stronger publish durability~~ → `CreateChannelOptions(publisherConfirmationsEnabled: true)` + await confirm on publish
 - ~~Retention job for old inbox/outbox rows~~ → `RetentionService` (`OutboxPublishedDays`, `InboxDays`)
-- Load-test prefetch vs provider RPS
+- ~~Load-test prefetch vs provider RPS~~ → `tools/loadtest` + `docs/ops/prefetch-tuning.md`
 - Optional future: delayed redelivery exchange instead of requeue for backoff
 - Optional future: MassTransit if multi-message sagas dominate
 

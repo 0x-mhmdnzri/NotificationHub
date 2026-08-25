@@ -12,17 +12,20 @@ public sealed class MessagingHealthService : IMessagingHealthService
     private readonly NotificationDbContext _db;
     private readonly IServiceProvider _sp;
     private readonly MessagingHealthOptions _options;
+    private readonly RabbitMqOptions _rabbitOptions;
     private readonly ILogger<MessagingHealthService> _logger;
 
     public MessagingHealthService(
         NotificationDbContext db,
         IServiceProvider sp,
         IOptions<MessagingHealthOptions> options,
+        IOptions<RabbitMqOptions> rabbitOptions,
         ILogger<MessagingHealthService> logger)
     {
         _db = db;
         _sp = sp;
         _options = options.Value;
+        _rabbitOptions = rabbitOptions.Value;
         _logger = logger;
     }
 
@@ -75,6 +78,7 @@ public sealed class MessagingHealthService : IMessagingHealthService
             OldestPendingAgeSeconds = oldestAge,
             WorkQueueDepth = workDepth,
             DlqDepth = dlqDepth,
+            ConfiguredPrefetchCount = _rabbitOptions.PrefetchCount,
             OutboxLagWarning = outboxLag,
             DlqWarning = dlqWarn,
             Alerts = alerts,

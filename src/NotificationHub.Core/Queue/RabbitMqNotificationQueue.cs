@@ -81,7 +81,7 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         _channel.QueueBindAsync(_options.QueueName, _options.ExchangeName, _options.RoutingKey).GetAwaiter().GetResult();
         _channel.BasicQosAsync(0, _options.PrefetchCount, false).GetAwaiter().GetResult();
 
-        _logger.LogInformation("RabbitMQ connected. Queue={Queue} DLQ={Dlq}", _options.QueueName, _options.DeadLetterQueue);
+        _logger.LogInformation("RabbitMQ connected. Queue={Queue} DLQ={Dlq} Prefetch={Prefetch} Confirms={Confirms}", _options.QueueName, _options.DeadLetterQueue, _options.PrefetchCount, _options.PublisherConfirms);
     }
 
     public async ValueTask EnqueueAsync(NotificationRequest request, CancellationToken ct = default)
