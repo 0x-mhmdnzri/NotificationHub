@@ -1,5 +1,4 @@
 using System.Runtime.CompilerServices;
-using System.Threading.Channels;
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Persistence;
@@ -9,10 +8,13 @@ namespace NotificationHub.Core.Inbox;
 public sealed class InboxFeedService : IInboxFeedService
 {
     private readonly NotificationDbContext _db;
-    // simple in-process fanout for SSE (single instance); multi-instance needs Redis pub/sub later
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Channel<InboxItem>> Streams = new();
+    private readonly IInboxEventBus _bus;
 
-    public InboxFeedService(NotificationDbContext db) => _db = db;
+    public InboxFeedService(NotificationDbContext db, IInboxEventBus bus)
+    {
+        _db = db;
+        _bus = bus;
+    }
 
     public async Task<InboxFeedResponse> GetFeedAsync(string userId, string? tenantId, bool includeArchived = false, int take = 50, CancellationToken ct = default)
     {
@@ -50,7 +52,7 @@ public sealed class InboxFeedService : IInboxFeedService
         _db.InAppMessages.Add(e);
         await _db.SaveChangesAsync(ct);
         var model = ToItem(e);
-        Publish(model);
+        await _bus.PublishAsync(model, ct);
         return model;
     }
 
@@ -83,20 +85,8 @@ public sealed class InboxFeedService : IInboxFeedService
         return true;
     }
 
-    public async IAsyncEnumerable<InboxItem> StreamAsync(string userId, string? tenantId, [EnumeratorCancellation] CancellationToken ct = default)
-    {
-        var key = StreamKey(userId, tenantId);
-        var ch = Streams.GetOrAdd(key, _ => Channel.CreateBounded<InboxItem>(100));
-        await foreach (var item in ch.Reader.ReadAllAsync(ct))
-            yield return item;
-    }
-
-    private void Publish(InboxItem item)
-    {
-        var key = StreamKey(item.UserId, item.TenantId);
-        if (Streams.TryGetValue(key, out var ch))
-            ch.Writer.TryWrite(item);
-    }
+    public IAsyncEnumerable<InboxItem> StreamAsync(string userId, string? tenantId, CancellationToken ct = default)
+        => _bus.SubscribeAsync(userId, tenantId, ct);
 
     private async Task<InAppMessageEntity?> FindOwned(Guid id, string userId, string? tenantId, CancellationToken ct)
     {
@@ -106,20 +96,10 @@ public sealed class InboxFeedService : IInboxFeedService
         return e;
     }
 
-    private static string StreamKey(string userId, string? tenantId) => $"{tenantId ?? "_"}:{userId}";
-
     private static InboxItem ToItem(InAppMessageEntity e) => new()
     {
-        Id = e.Id,
-        UserId = e.UserId,
-        TenantId = e.TenantId,
-        Title = e.Title,
-        Body = e.Body,
-        IsRead = e.IsRead,
-        IsArchived = e.IsArchived,
-        NotificationId = e.NotificationId,
-        Category = e.Category,
-        ActionUrl = e.ActionUrl,
-        CreatedAt = e.CreatedAt
+        Id = e.Id, UserId = e.UserId, TenantId = e.TenantId, Title = e.Title, Body = e.Body,
+        IsRead = e.IsRead, IsArchived = e.IsArchived, NotificationId = e.NotificationId,
+        Category = e.Category, ActionUrl = e.ActionUrl, CreatedAt = e.CreatedAt
     };
 }

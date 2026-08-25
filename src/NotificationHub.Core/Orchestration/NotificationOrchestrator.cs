@@ -12,6 +12,7 @@ using NotificationHub.Core.Routing;
 using NotificationHub.Core.Store;
 using NotificationHub.Core.Templates;
 using NotificationHub.Core.Webhooks;
+using NotificationHub.Core.Observability;
 
 namespace NotificationHub.Core.Orchestration;
 
@@ -28,6 +29,7 @@ public sealed class NotificationOrchestrator
     private readonly IProviderRouter _router;
     private readonly IProviderHealthTracker _health;
     private readonly ILogger<NotificationOrchestrator> _logger;
+    private readonly IMetricsService? _metrics;
     private const int MaxRetries = 3;
 
     public NotificationOrchestrator(
@@ -41,7 +43,8 @@ public sealed class NotificationOrchestrator
         IWebhookDispatcher webhooks,
         IProviderRouter router,
         IProviderHealthTracker health,
-        ILogger<NotificationOrchestrator> logger)
+        ILogger<NotificationOrchestrator> logger,
+        IMetricsService? metrics = null)
     {
         _pluginLoader = pluginLoader;
         _templateEngine = templateEngine;
@@ -54,6 +57,7 @@ public sealed class NotificationOrchestrator
         _router = router;
         _health = health;
         _logger = logger;
+        _metrics = metrics;
     }
 
     public async Task<(bool Accepted, NotificationStatus Status)> AcceptAsync(NotificationRequest request, CancellationToken ct = default)
@@ -69,6 +73,7 @@ public sealed class NotificationOrchestrator
         }
 
         var channel = ResolveChannel(request);
+        _metrics?.Increment("notifications.accept", 1, ("channel", channel));
 
         // F12: collapse key — return existing active notification if same recipient+key within 24h
         if (!string.IsNullOrWhiteSpace(request.CollapseKey))
@@ -95,6 +100,7 @@ public sealed class NotificationOrchestrator
             };
             await _statusStore.SaveAsync(suppressed, ct);
             await _audit.LogAsync("suppressed", request.Id, request.TenantId, details: reason, ct: ct);
+            _metrics?.Increment("notifications.suppressed", 1, ("reason", "preference"));
             return (true, suppressed);
         }
 
@@ -134,6 +140,7 @@ public sealed class NotificationOrchestrator
     public async Task<DeliveryResult> ProcessAsync(NotificationRequest request, CancellationToken ct = default)
     {
         var channel = ResolveChannel(request);
+        _metrics?.Increment("notifications.process", 1, ("channel", channel));
         var plugins = _router.Resolve(channel, request.PreferredProvider, request.AllowFallback).ToList();
 
         if (plugins.Count == 0)

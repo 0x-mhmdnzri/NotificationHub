@@ -136,10 +136,12 @@ if (!string.IsNullOrWhiteSpace(redisCs))
     builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ =>
         StackExchange.Redis.ConnectionMultiplexer.Connect(redisCs));
     builder.Services.AddSingleton<IRateLimiter, RedisRateLimiter>();
+    builder.Services.AddSingleton<IInboxEventBus, RedisInboxEventBus>();
 }
 else
 {
     builder.Services.AddSingleton<IRateLimiter, InMemoryRateLimiter>();
+    builder.Services.AddSingleton<IInboxEventBus, InMemoryInboxEventBus>();
 }
 
 builder.Services.AddScoped<INotificationStatusStore, PostgresNotificationStatusStore>();

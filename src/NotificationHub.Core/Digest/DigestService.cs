@@ -2,7 +2,10 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NotificationHub.Abstractions.Models;
+using NotificationHub.Core.Messaging;
+using NotificationHub.Core.Orchestration;
 using NotificationHub.Core.Persistence;
+using NotificationHub.Core.Queue;
 
 namespace NotificationHub.Core.Digest;
 
@@ -10,11 +13,19 @@ public sealed class DigestService : IDigestService
 {
     private readonly NotificationDbContext _db;
     private readonly ILogger<DigestService> _logger;
+    private readonly NotificationOrchestrator? _orch;
+    private readonly INotificationQueue? _queue;
 
-    public DigestService(NotificationDbContext db, ILogger<DigestService> logger)
+    public DigestService(
+        NotificationDbContext db,
+        ILogger<DigestService> logger,
+        NotificationOrchestrator? orch = null,
+        INotificationQueue? queue = null)
     {
         _db = db;
         _logger = logger;
+        _orch = orch;
+        _queue = queue;
     }
 
     public async Task<DigestPolicy> SavePolicyAsync(DigestPolicy policy, CancellationToken ct = default)
@@ -62,12 +73,56 @@ public sealed class DigestService : IDigestService
 
             foreach (var group in pending.GroupBy(x => new { x.Recipient, x.TenantId }))
             {
+                var items = group.Select(x =>
+                {
+                    try { return JsonSerializer.Deserialize<JsonElement>(x.PayloadJson); }
+                    catch { return default(JsonElement); }
+                }).ToList();
+
                 foreach (var row in group)
                     row.FlushedAt = DateTimeOffset.UtcNow;
                 flushed += group.Count();
+
+                if (_orch is not null && _queue is not null)
+                {
+                    var nreq = new NotificationRequest
+                    {
+                        Recipient = group.Key.Recipient,
+                        Channel = p.Channel,
+                        TemplateKey = p.TemplateKey,
+                        TenantId = group.Key.TenantId,
+                        Category = $"digest:{p.Key}",
+                        CollapseKey = $"digest:{p.Key}:{group.Key.Recipient}:{DateTimeOffset.UtcNow:yyyyMMddHH}",
+                        Data = new Dictionary<string, object?>
+                        {
+                            ["digest_count"] = group.Count(),
+                            ["digest_policy"] = p.Key,
+                            ["items"] = items.Select(i => i.ValueKind == JsonValueKind.Undefined ? null : i).ToList()
+                        }
+                    };
+                    try
+                    {
+                        var strategy = _db.Database.CreateExecutionStrategy();
+                        await strategy.ExecuteAsync(async () =>
+                        {
+                            await using var tx = await _db.Database.BeginTransactionAsync(ct);
+                            var (ok, status) = await _orch.AcceptAsync(nreq, ct);
+                            if (ok && status.Status == DeliveryStatus.Queued)
+                            {
+                                await _queue.EnqueueAsync(nreq, ct);
+                                await _db.SaveChangesAsync(ct);
+                            }
+                            await tx.CommitAsync(ct);
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Digest enqueue failed for {Recipient}", group.Key.Recipient);
+                    }
+                }
+
                 _logger.LogInformation("Digest flush policy={Policy} recipient={Recipient} count={Count}",
                     p.Key, group.Key.Recipient, group.Count());
-                // Actual send is orchestrated by caller/worker via notification API (keeps core thin)
             }
         }
         if (flushed > 0)

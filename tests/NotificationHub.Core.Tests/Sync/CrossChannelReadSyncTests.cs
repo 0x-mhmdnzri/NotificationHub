@@ -13,7 +13,7 @@ public class CrossChannelReadSyncTests
     public async Task TC_F_SYNC_001_MarksRelatedInboxRead()
     {
         await using var db = TestFixtures.CreateDbContext();
-        var inbox = new InboxFeedService(db);
+        var inbox = new InboxFeedService(db, new InMemoryInboxEventBus());
         var nid = Guid.NewGuid();
         await inbox.PushAsync(new InboxItem { UserId = "u1", Title = "T", Body = "B", NotificationId = nid });
         var sync = new CrossChannelReadSync(db);
