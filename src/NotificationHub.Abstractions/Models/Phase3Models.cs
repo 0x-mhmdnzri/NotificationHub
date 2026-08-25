@@ -93,3 +93,29 @@ public sealed record ComplianceExport
     public IReadOnlyList<InAppMessage> InAppMessages { get; init; } = [];
     public DateTimeOffset ExportedAt { get; init; } = DateTimeOffset.UtcNow;
 }
+
+public sealed record WorkflowRunStatusDto
+{
+    public Guid RunId { get; init; }
+    public Guid WorkflowId { get; init; }
+    public string WorkflowKey { get; init; } = "";
+    public string Recipient { get; init; } = "";
+    public string? TenantId { get; init; }
+    public string Status { get; init; } = "";
+    public string? CurrentStepId { get; init; }
+    public DateTimeOffset? ContinueAt { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset UpdatedAt { get; init; }
+    public string? LastError { get; init; }
+}
+
+public sealed record WorkflowTimelineEventDto
+{
+    public Guid Id { get; init; }
+    public Guid RunId { get; init; }
+    public string EventType { get; init; } = ""; // started | step_entered | step_completed | delayed | branched | sent | failed | completed | cancelled
+    public string? StepId { get; init; }
+    public string? Message { get; init; }
+    public string? DataJson { get; init; }
+    public DateTimeOffset OccurredAt { get; init; }
+}

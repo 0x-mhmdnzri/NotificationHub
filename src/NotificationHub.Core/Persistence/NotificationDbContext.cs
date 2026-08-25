@@ -94,6 +94,7 @@ public sealed class WorkflowRunEntity
     public DateTimeOffset? ContinueAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public string? LastError { get; set; }
 }
 
 public sealed class SegmentDefinitionEntity
@@ -134,6 +135,18 @@ public sealed class TemplateEntity
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+
+public sealed class WorkflowTimelineEventEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid RunId { get; set; }
+    public string EventType { get; set; } = "";
+    public string? StepId { get; set; }
+    public string? Message { get; set; }
+    public string? DataJson { get; set; }
+    public DateTimeOffset OccurredAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class NotificationDbContext : DbContext
 {
     public NotificationDbContext(DbContextOptions<NotificationDbContext> options) : base(options) { }
@@ -144,6 +157,7 @@ public sealed class NotificationDbContext : DbContext
     public DbSet<WebhookSubscriptionEntity> WebhookSubscriptions => Set<WebhookSubscriptionEntity>();
     public DbSet<WorkflowDefinitionEntity> Workflows => Set<WorkflowDefinitionEntity>();
     public DbSet<WorkflowRunEntity> WorkflowRuns => Set<WorkflowRunEntity>();
+    public DbSet<WorkflowTimelineEventEntity> WorkflowTimelineEvents => Set<WorkflowTimelineEventEntity>();
     public DbSet<SegmentDefinitionEntity> Segments => Set<SegmentDefinitionEntity>();
     public DbSet<InAppMessageEntity> InAppMessages => Set<InAppMessageEntity>();
     public DbSet<TemplateEntity> Templates => Set<TemplateEntity>();
@@ -205,7 +219,17 @@ public sealed class NotificationDbContext : DbContext
         wr.Property(x => x.Recipient).HasMaxLength(512);
         wr.Property(x => x.Status).HasMaxLength(32);
         wr.HasIndex(x => x.Status);
+        wr.Property(x => x.LastError).HasMaxLength(2000);
         wr.HasIndex(x => x.ContinueAt);
+
+        var wte = modelBuilder.Entity<WorkflowTimelineEventEntity>();
+        wte.ToTable("workflow_timeline_events");
+        wte.HasKey(x => x.Id);
+        wte.Property(x => x.EventType).HasMaxLength(64).IsRequired();
+        wte.Property(x => x.StepId).HasMaxLength(128);
+        wte.Property(x => x.Message).HasMaxLength(2000);
+        wte.HasIndex(x => x.RunId);
+        wte.HasIndex(x => x.OccurredAt);
 
         var s = modelBuilder.Entity<SegmentDefinitionEntity>();
         s.ToTable("segments");

@@ -1,12 +1,9 @@
 using System.Text.Json;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NotificationHub.Abstractions.Models;
-using NotificationHub.Core.Orchestration;
 using NotificationHub.Core.Persistence;
-using NotificationHub.Core.Queue;
 
 namespace NotificationHub.Core.Workflow;
 
@@ -16,58 +13,52 @@ public interface IWorkflowEngine
     Task<WorkflowDefinition?> GetAsync(string key, string? tenantId = null, CancellationToken ct = default);
     Task<Guid> StartAsync(WorkflowStartRequest request, CancellationToken ct = default);
     Task ProcessDueRunsAsync(CancellationToken ct = default);
+    Task<WorkflowRunStatusDto?> GetRunAsync(Guid runId, CancellationToken ct = default);
+    Task<IReadOnlyList<WorkflowTimelineEventDto>> GetTimelineAsync(Guid runId, CancellationToken ct = default);
+    Task<bool> CancelAsync(Guid runId, CancellationToken ct = default);
 }
 
+/// <summary>
+/// Orchestrates workflow runs. Depends on repository, timeline, and step handlers (DIP/OCP).
+/// </summary>
 public sealed class WorkflowEngine : IWorkflowEngine
 {
-    private readonly NotificationDbContext _db;
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IWorkflowRunRepository _repo;
+    private readonly IWorkflowTimeline _timeline;
+    private readonly IReadOnlyDictionary<string, IWorkflowStepHandler> _handlers;
     private readonly ILogger<WorkflowEngine> _logger;
 
-    public WorkflowEngine(NotificationDbContext db, IServiceScopeFactory scopeFactory, ILogger<WorkflowEngine> logger)
+    public WorkflowEngine(
+        IWorkflowRunRepository repo,
+        IWorkflowTimeline timeline,
+        IEnumerable<IWorkflowStepHandler> handlers,
+        ILogger<WorkflowEngine> logger)
     {
-        _db = db;
-        _scopeFactory = scopeFactory;
+        _repo = repo;
+        _timeline = timeline;
+        _handlers = handlers.ToDictionary(h => h.StepType, h => h, StringComparer.OrdinalIgnoreCase);
         _logger = logger;
     }
 
     public async Task<WorkflowDefinition> SaveAsync(WorkflowDefinition definition, CancellationToken ct = default)
     {
-        var entity = await _db.Workflows.FirstOrDefaultAsync(x => x.Key == definition.Key && x.TenantId == definition.TenantId, ct);
-        if (entity is null)
-        {
-            entity = new WorkflowDefinitionEntity { Id = definition.Id, Key = definition.Key, TenantId = definition.TenantId };
-            _db.Workflows.Add(entity);
-        }
-        entity.IsActive = definition.IsActive;
-        entity.StepsJson = JsonSerializer.Serialize(definition.Steps);
-        entity.CreatedAt = definition.CreatedAt;
-        await _db.SaveChangesAsync(ct);
+        await _repo.SaveDefinitionAsync(definition, ct);
         return definition;
     }
 
-    public async Task<WorkflowDefinition?> GetAsync(string key, string? tenantId = null, CancellationToken ct = default)
-    {
-        var q = _db.Workflows.AsNoTracking().Where(x => x.Key == key);
-        q = tenantId is null ? q.Where(x => x.TenantId == null) : q.Where(x => x.TenantId == tenantId);
-        var e = await q.FirstOrDefaultAsync(ct);
-        if (e is null) return null;
-        return new WorkflowDefinition
-        {
-            Id = e.Id, Key = e.Key, TenantId = e.TenantId, IsActive = e.IsActive, CreatedAt = e.CreatedAt,
-            Steps = JsonSerializer.Deserialize<List<WorkflowStep>>(e.StepsJson) ?? []
-        };
-    }
+    public Task<WorkflowDefinition?> GetAsync(string key, string? tenantId = null, CancellationToken ct = default)
+        => _repo.GetDefinitionAsync(key, tenantId, ct);
 
     public async Task<Guid> StartAsync(WorkflowStartRequest request, CancellationToken ct = default)
     {
-        var def = await GetAsync(request.WorkflowKey, request.TenantId, ct)
+        var def = await _repo.GetDefinitionAsync(request.WorkflowKey, request.TenantId, ct)
                   ?? throw new InvalidOperationException($"Workflow '{request.WorkflowKey}' not found");
         if (!def.IsActive) throw new InvalidOperationException("Workflow is inactive");
         if (def.Steps.Count == 0) throw new InvalidOperationException("Workflow has no steps");
 
         var run = new WorkflowRunEntity
         {
+            Id = Guid.NewGuid(),
             WorkflowId = def.Id,
             WorkflowKey = def.Key,
             Recipient = request.Recipient,
@@ -75,46 +66,60 @@ public sealed class WorkflowEngine : IWorkflowEngine
             Status = "running",
             CurrentStepId = def.Steps[0].Id,
             DataJson = JsonSerializer.Serialize(request.Data),
-            ContinueAt = DateTimeOffset.UtcNow
+            ContinueAt = DateTimeOffset.UtcNow,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow
         };
-        _db.WorkflowRuns.Add(run);
-        await _db.SaveChangesAsync(ct);
+
+        await _repo.CreateRunAsync(run, ct);
+        await _timeline.AppendAsync(run.Id, "started", def.Steps[0].Id, $"Started workflow {def.Key}", new { request.Recipient, request.WorkflowKey }, ct);
         _logger.LogInformation("Started workflow {Key} run {RunId}", def.Key, run.Id);
         return run.Id;
     }
 
     public async Task ProcessDueRunsAsync(CancellationToken ct = default)
     {
-        var now = DateTimeOffset.UtcNow;
-        var runs = await _db.WorkflowRuns
-            .Where(x => x.Status == "running" && (x.ContinueAt == null || x.ContinueAt <= now))
-            .OrderBy(x => x.ContinueAt)
-            .Take(50)
-            .ToListAsync(ct);
-
+        var runs = await _repo.GetDueRunsAsync(DateTimeOffset.UtcNow, 50, ct);
         foreach (var run in runs)
         {
-            try
-            {
-                await AdvanceAsync(run, ct);
-            }
+            try { await AdvanceAsync(run, ct); }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Workflow run {RunId} failed", run.Id);
                 run.Status = "failed";
-                run.UpdatedAt = DateTimeOffset.UtcNow;
-                await _db.SaveChangesAsync(ct);
+                run.LastError = ex.Message;
+                await _repo.UpdateRunAsync(run, ct);
+                await _timeline.AppendAsync(run.Id, "failed", run.CurrentStepId, ex.Message, ct: ct);
             }
         }
     }
 
+    public Task<WorkflowRunStatusDto?> GetRunAsync(Guid runId, CancellationToken ct = default)
+        => _repo.GetRunStatusAsync(runId, ct);
+
+    public Task<IReadOnlyList<WorkflowTimelineEventDto>> GetTimelineAsync(Guid runId, CancellationToken ct = default)
+        => _timeline.GetTimelineAsync(runId, ct);
+
+    public async Task<bool> CancelAsync(Guid runId, CancellationToken ct = default)
+    {
+        var run = await _repo.GetRunAsync(runId, ct);
+        if (run is null) return false;
+        if (run.Status is "completed" or "failed" or "cancelled") return false;
+        run.Status = "cancelled";
+        await _repo.UpdateRunAsync(run, ct);
+        await _timeline.AppendAsync(runId, "cancelled", run.CurrentStepId, "Cancelled by API", ct: ct);
+        return true;
+    }
+
     private async Task AdvanceAsync(WorkflowRunEntity run, CancellationToken ct)
     {
-        var def = await GetAsync(run.WorkflowKey, run.TenantId, ct);
+        var def = await _repo.GetDefinitionAsync(run.WorkflowKey, run.TenantId, ct);
         if (def is null)
         {
             run.Status = "failed";
-            await _db.SaveChangesAsync(ct);
+            run.LastError = "Workflow definition missing";
+            await _repo.UpdateRunAsync(run, ct);
+            await _timeline.AppendAsync(run.Id, "failed", null, run.LastError, ct: ct);
             return;
         }
 
@@ -122,90 +127,50 @@ public sealed class WorkflowEngine : IWorkflowEngine
         if (step is null)
         {
             run.Status = "completed";
-            run.UpdatedAt = DateTimeOffset.UtcNow;
-            await _db.SaveChangesAsync(ct);
+            await _repo.UpdateRunAsync(run, ct);
+            await _timeline.AppendAsync(run.Id, "completed", null, "No more steps", ct: ct);
             return;
         }
 
-        var data = JsonSerializer.Deserialize<Dictionary<string, object?>>(run.DataJson) ?? new();
-
-        switch (step.Type.ToLowerInvariant())
+        if (!_handlers.TryGetValue(step.Type, out var handler))
         {
-            case "delay":
-                run.ContinueAt = DateTimeOffset.UtcNow.AddSeconds(step.DelaySeconds ?? 0);
-                run.CurrentStepId = step.Next ?? NextSequential(def, step.Id);
-                run.UpdatedAt = DateTimeOffset.UtcNow;
-                await _db.SaveChangesAsync(ct);
-                break;
-
-            case "condition":
-            case "branch":
-                var ok = EvaluateCondition(step.ConditionExpression, data);
-                run.CurrentStepId = ok ? step.NextOnTrue : step.NextOnFalse;
-                if (string.IsNullOrEmpty(run.CurrentStepId))
-                    run.Status = "completed";
-                run.ContinueAt = DateTimeOffset.UtcNow;
-                run.UpdatedAt = DateTimeOffset.UtcNow;
-                await _db.SaveChangesAsync(ct);
-                break;
-
-            case "send":
-                using (var scope = _scopeFactory.CreateScope())
-                {
-                    var orchestrator = scope.ServiceProvider.GetRequiredService<NotificationOrchestrator>();
-                    var queue = scope.ServiceProvider.GetRequiredService<INotificationQueue>();
-                    var request = new NotificationRequest
-                    {
-                        Recipient = run.Recipient,
-                        Channel = step.Channel ?? "email",
-                        TemplateKey = step.TemplateKey ?? "welcome",
-                        TenantId = run.TenantId,
-                        PreferredProvider = step.PreferredProvider,
-                        Data = data,
-                        CorrelationId = run.Id.ToString()
-                    };
-                    var (accepted, status) = await orchestrator.AcceptAsync(request, ct);
-                    if (accepted && status.Status == DeliveryStatus.Queued)
-                        await queue.EnqueueAsync(request, ct);
-                }
-                run.CurrentStepId = step.Next ?? NextSequential(def, step.Id);
-                if (string.IsNullOrEmpty(run.CurrentStepId))
-                    run.Status = "completed";
-                run.ContinueAt = DateTimeOffset.UtcNow;
-                run.UpdatedAt = DateTimeOffset.UtcNow;
-                await _db.SaveChangesAsync(ct);
-                break;
-
-            default:
-                run.Status = "failed";
-                run.UpdatedAt = DateTimeOffset.UtcNow;
-                await _db.SaveChangesAsync(ct);
-                break;
+            run.Status = "failed";
+            run.LastError = $"Unknown step type '{step.Type}'";
+            await _repo.UpdateRunAsync(run, ct);
+            await _timeline.AppendAsync(run.Id, "failed", step.Id, run.LastError, ct: ct);
+            return;
         }
-    }
 
-    private static string? NextSequential(WorkflowDefinition def, string currentId)
-    {
-        var idx = def.Steps.FindIndex(s => s.Id == currentId);
-        if (idx < 0 || idx + 1 >= def.Steps.Count) return null;
-        return def.Steps[idx + 1].Id;
-    }
+        await _timeline.AppendAsync(run.Id, "step_entered", step.Id, $"Entering {step.Type}", ct: ct);
+        var result = await handler.ExecuteAsync(step, run, def, ct);
 
-    private static bool EvaluateCondition(string? expression, Dictionary<string, object?> data)
-    {
-        if (string.IsNullOrWhiteSpace(expression)) return true;
-        // simple: key == value | key != value
-        var parts = expression.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length != 3) return false;
-        data.TryGetValue(parts[0], out var raw);
-        var left = raw?.ToString() ?? "";
-        var right = parts[2].Trim('"');
-        return parts[1] switch
+        if (result.EventType is not null)
+            await _timeline.AppendAsync(run.Id, result.EventType, step.Id, result.EventMessage, result.EventData, ct);
+
+        if (result.Failed)
         {
-            "==" => string.Equals(left, right, StringComparison.OrdinalIgnoreCase),
-            "!=" => !string.Equals(left, right, StringComparison.OrdinalIgnoreCase),
-            _ => false
-        };
+            run.Status = "failed";
+            run.LastError = result.Error;
+            await _repo.UpdateRunAsync(run, ct);
+            await _timeline.AppendAsync(run.Id, "failed", step.Id, result.Error, ct: ct);
+            return;
+        }
+
+        await _timeline.AppendAsync(run.Id, "step_completed", step.Id, $"Completed {step.Type}", ct: ct);
+
+        run.CurrentStepId = result.NextStepId;
+        run.ContinueAt = result.ContinueAt ?? DateTimeOffset.UtcNow;
+
+        if (result.Completed || string.IsNullOrEmpty(result.NextStepId))
+        {
+            run.Status = "completed";
+            run.CurrentStepId = null;
+            await _repo.UpdateRunAsync(run, ct);
+            await _timeline.AppendAsync(run.Id, "completed", step.Id, "Workflow completed", ct: ct);
+            return;
+        }
+
+        await _repo.UpdateRunAsync(run, ct);
     }
 }
 

@@ -17,6 +17,7 @@ using NotificationHub.Core.Store;
 using NotificationHub.Core.Templates;
 using NotificationHub.Core.Webhooks;
 using NotificationHub.Core.Workflow;
+using NotificationHub.Core.Workflow.Handlers;
 using NotificationHub.Host.Middleware;
 using NotificationHub.Plugins.Chat.Slack;
 using NotificationHub.Plugins.Chat.WhatsApp;
@@ -55,6 +56,12 @@ builder.Services.AddScoped<INotificationStatusStore, PostgresNotificationStatusS
 builder.Services.AddScoped<IPreferenceService, PreferenceService>();
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IWebhookDispatcher, WebhookDispatcher>();
+builder.Services.AddScoped<IWorkflowRunRepository, WorkflowRunRepository>();
+builder.Services.AddScoped<IWorkflowTimeline, WorkflowTimeline>();
+builder.Services.AddScoped<IWorkflowStepHandler, DelayStepHandler>();
+builder.Services.AddScoped<IWorkflowStepHandler, ConditionStepHandler>();
+builder.Services.AddScoped<IWorkflowStepHandler, BranchStepHandler>();
+builder.Services.AddScoped<IWorkflowStepHandler, SendStepHandler>();
 builder.Services.AddScoped<IWorkflowEngine, WorkflowEngine>();
 builder.Services.AddScoped<ISegmentService, SegmentService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
@@ -192,6 +199,28 @@ app.MapGet("/api/v1/workflows/{key}", async (string key, string? tenantId, IWork
 
 app.MapPost("/api/v1/workflows/start", async (WorkflowStartRequest request, IWorkflowEngine engine, CancellationToken ct) =>
 { var id = await engine.StartAsync(request, ct); return Results.Accepted($"/api/v1/workflows/runs/{id}", new { runId = id }); }).WithName("StartWorkflow").WithOpenApi();
+
+app.MapGet("/api/v1/workflows/runs/{runId:guid}", async (Guid runId, IWorkflowEngine engine, CancellationToken ct) =>
+{
+    var run = await engine.GetRunAsync(runId, ct);
+    return run is null ? Results.NotFound() : Results.Ok(run);
+}).WithName("GetWorkflowRun").WithOpenApi();
+
+app.MapGet("/api/v1/workflows/runs/{runId:guid}/timeline", async (Guid runId, IWorkflowEngine engine, CancellationToken ct) =>
+{
+    var run = await engine.GetRunAsync(runId, ct);
+    if (run is null) return Results.NotFound();
+    var timeline = await engine.GetTimelineAsync(runId, ct);
+    return Results.Ok(timeline);
+}).WithName("GetWorkflowTimeline").WithOpenApi();
+
+app.MapPost("/api/v1/workflows/runs/{runId:guid}/cancel", async (Guid runId, IWorkflowEngine engine, CancellationToken ct) =>
+{
+    var ok = await engine.CancelAsync(runId, ct);
+    return ok ? Results.NoContent() : Results.NotFound();
+}).WithName("CancelWorkflowRun").WithOpenApi();
+
+
 
 app.MapPost("/api/v1/segments", async (SegmentDefinition seg, ISegmentService segments, CancellationToken ct) =>
     Results.Created($"/api/v1/segments/{seg.Key}", await segments.SaveAsync(seg, ct))).WithName("SaveSegment").WithOpenApi();
