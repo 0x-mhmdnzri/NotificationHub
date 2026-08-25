@@ -81,3 +81,11 @@ MIT
 - [ADR 0002: PostgreSQL + PgBouncer](docs/ADR-002-PostgreSQL-PgBouncer-Persistence.md)
 - [ADR 0003: RabbitMQ Queue](docs/ADR-003-RabbitMQ-Queue.md)
 - [ADR 0004: Regional SMS Providers](docs/ADR-004-Regional-SMS-Providers.md)
+
+## Running tests
+
+```bash
+dotnet test
+```
+
+Test case catalog: `tests/test-cases/core-test-cases.md`

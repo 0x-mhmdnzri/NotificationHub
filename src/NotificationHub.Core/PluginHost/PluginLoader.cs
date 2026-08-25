@@ -17,6 +17,15 @@ public sealed class PluginLoader
 
     public IReadOnlyList<IPlugin> LoadedPlugins => _loadedPlugins.AsReadOnly();
 
+    public void Register(IPlugin plugin)
+    {
+        ArgumentNullException.ThrowIfNull(plugin);
+        if (_loadedPlugins.Any(p => p.Id == plugin.Id))
+            return;
+        _loadedPlugins.Add(plugin);
+        _logger.LogInformation("Registered plugin {PluginId} v{Version} ({Name})", plugin.Id, plugin.Version, plugin.Name);
+    }
+
     public async Task LoadFromDirectoryAsync(string directory, IPluginContext context, CancellationToken ct = default)
     {
         if (!Directory.Exists(directory))
@@ -30,22 +39,9 @@ public sealed class PluginLoader
             try
             {
                 var loadContext = new AssemblyLoadContext($"Plugin_{Path.GetFileNameWithoutExtension(dll)}", isCollectible: true);
-                using var stream = File.OpenRead(dll);
+                await using var stream = File.OpenRead(dll);
                 var assembly = loadContext.LoadFromStream(stream);
-
-                var pluginTypes = assembly.GetTypes()
-                    .Where(t => typeof(IPlugin).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
-
-                foreach (var type in pluginTypes)
-                {
-                    if (Activator.CreateInstance(type) is IPlugin plugin)
-                    {
-                        await plugin.InitializeAsync(context, ct);
-                        await plugin.StartAsync(ct);
-                        _loadedPlugins.Add(plugin);
-                        _logger.LogInformation("Loaded plugin {PluginId} v{Version} ({Name})", plugin.Id, plugin.Version, plugin.Name);
-                    }
-                }
+                await RegisterFromAssemblyAsync(assembly, context, ct);
             }
             catch (Exception ex)
             {
@@ -57,20 +53,22 @@ public sealed class PluginLoader
     public async Task LoadFromAssembliesAsync(IEnumerable<Assembly> assemblies, IPluginContext context, CancellationToken ct = default)
     {
         foreach (var assembly in assemblies)
-        {
-            var pluginTypes = assembly.GetTypes()
-                .Where(t => typeof(IPlugin).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
+            await RegisterFromAssemblyAsync(assembly, context, ct);
+    }
 
-            foreach (var type in pluginTypes)
-            {
-                if (Activator.CreateInstance(type) is IPlugin plugin)
-                {
-                    await plugin.InitializeAsync(context, ct);
-                    await plugin.StartAsync(ct);
-                    _loadedPlugins.Add(plugin);
-                    _logger.LogInformation("Loaded plugin {PluginId} v{Version} ({Name})", plugin.Id, plugin.Version, plugin.Name);
-                }
-            }
+    private async Task RegisterFromAssemblyAsync(Assembly assembly, IPluginContext context, CancellationToken ct)
+    {
+        var pluginTypes = assembly.GetTypes()
+            .Where(t => typeof(IPlugin).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
+
+        foreach (var type in pluginTypes)
+        {
+            if (Activator.CreateInstance(type) is not IPlugin plugin)
+                continue;
+
+            await plugin.InitializeAsync(context, ct);
+            await plugin.StartAsync(ct);
+            Register(plugin);
         }
     }
 }
