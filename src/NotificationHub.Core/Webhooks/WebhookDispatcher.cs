@@ -29,6 +29,12 @@ public sealed class WebhookDispatcher : IWebhookDispatcher
 
         foreach (var sub in subs)
         {
+            if (!WebhookUrlValidator.IsSafe(sub.Url, out var urlError))
+            {
+                _logger.LogWarning("Skipping webhook {Id}: unsafe URL ({Error})", sub.Id, urlError);
+                continue;
+            }
+
             var events = JsonSerializer.Deserialize<string[]>(sub.EventsJson) ?? [];
             if (events.Length > 0 && !events.Contains(eventName, StringComparer.OrdinalIgnoreCase))
                 continue;

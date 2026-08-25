@@ -1,4 +1,5 @@
 using NotificationHub.Abstractions.Models;
+using NotificationHub.Core.RateLimiting;
 using NotificationHub.Core.Security;
 
 namespace NotificationHub.Host.Middleware;
@@ -17,12 +18,24 @@ public sealed class ApiKeyAuthMiddleware
         _logger = logger;
     }
 
-    public async Task InvokeAsync(HttpContext context, IApiKeyValidator validator)
+    public async Task InvokeAsync(HttpContext context, IApiKeyValidator validator, IRateLimiter rateLimiter, IConfiguration config)
     {
         var path = context.Request.Path.Value ?? "";
         if (path.StartsWith("/health") || path.StartsWith("/swagger") || path.StartsWith("/openapi") || path.StartsWith("/t/"))
         {
             await _next(context);
+            return;
+        }
+
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        var authFailLimit = config.GetValue("RateLimiting:AuthFailuresPerMinute", 30);
+
+        // SEC-02: throttle auth attempts per IP before and after validation
+        if (!await rateLimiter.IsAllowedAsync($"auth:ip:{ip}", authFailLimit, context.RequestAborted))
+        {
+            _logger.LogWarning("Auth rate limit exceeded for {IP}", ip);
+            context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+            await context.Response.WriteAsJsonAsync(new { error = "Too many authentication attempts" });
             return;
         }
 
@@ -37,7 +50,7 @@ public sealed class ApiKeyAuthMiddleware
         var auth = await validator.ValidateAsync(providedKey.ToString(), context.RequestAborted);
         if (auth is null)
         {
-            _logger.LogWarning("Unauthorized request from {IP}", context.Connection.RemoteIpAddress);
+            _logger.LogWarning("Unauthorized request from {IP}", ip);
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             await context.Response.WriteAsJsonAsync(new { error = "Invalid or expired API key" });
             return;
@@ -72,5 +85,16 @@ public static class AuthContextExtensions
         if (auth is null) return requestedTenantId;
         if (auth.IsAdmin) return requestedTenantId ?? auth.TenantId;
         return auth.TenantId;
+    }
+
+    /// <summary>True if the auth context may access the given resource tenant.</summary>
+    public static bool CanAccessTenant(this HttpContext http, string? resourceTenantId)
+    {
+        var auth = http.GetAuthContext();
+        if (auth is null) return false;
+        if (auth.IsAdmin) return true;
+        if (string.IsNullOrEmpty(auth.TenantId))
+            return string.IsNullOrEmpty(resourceTenantId);
+        return string.Equals(auth.TenantId, resourceTenantId, StringComparison.Ordinal);
     }
 }
