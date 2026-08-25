@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using NotificationHub.Abstractions.Models;
+using NotificationHub.Core.Engagement;
 using NotificationHub.Core.Persistence;
 
 namespace NotificationHub.Core.Analytics;
@@ -19,11 +20,13 @@ public sealed class CostOptions
 public sealed class AnalyticsService : IAnalyticsService
 {
     private readonly NotificationDbContext _db;
+    private readonly IEngagementService _engagement;
     private readonly CostOptions _costs;
 
-    public AnalyticsService(NotificationDbContext db, IOptions<CostOptions> costs)
+    public AnalyticsService(NotificationDbContext db, IEngagementService engagement, IOptions<CostOptions> costs)
     {
         _db = db;
+        _engagement = engagement;
         _costs = costs.Value;
     }
 
@@ -49,6 +52,8 @@ public sealed class AnalyticsService : IAnalyticsService
             else if (item.ProviderId is not null && costMap.TryGetValue(item.ProviderId, out var c)) estimated += c;
         }
 
+        var (opens, clicks) = await _engagement.CountAsync(from, to, tenantId, ct);
+
         return new AnalyticsSummary
         {
             Total = total,
@@ -62,7 +67,11 @@ public sealed class AnalyticsService : IAnalyticsService
             FailureRate = total == 0 ? 0 : Math.Round((double)failed / total, 4),
             ByChannel = items.GroupBy(x => x.Channel).ToDictionary(g => g.Key, g => (long)g.Count()),
             ByProvider = items.Where(x => x.ProviderId != null).GroupBy(x => x.ProviderId!).ToDictionary(g => g.Key, g => (long)g.Count()),
-            EstimatedCost = estimated
+            EstimatedCost = estimated,
+            OpenCount = opens,
+            ClickCount = clicks,
+            OpenRate = sent == 0 ? 0 : Math.Round((double)opens / sent, 4),
+            ClickRate = sent == 0 ? 0 : Math.Round((double)clicks / sent, 4)
         };
     }
 }

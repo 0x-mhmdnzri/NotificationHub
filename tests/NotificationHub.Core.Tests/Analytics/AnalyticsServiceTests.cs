@@ -1,7 +1,9 @@
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Analytics;
+using NotificationHub.Core.Engagement;
 using NotificationHub.Core.Store;
 using NotificationHub.Core.Tests.Helpers;
 
@@ -17,7 +19,8 @@ public class AnalyticsServiceTests
         await store.SaveAsync(new NotificationStatus { NotificationId = Guid.NewGuid(), Channel = "sms", Recipient = "1", Status = DeliveryStatus.Sent, ProviderId = "sms-kavenegar" });
         await store.SaveAsync(new NotificationStatus { NotificationId = Guid.NewGuid(), Channel = "sms", Recipient = "2", Status = DeliveryStatus.Failed, ProviderId = "sms-kavenegar" });
 
-        var sut = new AnalyticsService(db, Options.Create(new CostOptions
+        var engagement = new EngagementService(db, new PostgresNotificationStatusStore(db), NullLogger<EngagementService>.Instance);
+        var sut = new AnalyticsService(db, engagement, Options.Create(new CostOptions
         {
             Providers = [new ProviderCostConfig { ProviderId = "sms-kavenegar", CostPerMessage = 200 }]
         }));

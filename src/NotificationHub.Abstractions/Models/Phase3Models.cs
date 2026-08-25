@@ -64,6 +64,10 @@ public sealed record AnalyticsSummary
     public Dictionary<string, long> ByChannel { get; init; } = new();
     public Dictionary<string, long> ByProvider { get; init; } = new();
     public decimal EstimatedCost { get; init; }
+    public long OpenCount { get; init; }
+    public long ClickCount { get; init; }
+    public double OpenRate { get; init; }
+    public double ClickRate { get; init; }
 }
 
 public sealed record ProviderCostConfig

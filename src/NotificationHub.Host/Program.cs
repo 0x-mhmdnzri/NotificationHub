@@ -5,6 +5,7 @@ using NotificationHub.Abstractions.Plugins;
 using NotificationHub.Core.Analytics;
 using NotificationHub.Core.Audit;
 using NotificationHub.Core.Compliance;
+using NotificationHub.Core.Engagement;
 using NotificationHub.Core.Orchestration;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.PluginHost;
@@ -72,6 +73,7 @@ builder.Services.AddScoped<IWorkflowStepHandler, BranchStepHandler>();
 builder.Services.AddScoped<IWorkflowStepHandler, SendStepHandler>();
 builder.Services.AddScoped<IWorkflowEngine, WorkflowEngine>();
 builder.Services.AddScoped<ISegmentService, SegmentService>();
+builder.Services.AddScoped<IEngagementService, EngagementService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddScoped<IConsentService, ConsentService>();
 builder.Services.AddScoped<IComplianceService, ComplianceService>();
@@ -247,6 +249,69 @@ app.MapPost("/api/v1/segments", async (SegmentDefinition seg, ISegmentService se
 
 app.MapPost("/api/v1/segments/{key}/match", async (string key, Dictionary<string, object?> attributes, string? tenantId, ISegmentService segments, CancellationToken ct) =>
     Results.Ok(new { matched = await segments.MatchesAsync(key, attributes, tenantId, ct) })).WithName("MatchSegment").WithOpenApi();
+
+
+// Engagement ingest (authenticated)
+app.MapPost("/api/v1/engagements", async (EngagementIngestRequest request, HttpContext http, IEngagementService engagement, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tenantId = http.ResolveTenantId(request.TenantId);
+    var evt = await engagement.TrackAsync(new EngagementEvent
+    {
+        NotificationId = request.NotificationId,
+        TenantId = tenantId,
+        EventType = request.EventType,
+        Recipient = request.Recipient,
+        Channel = request.Channel ?? "email",
+        Url = request.Url,
+        ProviderId = request.ProviderId,
+        UserAgent = http.Request.Headers.UserAgent.ToString(),
+        IpAddress = http.Connection.RemoteIpAddress?.ToString(),
+        MetadataJson = request.Metadata is null ? null : System.Text.Json.JsonSerializer.Serialize(request.Metadata)
+    }, ct);
+    return Results.Accepted($"/api/v1/notifications/{request.NotificationId}/engagements", evt);
+}).WithName("TrackEngagement").WithOpenApi();
+
+app.MapGet("/api/v1/notifications/{id:guid}/engagements", async (Guid id, HttpContext http, IEngagementService engagement, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader) is { } denied) return denied;
+    return Results.Ok(await engagement.ListByNotificationAsync(id, ct));
+}).WithName("ListEngagements").WithOpenApi();
+
+// Public tracking endpoints (no API key) — open pixel + click redirect
+app.MapGet("/t/o/{notificationId:guid}", async (Guid notificationId, HttpContext http, IEngagementService engagement, CancellationToken ct) =>
+{
+    await engagement.TrackAsync(new EngagementEvent
+    {
+        NotificationId = notificationId,
+        EventType = EngagementEventTypes.Open,
+        Channel = "email",
+        UserAgent = http.Request.Headers.UserAgent.ToString(),
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    }, ct);
+
+    // 1x1 transparent GIF
+    var gif = Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7");
+    return Results.File(gif, "image/gif");
+}).WithName("TrackOpenPixel").ExcludeFromDescription();
+
+app.MapGet("/t/c/{notificationId:guid}", async (Guid notificationId, string url, HttpContext http, IEngagementService engagement, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var target))
+        return Results.BadRequest(new { error = "Valid absolute url query parameter required" });
+
+    await engagement.TrackAsync(new EngagementEvent
+    {
+        NotificationId = notificationId,
+        EventType = EngagementEventTypes.Click,
+        Channel = "email",
+        Url = url,
+        UserAgent = http.Request.Headers.UserAgent.ToString(),
+        IpAddress = http.Connection.RemoteIpAddress?.ToString()
+    }, ct);
+
+    return Results.Redirect(target.ToString());
+}).WithName("TrackClickRedirect").ExcludeFromDescription();
 
 app.MapGet("/api/v1/analytics/summary", async (DateTimeOffset? from, DateTimeOffset? to, string? tenantId, IAnalyticsService analytics, CancellationToken ct) =>
     Results.Ok(await analytics.GetSummaryAsync(from, to, tenantId, ct))).WithName("AnalyticsSummary").WithOpenApi();

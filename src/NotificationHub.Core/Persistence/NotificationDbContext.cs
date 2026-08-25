@@ -176,6 +176,23 @@ public sealed class ConsentLedgerEntity
     public DateTimeOffset OccurredAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+
+public sealed class EngagementEventEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid? NotificationId { get; set; }
+    public string? TenantId { get; set; }
+    public string EventType { get; set; } = "";
+    public string? Recipient { get; set; }
+    public string? Channel { get; set; }
+    public string? Url { get; set; }
+    public string? UserAgent { get; set; }
+    public string? IpAddress { get; set; }
+    public string? ProviderId { get; set; }
+    public string? MetadataJson { get; set; }
+    public DateTimeOffset OccurredAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class NotificationDbContext : DbContext
 {
     public NotificationDbContext(DbContextOptions<NotificationDbContext> options) : base(options) { }
@@ -192,6 +209,7 @@ public sealed class NotificationDbContext : DbContext
     public DbSet<TemplateEntity> Templates => Set<TemplateEntity>();
     public DbSet<ApiKeyEntity> ApiKeys => Set<ApiKeyEntity>();
     public DbSet<ConsentLedgerEntity> ConsentLedger => Set<ConsentLedgerEntity>();
+    public DbSet<EngagementEventEntity> EngagementEvents => Set<EngagementEventEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -311,5 +329,21 @@ public sealed class NotificationDbContext : DbContext
         cl.Property(x => x.Evidence).HasMaxLength(2000);
         cl.HasIndex(x => new { x.TenantId, x.SubjectId, x.Purpose, x.Channel, x.OccurredAt });
         cl.HasIndex(x => x.OccurredAt);
+
+        var ee = modelBuilder.Entity<EngagementEventEntity>();
+        ee.ToTable("engagement_events");
+        ee.HasKey(x => x.Id);
+        ee.Property(x => x.EventType).HasMaxLength(32).IsRequired();
+        ee.Property(x => x.TenantId).HasMaxLength(128);
+        ee.Property(x => x.Recipient).HasMaxLength(512);
+        ee.Property(x => x.Channel).HasMaxLength(64);
+        ee.Property(x => x.Url).HasMaxLength(2048);
+        ee.Property(x => x.UserAgent).HasMaxLength(512);
+        ee.Property(x => x.IpAddress).HasMaxLength(64);
+        ee.Property(x => x.ProviderId).HasMaxLength(64);
+        ee.HasIndex(x => x.NotificationId);
+        ee.HasIndex(x => x.EventType);
+        ee.HasIndex(x => x.OccurredAt);
+        ee.HasIndex(x => new { x.TenantId, x.OccurredAt });
     }
 }
