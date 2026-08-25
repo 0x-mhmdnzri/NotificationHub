@@ -89,3 +89,23 @@ dotnet test
 ```
 
 Test case catalog: `tests/test-cases/core-test-cases.md`
+
+
+## Phase 3 (Advanced)
+
+- Workflow engine: `send` / `delay` / `condition` / `branch`
+- Channels: email, sms, inapp, slack, whatsapp, push
+- Segmentation rules + match API
+- Analytics summary (rates + estimated cost)
+- Compliance export/delete (GDPR helpers)
+- Admin monitoring/providers endpoints
+
+```http
+POST /api/v1/workflows
+POST /api/v1/workflows/start
+POST /api/v1/segments
+GET  /api/v1/analytics/summary
+GET  /api/v1/compliance/export/{userId}
+DELETE /api/v1/compliance/users/{userId}
+GET  /api/v1/admin/monitoring
+```

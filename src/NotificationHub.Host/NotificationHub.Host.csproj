@@ -22,6 +22,10 @@
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Email.Smtp\NotificationHub.Plugins.Email.Smtp.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Sms.Kavenegar\NotificationHub.Plugins.Sms.Kavenegar.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Sms.SmsIr\NotificationHub.Plugins.Sms.SmsIr.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.InApp\NotificationHub.Plugins.InApp.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Chat.Slack\NotificationHub.Plugins.Chat.Slack.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Chat.WhatsApp\NotificationHub.Plugins.Chat.WhatsApp.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Push.Fcm\NotificationHub.Plugins.Push.Fcm.csproj" />
   </ItemGroup>
 
 </Project>

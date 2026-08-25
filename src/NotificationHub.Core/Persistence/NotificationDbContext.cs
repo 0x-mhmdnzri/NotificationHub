@@ -22,6 +22,7 @@ public sealed class NotificationStatusEntity
     public string? CorrelationId { get; set; }
     public string? Category { get; set; }
     public string? PayloadJson { get; set; }
+    public decimal? Cost { get; set; }
 
     public NotificationStatus ToModel() => new()
     {
@@ -70,6 +71,52 @@ public sealed class WebhookSubscriptionEntity
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class WorkflowDefinitionEntity
+{
+    public Guid Id { get; set; }
+    public string Key { get; set; } = "";
+    public string? TenantId { get; set; }
+    public bool IsActive { get; set; } = true;
+    public string StepsJson { get; set; } = "[]";
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class WorkflowRunEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid WorkflowId { get; set; }
+    public string WorkflowKey { get; set; } = "";
+    public string Recipient { get; set; } = "";
+    public string? TenantId { get; set; }
+    public string Status { get; set; } = "running"; // running | completed | failed | cancelled
+    public string? CurrentStepId { get; set; }
+    public string DataJson { get; set; } = "{}";
+    public DateTimeOffset? ContinueAt { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class SegmentDefinitionEntity
+{
+    public Guid Id { get; set; }
+    public string Key { get; set; } = "";
+    public string? TenantId { get; set; }
+    public bool MatchAll { get; set; } = true;
+    public string RulesJson { get; set; } = "[]";
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+public sealed class InAppMessageEntity
+{
+    public Guid Id { get; set; }
+    public string UserId { get; set; } = "";
+    public string? TenantId { get; set; }
+    public string Title { get; set; } = "";
+    public string Body { get; set; } = "";
+    public bool IsRead { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class NotificationDbContext : DbContext
 {
     public NotificationDbContext(DbContextOptions<NotificationDbContext> options) : base(options) { }
@@ -78,6 +125,10 @@ public sealed class NotificationDbContext : DbContext
     public DbSet<UserPreferenceEntity> UserPreferences => Set<UserPreferenceEntity>();
     public DbSet<AuditEntryEntity> AuditEntries => Set<AuditEntryEntity>();
     public DbSet<WebhookSubscriptionEntity> WebhookSubscriptions => Set<WebhookSubscriptionEntity>();
+    public DbSet<WorkflowDefinitionEntity> Workflows => Set<WorkflowDefinitionEntity>();
+    public DbSet<WorkflowRunEntity> WorkflowRuns => Set<WorkflowRunEntity>();
+    public DbSet<SegmentDefinitionEntity> Segments => Set<SegmentDefinitionEntity>();
+    public DbSet<InAppMessageEntity> InAppMessages => Set<InAppMessageEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -95,11 +146,13 @@ public sealed class NotificationDbContext : DbContext
         n.Property(x => x.IdempotencyKey).HasMaxLength(256);
         n.Property(x => x.CorrelationId).HasMaxLength(128);
         n.Property(x => x.Category).HasMaxLength(128);
+        n.Property(x => x.Cost).HasPrecision(18, 6);
         n.HasIndex(x => x.IdempotencyKey);
         n.HasIndex(x => new { x.TenantId, x.IdempotencyKey }).IsUnique().HasFilter("\"IdempotencyKey\" IS NOT NULL");
         n.HasIndex(x => x.Status);
         n.HasIndex(x => x.ScheduledAt);
         n.HasIndex(x => x.CreatedAt);
+        n.HasIndex(x => x.ProviderId);
 
         var p = modelBuilder.Entity<UserPreferenceEntity>();
         p.ToTable("user_preferences");
@@ -120,5 +173,34 @@ public sealed class NotificationDbContext : DbContext
         w.HasKey(x => x.Id);
         w.Property(x => x.Url).HasMaxLength(2048).IsRequired();
         w.HasIndex(x => x.TenantId);
+
+        var wf = modelBuilder.Entity<WorkflowDefinitionEntity>();
+        wf.ToTable("workflows");
+        wf.HasKey(x => x.Id);
+        wf.Property(x => x.Key).HasMaxLength(128).IsRequired();
+        wf.HasIndex(x => new { x.TenantId, x.Key }).IsUnique();
+
+        var wr = modelBuilder.Entity<WorkflowRunEntity>();
+        wr.ToTable("workflow_runs");
+        wr.HasKey(x => x.Id);
+        wr.Property(x => x.WorkflowKey).HasMaxLength(128);
+        wr.Property(x => x.Recipient).HasMaxLength(512);
+        wr.Property(x => x.Status).HasMaxLength(32);
+        wr.HasIndex(x => x.Status);
+        wr.HasIndex(x => x.ContinueAt);
+
+        var s = modelBuilder.Entity<SegmentDefinitionEntity>();
+        s.ToTable("segments");
+        s.HasKey(x => x.Id);
+        s.Property(x => x.Key).HasMaxLength(128).IsRequired();
+        s.HasIndex(x => new { x.TenantId, x.Key }).IsUnique();
+
+        var i = modelBuilder.Entity<InAppMessageEntity>();
+        i.ToTable("in_app_messages");
+        i.HasKey(x => x.Id);
+        i.Property(x => x.UserId).HasMaxLength(256).IsRequired();
+        i.Property(x => x.Title).HasMaxLength(512);
+        i.HasIndex(x => new { x.UserId, x.IsRead });
+        i.HasIndex(x => x.CreatedAt);
     }
 }
