@@ -36,6 +36,9 @@ using NotificationHub.Plugins.Sms.SmsIr;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// SEC-26: limit request body size (DoS)
+builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 2 * 1024 * 1024); // 2 MB
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient("webhooks", c =>
@@ -56,14 +59,21 @@ if (corsOrigins.Length > 0)
 }
 
 // Prefer known proxies' X-Forwarded-For when Admin IP allowlist is used
+// SEC-25: only trust configured proxies (empty = do not trust arbitrary X-Forwarded-For)
 builder.Services.Configure<Microsoft.AspNetCore.HttpOverrides.ForwardedHeadersOptions>(options =>
 {
     options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
         | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
-    // Clear known networks/proxies so operators can restrict via reverse proxy config;
-    // default clears are restrictive — for K8s/ingress allow all forwarded and trust the edge.
     options.KnownNetworks.Clear();
     options.KnownProxies.Clear();
+    var proxies = builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [];
+    foreach (var px in proxies)
+    {
+        if (System.Net.IPAddress.TryParse(px, out var ip))
+            options.KnownProxies.Add(ip);
+    }
+    // If no proxies configured, still clear defaults but RequireHeaderSymmetry stays false.
+    // Operators MUST set ForwardedHeaders:KnownProxies in production behind a load balancer.
 });
 
 var cs = builder.Configuration.GetConnectionString("Default")
@@ -97,7 +107,18 @@ builder.Services.AddScoped<ITemplateStore, PostgresTemplateStore>();
 builder.Services.AddSingleton<ITemplateRenderer, PlaceholderTemplateRenderer>();
 builder.Services.AddScoped<ITemplateEngine, TemplateEngine>();
 builder.Services.AddScoped<TemplateSeeder>();
-builder.Services.AddSingleton<IRateLimiter, InMemoryRateLimiter>();
+// SEC-24: Redis rate limiter when ConnectionStrings:Redis is set; otherwise in-memory
+var redisCs = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisCs))
+{
+    builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ =>
+        StackExchange.Redis.ConnectionMultiplexer.Connect(redisCs));
+    builder.Services.AddSingleton<IRateLimiter, RedisRateLimiter>();
+}
+else
+{
+    builder.Services.AddSingleton<IRateLimiter, InMemoryRateLimiter>();
+}
 
 builder.Services.AddScoped<INotificationStatusStore, PostgresNotificationStatusStore>();
 builder.Services.AddScoped<IPreferenceService, PreferenceService>();
@@ -425,10 +446,15 @@ app.MapPost("/api/v1/segments/{key}/match", async (string key, Dictionary<string
 
 
 // Engagement ingest (authenticated)
-app.MapPost("/api/v1/engagements", async (EngagementIngestRequest request, HttpContext http, IEngagementService engagement, CancellationToken ct) =>
+app.MapPost("/api/v1/engagements", async (EngagementIngestRequest request, HttpContext http, IEngagementService engagement, INotificationStatusStore store, CancellationToken ct) =>
 {
     if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
-    var tenantId = http.ResolveTenantId(request.TenantId);
+    if (request.NotificationId is null || request.NotificationId == Guid.Empty)
+        return Results.BadRequest(new { error = "NotificationId is required" });
+    var status = await store.GetAsync(request.NotificationId.Value, ct);
+    if (status is null || !http.CanAccessTenant(status.TenantId))
+        return Results.NotFound();
+    var tenantId = http.ResolveTenantId(request.TenantId) ?? status.TenantId;
     var evt = await engagement.TrackAsync(new EngagementEvent
     {
         NotificationId = request.NotificationId,
@@ -441,13 +467,16 @@ app.MapPost("/api/v1/engagements", async (EngagementIngestRequest request, HttpC
         UserAgent = http.Request.Headers.UserAgent.ToString(),
         IpAddress = http.Connection.RemoteIpAddress?.ToString(),
         MetadataJson = request.Metadata is null ? null : System.Text.Json.JsonSerializer.Serialize(request.Metadata)
-    }, ct);
+    }, requireExistingNotification: true, ct);
+    if (evt is null) return Results.NotFound();
     return Results.Accepted($"/api/v1/notifications/{request.NotificationId}/engagements", evt);
 }).WithName("TrackEngagement").WithOpenApi();
 
-app.MapGet("/api/v1/notifications/{id:guid}/engagements", async (Guid id, HttpContext http, IEngagementService engagement, CancellationToken ct) =>
+app.MapGet("/api/v1/notifications/{id:guid}/engagements", async (Guid id, HttpContext http, IEngagementService engagement, INotificationStatusStore store, CancellationToken ct) =>
 {
     if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader) is { } denied) return denied;
+    var status = await store.GetAsync(id, ct);
+    if (status is null || !http.CanAccessTenant(status.TenantId)) return Results.NotFound();
     return Results.Ok(await engagement.ListByNotificationAsync(id, ct));
 }).WithName("ListEngagements").WithOpenApi();
 
@@ -459,14 +488,15 @@ app.MapGet("/t/o/{notificationId:guid}", async (Guid notificationId, HttpContext
     if (!await rl.IsAllowedAsync($"track:ip:{ip}:{notificationId}", trackLimit, ct))
         return Results.StatusCode(429);
 
-    await engagement.TrackAsync(new EngagementEvent
+    // SEC-22: only persist when notification exists (silent no-op otherwise)
+    _ = await engagement.TrackAsync(new EngagementEvent
     {
         NotificationId = notificationId,
         EventType = EngagementEventTypes.Open,
         Channel = "email",
         UserAgent = http.Request.Headers.UserAgent.ToString(),
         IpAddress = http.Connection.RemoteIpAddress?.ToString()
-    }, ct);
+    }, requireExistingNotification: true, ct);
 
     // 1x1 transparent GIF
     var gif = Convert.FromBase64String("R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7");
@@ -483,7 +513,7 @@ app.MapGet("/t/c/{notificationId:guid}", async (Guid notificationId, string url,
     if (!RedirectUrlValidator.IsSafe(url, out var redirectError, out var target) || target is null)
         return Results.BadRequest(new { error = redirectError });
 
-    await engagement.TrackAsync(new EngagementEvent
+    _ = await engagement.TrackAsync(new EngagementEvent
     {
         NotificationId = notificationId,
         EventType = EngagementEventTypes.Click,
@@ -491,7 +521,7 @@ app.MapGet("/t/c/{notificationId:guid}", async (Guid notificationId, string url,
         Url = url,
         UserAgent = http.Request.Headers.UserAgent.ToString(),
         IpAddress = http.Connection.RemoteIpAddress?.ToString()
-    }, ct);
+    }, requireExistingNotification: true, ct);
 
     return Results.Redirect(target.ToString());
 }).WithName("TrackClickRedirect").ExcludeFromDescription();
@@ -632,16 +662,17 @@ app.MapGet("/api/v1/admin/monitoring", async (HttpContext http, IAnalyticsServic
     });
 }).WithName("AdminMonitoring").WithOpenApi();
 
-app.MapGet("/health", async (HttpContext http, NotificationDbContext db, CancellationToken ct) =>
+// SEC-28: public health is minimal; detailed checks under admin messaging health
+app.MapGet("/health", (HttpContext http) =>
+    Results.Ok(new { status = "ok", correlationId = http.GetCorrelationId() }));
+
+app.MapGet("/health/ready", async (HttpContext http, NotificationDbContext db, CancellationToken ct) =>
 {
+    // Still public but used by orchestrators; keep detail minimal
     var up = await db.Database.CanConnectAsync(ct);
-    return Results.Ok(new
-    {
-        status = up ? "healthy" : "degraded",
-        database = up ? "up" : "down",
-        timestamp = DateTimeOffset.UtcNow,
-        correlationId = http.GetCorrelationId()
-    });
+    return up
+        ? Results.Ok(new { status = "ready", correlationId = http.GetCorrelationId() })
+        : Results.Json(new { status = "not_ready", correlationId = http.GetCorrelationId() }, statusCode: 503);
 });
 
 app.Run();

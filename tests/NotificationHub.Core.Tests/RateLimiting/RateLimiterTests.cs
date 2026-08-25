@@ -3,35 +3,36 @@ using NotificationHub.Core.RateLimiting;
 
 namespace NotificationHub.Core.Tests.RateLimiting;
 
+/// <summary>
+/// SEC-23 related behavior of fixed-window limiter (in-memory).
+/// Requirement: limit N requests per key per minute window.
+/// </summary>
 public class RateLimiterTests
 {
     [Fact]
-    public async Task TC_F_030_WithinLimit_Allows()
+    public async Task TC_F_RL_001_Allows_UpToLimit()
     {
-        var sut = new InMemoryRateLimiter();
-        var allowed = await sut.IsAllowedAsync("tenant:a:email", limitPerMinute: 3);
-        allowed.Should().BeTrue();
+        var rl = new InMemoryRateLimiter();
+        for (var i = 0; i < 5; i++)
+            (await rl.IsAllowedAsync("k", 5)).Should().BeTrue();
     }
 
     [Fact]
-    public async Task TC_E_030_ExceedsLimit_Blocks()
+    public async Task TC_E_RL_002_Blocks_OverLimit()
     {
-        var sut = new InMemoryRateLimiter();
-        await sut.IsAllowedAsync("tenant:b:sms", 2);
-        await sut.IsAllowedAsync("tenant:b:sms", 2);
-        var third = await sut.IsAllowedAsync("tenant:b:sms", 2);
-        third.Should().BeFalse();
+        var rl = new InMemoryRateLimiter();
+        for (var i = 0; i < 3; i++)
+            await rl.IsAllowedAsync("auth-fail:ip:1.2.3.4", 3);
+        (await rl.IsAllowedAsync("auth-fail:ip:1.2.3.4", 3)).Should().BeFalse();
     }
 
     [Fact]
-    public async Task TC_F_031_DifferentKeys_Independent()
+    public async Task TC_F_RL_003_DifferentKeys_Independent()
     {
-        var sut = new InMemoryRateLimiter();
-        await sut.IsAllowedAsync("k1", 1);
-        var blocked = await sut.IsAllowedAsync("k1", 1);
-        var other = await sut.IsAllowedAsync("k2", 1);
-
-        blocked.Should().BeFalse();
-        other.Should().BeTrue();
+        var rl = new InMemoryRateLimiter();
+        for (var i = 0; i < 2; i++)
+            await rl.IsAllowedAsync("a", 2);
+        (await rl.IsAllowedAsync("a", 2)).Should().BeFalse();
+        (await rl.IsAllowedAsync("b", 2)).Should().BeTrue();
     }
 }

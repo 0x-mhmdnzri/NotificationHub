@@ -26,7 +26,8 @@ public class EngagementServiceTests
             NotificationId = id, EventType = EngagementEventTypes.Open
         });
 
-        evt.EventType.Should().Be("open");
+        evt.Should().NotBeNull();
+        evt!.EventType.Should().Be("open");
         evt.Recipient.Should().Be("a@b.com");
         evt.TenantId.Should().Be("t1");
 
@@ -41,9 +42,10 @@ public class EngagementServiceTests
         var store = new PostgresNotificationStatusStore(db);
         var sut = new EngagementService(db, store, NullLogger<EngagementService>.Instance);
 
-        await sut.TrackAsync(new EngagementEvent { NotificationId = Guid.NewGuid(), EventType = "open", TenantId = "t1" });
-        await sut.TrackAsync(new EngagementEvent { NotificationId = Guid.NewGuid(), EventType = "open", TenantId = "t1" });
-        await sut.TrackAsync(new EngagementEvent { NotificationId = Guid.NewGuid(), EventType = "click", TenantId = "t1", Url = "https://example.com" });
+        // SEC-22: without existing status, default requireExisting skips — use explicit false for aggregate unit test of CountAsync
+        await sut.TrackAsync(new EngagementEvent { NotificationId = Guid.NewGuid(), EventType = "open", TenantId = "t1" }, requireExistingNotification: false);
+        await sut.TrackAsync(new EngagementEvent { NotificationId = Guid.NewGuid(), EventType = "open", TenantId = "t1" }, requireExistingNotification: false);
+        await sut.TrackAsync(new EngagementEvent { NotificationId = Guid.NewGuid(), EventType = "click", TenantId = "t1", Url = "https://example.com" }, requireExistingNotification: false);
 
         var (opens, clicks) = await sut.CountAsync(null, null, "t1");
         opens.Should().Be(2);

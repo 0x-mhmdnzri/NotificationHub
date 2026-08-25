@@ -27,4 +27,9 @@
     <ProjectReference Include="..\..\src\NotificationHub.Abstractions\NotificationHub.Abstractions.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Chat.Slack\NotificationHub.Plugins.Chat.Slack.csproj" />
+  </ItemGroup>
+
 </Project>
+

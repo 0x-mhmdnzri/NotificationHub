@@ -7,7 +7,7 @@ on:
     branches: [ dev, main ]
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     name: Build and Test
 
@@ -33,6 +33,7 @@ jobs:
           --configuration Release
           --verbosity normal
           --logger "trx;LogFileName=dotnet-test-results.trx"
+          --collect:"XPlat Code Coverage"
 
       - name: Publish (Host)
         run: dotnet publish src/NotificationHub.Host/NotificationHub.Host.csproj -c Release -o ./publish --no-build
@@ -42,35 +43,27 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: dotnet-test-results
-          path: '**/TestResults/**'
+          path: |
+            **/TestResults/**
+            **/coverage.cobertura.xml
 
-  # SEC-17 — fail on known vulnerable packages (High/Critical)
   nuget-audit:
     runs-on: ubuntu-latest
     name: NuGet vulnerability audit
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '9.0.x'
-
-      - name: Restore
-        run: dotnet restore
-
+      - run: dotnet restore
       - name: Audit vulnerable packages
         run: |
           set -euo pipefail
-          echo "Running dotnet list package --vulnerable --include-transitive"
-          # Capture output; fail if any vulnerability lines appear for High/Critical
           OUT=$(dotnet list package --vulnerable --include-transitive --format json 2>/dev/null || true)
           if echo "$OUT" | grep -qi '"severity":\s*"\(Critical\|High\)"'; then
             echo "$OUT"
             echo "::error::Vulnerable NuGet packages (High/Critical) detected"
             exit 1
           fi
-          # Also human-readable listing for logs
           dotnet list package --vulnerable --include-transitive || true
           echo "No High/Critical vulnerabilities reported."

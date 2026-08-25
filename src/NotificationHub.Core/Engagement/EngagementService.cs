@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NotificationHub.Abstractions.Models;
@@ -23,37 +22,40 @@ public sealed class EngagementService : IEngagementService
         _logger = logger;
     }
 
-    public async Task<EngagementEvent> TrackAsync(EngagementEvent evt, CancellationToken ct = default)
+    public async Task<EngagementEvent?> TrackAsync(EngagementEvent evt, bool requireExistingNotification = true, CancellationToken ct = default)
     {
         var type = evt.EventType.Trim().ToLowerInvariant();
+
+        NotificationStatus? status = null;
+        if (evt.NotificationId.HasValue)
+        {
+            status = await _statusStore.GetAsync(evt.NotificationId.Value, ct);
+            if (requireExistingNotification && status is null)
+            {
+                _logger.LogDebug("Skipping engagement {Type}: notification {Id} not found", type, evt.NotificationId);
+                return null;
+            }
+        }
+        else if (requireExistingNotification)
+        {
+            return null;
+        }
+
         var entity = new EngagementEventEntity
         {
             Id = evt.Id == Guid.Empty ? Guid.NewGuid() : evt.Id,
             NotificationId = evt.NotificationId,
-            TenantId = evt.TenantId,
+            TenantId = evt.TenantId ?? status?.TenantId,
             EventType = type,
-            Recipient = evt.Recipient,
-            Channel = evt.Channel,
+            Recipient = evt.Recipient ?? status?.Recipient,
+            Channel = evt.Channel ?? status?.Channel ?? "email",
             Url = evt.Url,
             UserAgent = evt.UserAgent,
             IpAddress = evt.IpAddress,
-            ProviderId = evt.ProviderId,
+            ProviderId = evt.ProviderId ?? status?.ProviderId,
             MetadataJson = evt.MetadataJson,
             OccurredAt = evt.OccurredAt == default ? DateTimeOffset.UtcNow : evt.OccurredAt
         };
-
-        // Enrich from notification status when possible
-        if (entity.NotificationId.HasValue)
-        {
-            var status = await _statusStore.GetAsync(entity.NotificationId.Value, ct);
-            if (status is not null)
-            {
-                entity.TenantId ??= status.TenantId;
-                entity.Recipient ??= status.Recipient;
-                entity.Channel ??= status.Channel;
-                entity.ProviderId ??= status.ProviderId;
-            }
-        }
 
         _db.EngagementEvents.Add(entity);
         await _db.SaveChangesAsync(ct);
@@ -85,8 +87,17 @@ public sealed class EngagementService : IEngagementService
 
     private static EngagementEvent ToModel(EngagementEventEntity e) => new()
     {
-        Id = e.Id, NotificationId = e.NotificationId, TenantId = e.TenantId, EventType = e.EventType,
-        Recipient = e.Recipient, Channel = e.Channel, Url = e.Url, UserAgent = e.UserAgent,
-        IpAddress = e.IpAddress, ProviderId = e.ProviderId, MetadataJson = e.MetadataJson, OccurredAt = e.OccurredAt
+        Id = e.Id,
+        NotificationId = e.NotificationId,
+        TenantId = e.TenantId,
+        EventType = e.EventType,
+        Recipient = e.Recipient,
+        Channel = e.Channel,
+        Url = e.Url,
+        UserAgent = e.UserAgent,
+        IpAddress = e.IpAddress,
+        ProviderId = e.ProviderId,
+        MetadataJson = e.MetadataJson,
+        OccurredAt = e.OccurredAt
     };
 }
