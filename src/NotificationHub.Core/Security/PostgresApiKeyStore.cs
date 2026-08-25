@@ -13,8 +13,11 @@ public sealed class PostgresApiKeyStore : IApiKeyStore
     public async Task<ApiKeyInfo> CreateAsync(CreateApiKeyRequest request, string plainKey, string keyHash, CancellationToken ct = default)
     {
         var roles = NormalizeRoles(request.Roles);
+        // Prefer embedded-id keys so PBKDF2 can be verified in O(1)
+        var id = ApiKeyHasher.TryParseKeyId(plainKey, out var parsed) ? parsed : Guid.NewGuid();
         var entity = new ApiKeyEntity
         {
+            Id = id,
             Name = request.Name,
             KeyHash = keyHash,
             TenantId = request.TenantId,
@@ -31,14 +34,13 @@ public sealed class PostgresApiKeyStore : IApiKeyStore
     public async Task<ApiKeyRecord?> FindByHashAsync(string keyHash, CancellationToken ct = default)
     {
         var e = await _db.ApiKeys.AsNoTracking().FirstOrDefaultAsync(x => x.KeyHash == keyHash && x.IsActive, ct);
-        if (e is null) return null;
-        if (e.ExpiresAt.HasValue && e.ExpiresAt < DateTimeOffset.UtcNow) return null;
-        return new ApiKeyRecord
-        {
-            Id = e.Id, Name = e.Name, KeyHash = e.KeyHash, TenantId = e.TenantId,
-            Roles = JsonSerializer.Deserialize<string[]>(e.RolesJson) ?? [],
-            IsActive = e.IsActive, ExpiresAt = e.ExpiresAt
-        };
+        return e is null ? null : ToRecord(e);
+    }
+
+    public async Task<ApiKeyRecord?> FindByIdAsync(Guid id, CancellationToken ct = default)
+    {
+        var e = await _db.ApiKeys.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.IsActive, ct);
+        return e is null ? null : ToRecord(e);
     }
 
     public async Task TouchLastUsedAsync(Guid id, CancellationToken ct = default)
@@ -64,6 +66,21 @@ public sealed class PostgresApiKeyStore : IApiKeyStore
         e.IsActive = false;
         await _db.SaveChangesAsync(ct);
         return true;
+    }
+
+    private static ApiKeyRecord ToRecord(ApiKeyEntity e)
+    {
+        if (e.ExpiresAt.HasValue && e.ExpiresAt < DateTimeOffset.UtcNow) return null!;
+        return new ApiKeyRecord
+        {
+            Id = e.Id,
+            Name = e.Name,
+            KeyHash = e.KeyHash,
+            TenantId = e.TenantId,
+            Roles = JsonSerializer.Deserialize<string[]>(e.RolesJson) ?? [],
+            IsActive = e.IsActive,
+            ExpiresAt = e.ExpiresAt
+        };
     }
 
     private static string[] NormalizeRoles(string[]? roles)

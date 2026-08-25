@@ -7,6 +7,7 @@ public interface IApiKeyStore
 {
     Task<ApiKeyInfo> CreateAsync(CreateApiKeyRequest request, string plainKey, string keyHash, CancellationToken ct = default);
     Task<ApiKeyRecord?> FindByHashAsync(string keyHash, CancellationToken ct = default);
+    Task<ApiKeyRecord?> FindByIdAsync(Guid id, CancellationToken ct = default);
     Task TouchLastUsedAsync(Guid id, CancellationToken ct = default);
     Task<IReadOnlyList<ApiKeyInfo>> ListAsync(string? tenantId = null, CancellationToken ct = default);
     Task<bool> RevokeAsync(Guid id, CancellationToken ct = default);
