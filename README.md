@@ -26,7 +26,7 @@ Multi-channel notification service with **Microkernel (Plugin) Architecture**.
 - Audit trail
 - Template preview endpoint
 - Attachment support (email plugins)
-- Providers: SendGrid, SMTP, Twilio, Kavenegar, Sms.ir
+- Providers: SendGrid, SMTP, Kavenegar, Sms.ir
 
 ## Providers
 
@@ -36,7 +36,6 @@ Multi-channel notification service with **Microkernel (Plugin) Architecture**.
 | Email   | SMTP      | email-smtp      |
 | SMS     | Kavenegar | sms-kavenegar   |
 | SMS     | Sms.ir    | sms-smsir       |
-| SMS     | Twilio    | sms-twilio      |
 
 Preferred + fallback order configured under `Providers` in appsettings.
 

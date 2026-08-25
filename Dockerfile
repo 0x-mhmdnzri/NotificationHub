@@ -9,7 +9,9 @@ COPY src/NotificationHub.Core/NotificationHub.Core.csproj src/NotificationHub.Co
 COPY src/NotificationHub.Host/NotificationHub.Host.csproj src/NotificationHub.Host/
 COPY src/NotificationHub.Sdk/NotificationHub.Sdk.csproj src/NotificationHub.Sdk/
 COPY Plugins/NotificationHub.Plugins.Email.SendGrid/NotificationHub.Plugins.Email.SendGrid.csproj Plugins/NotificationHub.Plugins.Email.SendGrid/
-COPY Plugins/NotificationHub.Plugins.Sms.Twilio/NotificationHub.Plugins.Sms.Twilio.csproj Plugins/NotificationHub.Plugins.Sms.Twilio/
+COPY Plugins/NotificationHub.Plugins.Email.Smtp/NotificationHub.Plugins.Email.Smtp.csproj Plugins/NotificationHub.Plugins.Email.Smtp/
+COPY Plugins/NotificationHub.Plugins.Sms.Kavenegar/NotificationHub.Plugins.Sms.Kavenegar.csproj Plugins/NotificationHub.Plugins.Sms.Kavenegar/
+COPY Plugins/NotificationHub.Plugins.Sms.SmsIr/NotificationHub.Plugins.Sms.SmsIr.csproj Plugins/NotificationHub.Plugins.Sms.SmsIr/
 
 RUN dotnet restore
 
@@ -22,12 +24,10 @@ RUN dotnet publish -c Release -o /app/publish --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 
-# Create non-root user
 RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 COPY --from=build /app/publish .
 
-# Change ownership
 RUN chown -R appuser:appuser /app
 USER appuser
 

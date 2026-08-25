@@ -131,5 +131,5 @@ public sealed record ProviderOptions
     public string? PreferredEmailProvider { get; set; } = "email-sendgrid";
     public string? PreferredSmsProvider { get; set; } = "sms-kavenegar";
     public string[] EmailFallbackOrder { get; set; } = ["email-sendgrid", "email-smtp"];
-    public string[] SmsFallbackOrder { get; set; } = ["sms-kavenegar", "sms-twilio", "sms-smsir"];
+    public string[] SmsFallbackOrder { get; set; } = ["sms-kavenegar", "sms-smsir"];
 }

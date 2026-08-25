@@ -17,7 +17,6 @@ using NotificationHub.Plugins.Email.SendGrid;
 using NotificationHub.Plugins.Email.Smtp;
 using NotificationHub.Plugins.Sms.Kavenegar;
 using NotificationHub.Plugins.Sms.SmsIr;
-using NotificationHub.Plugins.Sms.Twilio;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -50,7 +49,6 @@ builder.Services.AddHostedService<ScheduledNotificationWorker>();
 
 builder.Services.AddSingleton<IPlugin, SendGridEmailPlugin>();
 builder.Services.AddSingleton<IPlugin, SmtpEmailPlugin>();
-builder.Services.AddSingleton<IPlugin, TwilioSmsPlugin>();
 builder.Services.AddSingleton<IPlugin, KavenegarSmsPlugin>();
 builder.Services.AddSingleton<IPlugin, SmsIrPlugin>();
 
