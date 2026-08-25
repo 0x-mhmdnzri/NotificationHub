@@ -4,18 +4,23 @@ Multi-channel notification service built with **Microkernel (Plugin) Architectur
 
 ## Architecture
 
-- **Core (Microkernel)**: Minimal, stable orchestration, plugin lifecycle, routing, status tracking.
-- **Abstractions**: Formal plugin contracts (`IPlugin`, `IChannelPlugin`).
-- **Plugins**: Channel/provider implementations (Email/SendGrid, SMS/Twilio, ...).
-- **Host**: ASP.NET Core entry point that loads and hosts plugins.
-- **Sdk**: (WIP) Tools and templates for building new plugins.
+- **Core (Microkernel)**: Orchestration, plugin lifecycle, template engine, queue, retry, status tracking, rate limiting.
+- **Abstractions**: Formal contracts (`IPlugin`, `IChannelPlugin`).
+- **Plugins**: Channel/provider implementations (Email/SendGrid, SMS/Twilio).
+- **Host**: ASP.NET Core API + background worker.
 
-## Current Channels
+## Phase 1 Features (Implemented)
 
-| Channel | Plugin                  | Status |
-|---------|-------------------------|--------|
-| Email   | SendGrid (stub)         | Ready  |
-| SMS     | Twilio (stub)           | Ready  |
+- Unified Send API (async queue + sync endpoint)
+- Channel abstraction with pluggable providers
+- Template engine with variables (`{{name}}`), versioning, basic localization (en/fa)
+- Asynchronous processing (in-memory channel queue + background worker)
+- Retry with exponential backoff (2s → 4s → 8s) + dead-letter status
+- Delivery status tracking (`queued → processing → sent / failed / deadletter`)
+- Idempotency keys
+- Basic API Key authentication (`X-Api-Key` header)
+- Rate limiting per tenant/channel
+- Structured logging
 
 ## Quick Start
 
@@ -24,48 +29,62 @@ dotnet restore
 dotnet run --project src/NotificationHub.Host
 ```
 
-Swagger: `https://localhost:7xxx/swagger`
+Default API Key: `dev-secret-key-change-me`
 
-### Send a notification
+### Send (async - recommended)
 
 ```http
 POST /api/v1/notifications
+X-Api-Key: dev-secret-key-change-me
 Content-Type: application/json
 
 {
   "recipient": "user@example.com",
   "channel": "email",
   "templateKey": "welcome",
-  "data": { "name": "Ali" }
+  "data": { "name": "Ali" },
+  "idempotencyKey": "welcome-ali-001",
+  "locale": "fa"
 }
 ```
 
-### List loaded plugins
+### Check status
 
 ```http
-GET /api/v1/plugins
+GET /api/v1/notifications/{id}
+X-Api-Key: dev-secret-key-change-me
+```
+
+### Sync send
+
+```http
+POST /api/v1/notifications/sync
+```
+
+### Templates
+
+```http
+POST /api/v1/templates
+GET  /api/v1/templates/{key}?channel=email&locale=en
 ```
 
 ## Configuration
 
 ```json
 {
+  "Auth": { "ApiKey": "your-secret" },
+  "RateLimiting": { "PerMinute": 60 },
   "Plugins": {
     "SendGrid": { "ApiKey": "SG.xxx" },
-    "Twilio": {
-      "AccountSid": "ACxxx",
-      "AuthToken": "xxx"
-    }
+    "Twilio": { "AccountSid": "ACxxx", "AuthToken": "xxx" }
   }
 }
 ```
 
-## Adding a New Plugin
+## Roadmap
 
-1. Create a new class library under `Plugins/`.
-2. Reference `NotificationHub.Abstractions`.
-3. Implement `IChannelPlugin`.
-4. Register it in Host (or place the DLL in the plugins folder for dynamic loading).
+**Phase 2**: Preferences, smart routing/fallback, scheduling, digests, webhooks, multi-tenancy, audit trail, attachments  
+**Phase 3**: Workflow engine, Push/WhatsApp/In-App, analytics, compliance, Admin UI
 
 ## License
 
