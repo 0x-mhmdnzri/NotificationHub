@@ -74,3 +74,10 @@ Header: `X-Api-Key: dev-secret-key-change-me`
 
 ## License
 MIT
+
+## Architecture Decision Records
+
+- [ADR 0001: Microkernel Architecture](docs/ADR-001-Microkernel-Architecture.md)
+- [ADR 0002: PostgreSQL + PgBouncer](docs/ADR-002-PostgreSQL-PgBouncer-Persistence.md)
+- [ADR 0003: RabbitMQ Queue](docs/ADR-003-RabbitMQ-Queue.md)
+- [ADR 0004: Regional SMS Providers](docs/ADR-004-Regional-SMS-Providers.md)
