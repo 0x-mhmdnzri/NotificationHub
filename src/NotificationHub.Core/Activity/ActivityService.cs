@@ -19,10 +19,10 @@ public sealed class ActivityService : IActivityService
         var notifs = await notifQ.OrderByDescending(x => x.UpdatedAt).Take(take).ToListAsync(ct);
         items.AddRange(notifs.Select(n => new ActivityItem
         {
-            Id = n.NotificationId,
+            Id = n.Id,
             Kind = "notification",
             Summary = $"{n.Status} {n.Channel} → {n.Recipient}",
-            NotificationId = n.NotificationId,
+            NotificationId = n.Id,
             TenantId = n.TenantId,
             At = n.UpdatedAt,
             Meta = new Dictionary<string, string?>

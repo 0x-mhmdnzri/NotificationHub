@@ -49,6 +49,7 @@ public class ChannelPluginCertificationTests
         // not initialized → missing token
         var result = await plugin.SendAsync(new RenderedNotification
         {
+            NotificationId = Guid.NewGuid(),
             Recipient = "123",
             Subject = "Hi",
             Body = "Body",

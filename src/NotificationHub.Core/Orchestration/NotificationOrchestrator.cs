@@ -78,7 +78,7 @@ public sealed class NotificationOrchestrator
         // F12: collapse key — return existing active notification if same recipient+key within 24h
         if (!string.IsNullOrWhiteSpace(request.CollapseKey))
         {
-            var existingCollapse = await FindCollapseAsync(request.Recipient, request.CollapseKey, request.TenantId, ct);
+            var existingCollapse = await _statusStore.FindByCollapseKeyAsync(request.CollapseKey!, request.Recipient, request.TenantId, ct);
             if (existingCollapse is not null)
             {
                 _logger.LogInformation("Collapse hit {Key} -> {Id}", request.CollapseKey, existingCollapse.NotificationId);

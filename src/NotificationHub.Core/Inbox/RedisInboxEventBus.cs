@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using System.Threading.Channels;
 using NotificationHub.Abstractions.Models;
 using StackExchange.Redis;
 
@@ -23,7 +24,7 @@ public sealed class RedisInboxEventBus : IInboxEventBus
     public async IAsyncEnumerable<InboxItem> SubscribeAsync(string userId, string? tenantId, [EnumeratorCancellation] CancellationToken ct = default)
     {
         var sub = _mux.GetSubscriber();
-        var channel = Channel.CreateUnbounded<InboxItem>();
+        var channel = System.Threading.Channels.Channel.CreateUnbounded<InboxItem>();
         await sub.SubscribeAsync(RedisChannel.Literal(ChannelPrefix + Key(userId, tenantId)), (_, value) =>
         {
             try

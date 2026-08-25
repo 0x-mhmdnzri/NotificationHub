@@ -73,14 +73,20 @@ public sealed class DigestService : IDigestService
 
             foreach (var group in pending.GroupBy(x => new { x.Recipient, x.TenantId }))
             {
-                var items = group.Select(x =>
-                {
-                    try { return JsonSerializer.Deserialize<JsonElement>(x.PayloadJson); }
-                    catch { return default(JsonElement); }
-                }).ToList();
-
+                var itemPayloads = new List<object?>();
                 foreach (var row in group)
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(row.PayloadJson) ? "{}" : row.PayloadJson);
+                        itemPayloads.Add(doc.RootElement.Clone());
+                    }
+                    catch
+                    {
+                        itemPayloads.Add(null);
+                    }
                     row.FlushedAt = DateTimeOffset.UtcNow;
+                }
                 flushed += group.Count();
 
                 if (_orch is not null && _queue is not null)
@@ -97,7 +103,7 @@ public sealed class DigestService : IDigestService
                         {
                             ["digest_count"] = group.Count(),
                             ["digest_policy"] = p.Key,
-                            ["items"] = items.Select(i => i.ValueKind == JsonValueKind.Undefined ? null : i).ToList()
+                            ["items"] = itemPayloads
                         }
                     };
                     try

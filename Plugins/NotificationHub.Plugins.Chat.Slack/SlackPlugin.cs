@@ -70,7 +70,7 @@ public sealed class SlackPlugin : IChannelPlugin
     }
 
     /// <summary>SEC-29: only https public hosts (no loopback / private IP literals).</summary>
-    internal static bool IsSafeWebhook(string url)
+    public static bool IsSafeWebhook(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
         if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;

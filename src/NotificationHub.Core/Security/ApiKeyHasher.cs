@@ -95,8 +95,10 @@ public static class ApiKeyHasher
     /// <summary>Backward-compatible random key without embedded id (legacy shape).</summary>
     public static string GeneratePlainKey()
     {
-        var bytes = RandomNumberGenerator.GetBytes(32);
-        return "nh_" + Convert.ToBase64String(bytes).Replace("+", "").Replace("/", "").Replace("=", "")[..40];
+        var bytes = RandomNumberGenerator.GetBytes(48);
+        var token = Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").Replace("=", "");
+        if (token.Length > 40) token = token[..40];
+        return "nh_" + token;
     }
 
     public static bool TryParseKeyId(string plainKey, out Guid keyId)

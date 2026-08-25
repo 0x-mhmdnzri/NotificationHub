@@ -87,7 +87,7 @@ public sealed class TelegramPlugin : IChannelPlugin
         }
     }
 
-    internal static string EscapeHtml(string s)
+    public static string EscapeHtml(string s)
         => s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
 }
 

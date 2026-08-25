@@ -112,7 +112,7 @@ public sealed class SesEmailPlugin : IChannelPlugin
         }
     }
 
-    internal static byte[] GetSignatureKey(string key, string dateStamp, string regionName, string serviceName)
+    public static byte[] GetSignatureKey(string key, string dateStamp, string regionName, string serviceName)
     {
         var kDate = HmacSha256(Encoding.UTF8.GetBytes("AWS4" + key), dateStamp);
         var kRegion = HmacSha256(kDate, regionName);
@@ -120,12 +120,12 @@ public sealed class SesEmailPlugin : IChannelPlugin
         return HmacSha256(kService, "aws4_request");
     }
 
-    internal static byte[] HmacSha256(byte[] key, string data)
+    public static byte[] HmacSha256(byte[] key, string data)
     {
         using var hmac = new HMACSHA256(key);
         return hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
     }
 
-    internal static string ToHex(byte[] bytes)
+    public static string ToHex(byte[] bytes)
         => Convert.ToHexString(bytes).ToLowerInvariant();
 }

@@ -62,7 +62,7 @@ public sealed class DiscordPlugin : IChannelPlugin
         }
     }
 
-    internal static bool IsSafeHttps(string url)
+    public static bool IsSafeHttps(string url)
     {
         if (!Uri.TryCreate(url, UriKind.Absolute, out var u)) return false;
         if (!string.Equals(u.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;

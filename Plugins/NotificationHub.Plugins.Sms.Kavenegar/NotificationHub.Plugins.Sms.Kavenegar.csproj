@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="Kavenegar" Version="1.2.5" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <PropertyGroup>

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Channels;
 using NotificationHub.Abstractions.Models;
@@ -81,10 +82,9 @@ if (corsOrigins.Length > 0)
 
 // Prefer known proxies' X-Forwarded-For when Admin IP allowlist is used
 // SEC-25: only trust configured proxies (empty = do not trust arbitrary X-Forwarded-For)
-builder.Services.Configure<Microsoft.AspNetCore.HttpOverrides.ForwardedHeadersOptions>(options =>
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
 {
-    options.ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor
-        | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto;
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
     options.KnownNetworks.Clear();
     options.KnownProxies.Clear();
     var proxies = builder.Configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>() ?? [];
@@ -784,6 +784,7 @@ app.MapGet("/api/v1/inbox/{userId}/stream", async (string userId, string? tenant
         await http.Response.WriteAsync($"data: {json}\n\n", ct);
         await http.Response.Body.FlushAsync(ct);
     }
+    return Results.Empty;
 }).WithName("InboxSseStream").ExcludeFromDescription();
 
 // ===== F02 Digest =====

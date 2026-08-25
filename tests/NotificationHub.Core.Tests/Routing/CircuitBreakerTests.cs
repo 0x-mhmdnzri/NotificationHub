@@ -1,3 +1,4 @@
+using NotificationHub.Abstractions.Models;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 using NotificationHub.Core.Routing;
