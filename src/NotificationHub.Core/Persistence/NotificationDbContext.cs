@@ -19,6 +19,7 @@ public sealed class NotificationStatusEntity
     public DateTimeOffset? ScheduledAt { get; set; }
     public string? TenantId { get; set; }
     public string? IdempotencyKey { get; set; }
+    public string? CollapseKey { get; set; }
     public string? CorrelationId { get; set; }
     public string? Category { get; set; }
     public string? PayloadJson { get; set; }
@@ -30,7 +31,7 @@ public sealed class NotificationStatusEntity
         ProviderId = ProviderId, ProviderMessageId = ProviderMessageId, ErrorCode = ErrorCode,
         ErrorMessage = ErrorMessage, AttemptCount = AttemptCount, CreatedAt = CreatedAt,
         UpdatedAt = UpdatedAt, ScheduledAt = ScheduledAt, TenantId = TenantId,
-        IdempotencyKey = IdempotencyKey, CorrelationId = CorrelationId, Category = Category
+        IdempotencyKey = IdempotencyKey, CollapseKey = CollapseKey, CorrelationId = CorrelationId, Category = Category
     };
 }
 
@@ -46,6 +47,7 @@ public sealed class UserPreferenceEntity
     public string? QuietHoursEnd { get; set; }
     public string? TimeZoneId { get; set; }
     public int? MaxPerDay { get; set; }
+    public string? WeeklyScheduleJson { get; set; }
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -243,6 +245,8 @@ public sealed class NotificationDbContext : DbContext
     public DbSet<TopicEntity> Topics => Set<TopicEntity>();
     public DbSet<TopicSubscriberEntity> TopicSubscribers => Set<TopicSubscriberEntity>();
     public DbSet<DeviceTokenEntity> DeviceTokens => Set<DeviceTokenEntity>();
+    public DbSet<NotificationHub.Core.Layouts.LayoutEntity> Layouts => Set<NotificationHub.Core.Layouts.LayoutEntity>();
+    public DbSet<NotificationHub.Core.Layouts.PartialEntity> Partials => Set<NotificationHub.Core.Layouts.PartialEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

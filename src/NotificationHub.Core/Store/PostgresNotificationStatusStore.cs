@@ -18,7 +18,7 @@ public sealed class PostgresNotificationStatusStore : INotificationStatusStore
             Status = status.Status, ProviderId = status.ProviderId, ProviderMessageId = status.ProviderMessageId,
             ErrorCode = status.ErrorCode, ErrorMessage = status.ErrorMessage, AttemptCount = status.AttemptCount,
             CreatedAt = status.CreatedAt, UpdatedAt = status.UpdatedAt, ScheduledAt = status.ScheduledAt,
-            TenantId = status.TenantId, IdempotencyKey = status.IdempotencyKey,
+            TenantId = status.TenantId, IdempotencyKey = status.IdempotencyKey, CollapseKey = status.CollapseKey,
             CorrelationId = status.CorrelationId, Category = status.Category
         });
         await _db.SaveChangesAsync(ct);
@@ -67,6 +67,18 @@ public sealed class PostgresNotificationStatusStore : INotificationStatusStore
         if (e is null) return;
         e.PayloadJson = payloadJson;
         await _db.SaveChangesAsync(ct);
+    }
+
+    
+    public async Task<NotificationStatus?> FindByCollapseKeyAsync(string collapseKey, string recipient, string? tenantId = null, CancellationToken ct = default)
+    {
+        var since = DateTimeOffset.UtcNow.AddHours(-24);
+        var q = _db.NotificationStatuses.AsNoTracking()
+            .Where(x => x.CollapseKey == collapseKey && x.Recipient == recipient && x.CreatedAt >= since
+                && x.Status != DeliveryStatus.Cancelled && x.Status != DeliveryStatus.Suppressed && x.Status != DeliveryStatus.DeadLetter);
+        q = tenantId is null ? q.Where(x => x.TenantId == null) : q.Where(x => x.TenantId == tenantId);
+        var e = await q.OrderByDescending(x => x.CreatedAt).FirstOrDefaultAsync(ct);
+        return e?.ToModel();
     }
 
     public async Task<List<NotificationStatusEntity>> GetDueScheduledAsync(DateTimeOffset now, int take = 50, CancellationToken ct = default)

@@ -12,6 +12,8 @@ public sealed record NotificationRequest
     public DateTimeOffset? ScheduledAt { get; init; }
     public string? TimeZoneId { get; init; }
     public string? IdempotencyKey { get; init; }
+    /// <summary>F12 — collapses duplicate active notifications for same recipient+key within window.</summary>
+    public string? CollapseKey { get; init; }
     public string? TenantId { get; init; }
     public string? Locale { get; init; } = "en";
     public string? CorrelationId { get; init; }
@@ -73,6 +75,7 @@ public sealed record NotificationStatus
     public DateTimeOffset? ScheduledAt { get; init; }
     public string? TenantId { get; init; }
     public string? IdempotencyKey { get; init; }
+    public string? CollapseKey { get; init; }
     public string? CorrelationId { get; init; }
     public string? Category { get; init; }
 }
@@ -102,6 +105,8 @@ public sealed record UserPreference
     public string? QuietHoursEnd { get; init; }
     public string? TimeZoneId { get; init; }
     public int? MaxPerDay { get; init; }
+    /// <summary>F11 — map day-of-week (0=Sun..6=Sat) to "HH:mm-HH:mm" windows, comma-separated.</summary>
+    public Dictionary<string, string>? WeeklySchedule { get; init; }
     public DateTimeOffset UpdatedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 

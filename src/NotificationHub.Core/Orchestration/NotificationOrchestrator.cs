@@ -70,15 +70,27 @@ public sealed class NotificationOrchestrator
 
         var channel = ResolveChannel(request);
 
-        // Preference check
-        var (allowed, reason) = await _preferences.CanSendAsync(request.Recipient, channel, request.Category, request.TenantId, ct);
+        // F12: collapse key — return existing active notification if same recipient+key within 24h
+        if (!string.IsNullOrWhiteSpace(request.CollapseKey))
+        {
+            var existingCollapse = await FindCollapseAsync(request.Recipient, request.CollapseKey, request.TenantId, ct);
+            if (existingCollapse is not null)
+            {
+                _logger.LogInformation("Collapse hit {Key} -> {Id}", request.CollapseKey, existingCollapse.NotificationId);
+                return (true, existingCollapse);
+            }
+        }
+
+        // Preference check (F11 critical bypass via priority)
+        var isCritical = request.Priority == NotificationPriority.Critical;
+        var (allowed, reason) = await _preferences.CanSendAsync(request.Recipient, channel, request.Category, request.TenantId, isCritical, ct);
         if (!allowed)
         {
             var suppressed = new NotificationStatus
             {
                 NotificationId = request.Id, Channel = channel, Recipient = request.Recipient,
                 Status = DeliveryStatus.Suppressed, TenantId = request.TenantId,
-                IdempotencyKey = request.IdempotencyKey, CorrelationId = request.CorrelationId,
+                IdempotencyKey = request.IdempotencyKey, CollapseKey = request.CollapseKey, CorrelationId = request.CorrelationId,
                 Category = request.Category, ErrorMessage = reason
             };
             await _statusStore.SaveAsync(suppressed, ct);
@@ -95,7 +107,7 @@ public sealed class NotificationOrchestrator
             {
                 NotificationId = request.Id, Channel = channel, Recipient = request.Recipient,
                 Status = DeliveryStatus.Suppressed, TenantId = request.TenantId,
-                IdempotencyKey = request.IdempotencyKey, CorrelationId = request.CorrelationId,
+                IdempotencyKey = request.IdempotencyKey, CollapseKey = request.CollapseKey, CorrelationId = request.CorrelationId,
                 Category = request.Category, ErrorMessage = consent.Reason
             };
             await _statusStore.SaveAsync(suppressed, ct);
@@ -109,7 +121,7 @@ public sealed class NotificationOrchestrator
             NotificationId = request.Id, Channel = channel, Recipient = request.Recipient,
             Status = isScheduled ? DeliveryStatus.Scheduled : DeliveryStatus.Queued,
             ScheduledAt = request.ScheduledAt, TenantId = request.TenantId,
-            IdempotencyKey = request.IdempotencyKey, CorrelationId = request.CorrelationId,
+            IdempotencyKey = request.IdempotencyKey, CollapseKey = request.CollapseKey, CorrelationId = request.CorrelationId,
             Category = request.Category
         };
 

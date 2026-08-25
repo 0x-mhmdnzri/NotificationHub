@@ -25,6 +25,8 @@ using NotificationHub.Core.Workflow.Handlers;
 using NotificationHub.Core.Expressions;
 using NotificationHub.Core.Validation;
 using NotificationHub.Core.Activity;
+using NotificationHub.Core.Sync;
+using NotificationHub.Core.Layouts;
 using NotificationHub.Core.Devices;
 using NotificationHub.Core.Topics;
 using NotificationHub.Core.Throttle;
@@ -147,6 +149,10 @@ builder.Services.AddScoped<IThrottleService, ThrottleService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
 builder.Services.AddScoped<IDeviceService, DeviceService>();
 builder.Services.AddScoped<IActivityService, ActivityService>();
+builder.Services.AddScoped<ILayoutService, LayoutService>();
+builder.Services.AddScoped<ICrossChannelReadSync, CrossChannelReadSync>();
+builder.Services.AddScoped<IWorkflowStepHandler, HttpStepHandler>();
+builder.Services.AddHttpClient("workflow-http", c => c.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddScoped<IConsentService, ConsentService>();
 builder.Services.AddScoped<IComplianceService, ComplianceService>();
@@ -175,6 +181,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
     await db.Database.MigrateAsync();
     await Phase1Schema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Phase1Schema"));
+    await Phase2Schema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Phase2Schema"));
     var seeder = scope.ServiceProvider.GetRequiredService<TemplateSeeder>();
     await seeder.SeedDefaultsAsync();
     var keyBootstrap = scope.ServiceProvider.GetRequiredService<ApiKeyBootstrapper>();
@@ -486,6 +493,12 @@ app.MapPost("/api/v1/engagements", async (EngagementIngestRequest request, HttpC
         MetadataJson = request.Metadata is null ? null : System.Text.Json.JsonSerializer.Serialize(request.Metadata)
     }, requireExistingNotification: true, ct);
     if (evt is null) return Results.NotFound();
+    if (string.Equals(request.EventType, EngagementEventTypes.Open, StringComparison.OrdinalIgnoreCase)
+        && request.NotificationId is Guid nid)
+    {
+        var sync = http.RequestServices.GetRequiredService<ICrossChannelReadSync>();
+        await sync.SyncReadAsync(nid, request.Recipient, tenantId, ct);
+    }
     return Results.Accepted($"/api/v1/notifications/{request.NotificationId}/engagements", evt);
 }).WithName("TrackEngagement").WithOpenApi();
 
@@ -869,6 +882,72 @@ app.MapGet("/api/v1/admin/activity", async (string? tenantId, int take, HttpCont
     var tid = http.ResolveTenantId(tenantId);
     return Results.Ok(await activity.ListAsync(tid, take <= 0 ? 50 : take, ct));
 }).WithName("AdminActivity").WithOpenApi();
+
+
+
+// ===== Phase 2 F07–F14 =====
+app.MapGet("/api/v1/workflows/{key}/export", async (string key, string? tenantId, HttpContext http, IWorkflowEngine engine, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var w = await engine.GetAsync(key, tid, ct);
+    if (w is null) return Results.NotFound();
+    return Results.Text(WorkflowDsl.Export(w), "application/json");
+}).WithName("ExportWorkflow").WithOpenApi();
+
+app.MapPost("/api/v1/workflows/import", async (HttpContext http, IWorkflowEngine engine, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    using var reader = new StreamReader(http.Request.Body);
+    var json = await reader.ReadToEndAsync(ct);
+    try
+    {
+        var doc = WorkflowDsl.Import(json);
+        var def = doc.Definition with { TenantId = http.ResolveTenantId(doc.Definition.TenantId) };
+        WorkflowDsl.Validate(def);
+        return Results.Ok(await engine.SaveAsync(def, ct));
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
+}).WithName("ImportWorkflow").WithOpenApi();
+
+app.MapPost("/api/v1/layouts", async (LayoutDefinition layout, HttpContext http, ILayoutService layouts, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    layout = layout with { TenantId = http.ResolveTenantId(layout.TenantId) };
+    try { return Results.Ok(await layouts.SaveLayoutAsync(layout, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("SaveLayout").WithOpenApi();
+
+app.MapPost("/api/v1/partials", async (PartialDefinition partial, HttpContext http, ILayoutService layouts, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    partial = partial with { TenantId = http.ResolveTenantId(partial.TenantId) };
+    try { return Results.Ok(await layouts.SavePartialAsync(partial, ct)); }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("SavePartial").WithOpenApi();
+
+app.MapPost("/api/v1/layouts/render", async (string body, string? layoutKey, string? tenantId, Dictionary<string, object?>? data, HttpContext http, ILayoutService layouts, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var html = await layouts.RenderHtmlAsync(body, layoutKey, http.ResolveTenantId(tenantId), data ?? new(), ct);
+    return Results.Content(html, "text/html");
+}).WithName("RenderLayout").WithOpenApi();
+
+app.MapGet("/api/v1/preferences/{userId}/embed", async (string userId, string? tenantId, HttpContext http, IPreferenceService prefs, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    return Results.Ok(await prefs.GetEmbedModelAsync(userId, http.ResolveTenantId(tenantId), ct));
+}).WithName("PreferenceEmbed").WithOpenApi();
+
+app.MapPost("/api/v1/notifications/{id:guid}/sync-read", async (Guid id, string? userId, string? tenantId, HttpContext http, ICrossChannelReadSync sync, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var n = await sync.SyncReadAsync(id, userId, http.ResolveTenantId(tenantId), ct);
+    return Results.Ok(new { marked = n });
+}).WithName("SyncCrossChannelRead").WithOpenApi();
 
 
 // SEC-28: public health is minimal; detailed checks under admin messaging health

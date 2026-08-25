@@ -22,6 +22,8 @@ public sealed record WorkflowStep
     public string? NextOnTrue { get; init; }
     public string? NextOnFalse { get; init; }
     public string? Next { get; init; }
+    /// <summary>Optional JSON config for extensible steps (e.g. http).</summary>
+    public string? ConfigJson { get; init; }
 }
 
 public sealed record WorkflowStartRequest
