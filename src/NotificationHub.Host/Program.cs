@@ -141,7 +141,15 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-app.MapPost("/api/v1/notifications", async (NotificationRequest request, HttpContext http, NotificationOrchestrator orch, INotificationQueue queue, IRateLimiter rl, IConfiguration config, CancellationToken ct) =>
+app.MapPost("/api/v1/notifications", async (
+    NotificationRequest request,
+    HttpContext http,
+    NotificationOrchestrator orch,
+    INotificationQueue queue,
+    IRateLimiter rl,
+    IConfiguration config,
+    NotificationDbContext db,
+    CancellationToken ct) =>
 {
     if (http.RequireRoles(AppRoles.Sender) is { } denied) return denied;
     var tenantId = http.ResolveTenantId(request.TenantId);
@@ -149,13 +157,41 @@ app.MapPost("/api/v1/notifications", async (NotificationRequest request, HttpCon
     var limit = config.GetValue("RateLimiting:PerMinute", 60);
     if (!await rl.IsAllowedAsync($"tenant:{tenantId ?? "default"}:{request.Channel ?? "any"}", limit, ct))
         return Results.StatusCode(429);
-    var (accepted, status) = await orch.AcceptAsync(request, ct);
-    if (!accepted) return Results.Conflict(status);
-    if (status.Status == DeliveryStatus.Suppressed)
-        return Results.Ok(new { id = status.NotificationId, status = status.Status.ToString(), reason = status.ErrorMessage });
-    if (status.Status != DeliveryStatus.Scheduled)
-        await queue.EnqueueAsync(request, ct);
-    return Results.Accepted($"/api/v1/notifications/{status.NotificationId}", new { id = status.NotificationId, status = status.Status.ToString() });
+
+    // Single transaction: status (Queued) + outbox row commit together (no dual-write window).
+    // Execution strategy required when EnableRetryOnFailure is on and we use explicit transactions.
+    IResult? result = null;
+    var strategy = db.Database.CreateExecutionStrategy();
+    await strategy.ExecuteAsync(async () =>
+    {
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        var (accepted, status) = await orch.AcceptAsync(request, ct);
+        if (!accepted)
+        {
+            await tx.RollbackAsync(ct);
+            result = Results.Conflict(status);
+            return;
+        }
+
+        if (status.Status == DeliveryStatus.Suppressed)
+        {
+            await tx.CommitAsync(ct);
+            result = Results.Ok(new { id = status.NotificationId, status = status.Status.ToString(), reason = status.ErrorMessage });
+            return;
+        }
+
+        if (status.Status != DeliveryStatus.Scheduled)
+        {
+            // Stages outbox entity only; SaveChanges persists it inside this transaction.
+            await queue.EnqueueAsync(request, ct);
+            await db.SaveChangesAsync(ct);
+        }
+
+        await tx.CommitAsync(ct);
+        result = Results.Accepted($"/api/v1/notifications/{status.NotificationId}", new { id = status.NotificationId, status = status.Status.ToString() });
+    });
+
+    return result!;
 }).WithName("SendNotification").WithOpenApi();
 
 app.MapPost("/api/v1/notifications/sync", async (NotificationRequest request, HttpContext http, NotificationOrchestrator orch, IRateLimiter rl, IConfiguration config, CancellationToken ct) =>
@@ -170,8 +206,8 @@ app.MapPost("/api/v1/notifications/sync", async (NotificationRequest request, Ht
     if (!accepted) return Results.Conflict(status);
     if (status.Status == DeliveryStatus.Suppressed)
         return Results.Ok(new { status = "Suppressed", reason = status.ErrorMessage });
-    var result = await orch.ProcessAsync(request, ct);
-    return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+    var delivery = await orch.ProcessAsync(request, ct);
+    return delivery.Success ? Results.Ok(delivery) : Results.BadRequest(delivery);
 }).WithName("SendNotificationSync").WithOpenApi();
 
 app.MapGet("/api/v1/notifications/{id:guid}", async (Guid id, INotificationStatusStore store, CancellationToken ct) =>
