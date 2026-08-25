@@ -12,6 +12,7 @@ using NotificationHub.Core.Preferences;
 using NotificationHub.Core.Queue;
 using NotificationHub.Core.RateLimiting;
 using NotificationHub.Core.Routing;
+using NotificationHub.Core.Security;
 using NotificationHub.Core.Scheduling;
 using NotificationHub.Core.Segmentation;
 using NotificationHub.Core.Store;
@@ -46,6 +47,9 @@ builder.Services.Configure<ProviderOptions>(builder.Configuration.GetSection("Pr
 builder.Services.Configure<ProviderHealthOptions>(builder.Configuration.GetSection(ProviderHealthOptions.SectionName));
 builder.Services.AddSingleton<IProviderHealthTracker, InMemoryProviderHealthTracker>();
 builder.Services.AddSingleton<IProviderRouter, HealthAwareProviderRouter>();
+builder.Services.AddScoped<IApiKeyStore, PostgresApiKeyStore>();
+builder.Services.AddScoped<IApiKeyValidator, ApiKeyValidator>();
+builder.Services.AddScoped<ApiKeyBootstrapper>();
 builder.Services.Configure<CostOptions>(builder.Configuration.GetSection(CostOptions.SectionName));
 
 builder.Services.AddSingleton<INotificationQueue, RabbitMqNotificationQueue>();
@@ -93,6 +97,8 @@ using (var scope = app.Services.CreateScope())
     await db.Database.MigrateAsync();
     var seeder = scope.ServiceProvider.GetRequiredService<TemplateSeeder>();
     await seeder.SeedDefaultsAsync();
+    var keyBootstrap = scope.ServiceProvider.GetRequiredService<ApiKeyBootstrapper>();
+    await keyBootstrap.EnsureBootstrapKeyAsync();
 }
 
 if (app.Environment.IsDevelopment())
@@ -117,10 +123,13 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-app.MapPost("/api/v1/notifications", async (NotificationRequest request, NotificationOrchestrator orch, INotificationQueue queue, IRateLimiter rl, IConfiguration config, CancellationToken ct) =>
+app.MapPost("/api/v1/notifications", async (NotificationRequest request, HttpContext http, NotificationOrchestrator orch, INotificationQueue queue, IRateLimiter rl, IConfiguration config, CancellationToken ct) =>
 {
+    if (http.RequireRoles(AppRoles.Sender) is { } denied) return denied;
+    var tenantId = http.ResolveTenantId(request.TenantId);
+    request = request with { TenantId = tenantId };
     var limit = config.GetValue("RateLimiting:PerMinute", 60);
-    if (!await rl.IsAllowedAsync($"tenant:{request.TenantId ?? "default"}:{request.Channel ?? "any"}", limit, ct))
+    if (!await rl.IsAllowedAsync($"tenant:{tenantId ?? "default"}:{request.Channel ?? "any"}", limit, ct))
         return Results.StatusCode(429);
     var (accepted, status) = await orch.AcceptAsync(request, ct);
     if (!accepted) return Results.Conflict(status);
@@ -131,10 +140,13 @@ app.MapPost("/api/v1/notifications", async (NotificationRequest request, Notific
     return Results.Accepted($"/api/v1/notifications/{status.NotificationId}", new { id = status.NotificationId, status = status.Status.ToString() });
 }).WithName("SendNotification").WithOpenApi();
 
-app.MapPost("/api/v1/notifications/sync", async (NotificationRequest request, NotificationOrchestrator orch, IRateLimiter rl, IConfiguration config, CancellationToken ct) =>
+app.MapPost("/api/v1/notifications/sync", async (NotificationRequest request, HttpContext http, NotificationOrchestrator orch, IRateLimiter rl, IConfiguration config, CancellationToken ct) =>
 {
+    if (http.RequireRoles(AppRoles.Sender) is { } denied) return denied;
+    var tenantId = http.ResolveTenantId(request.TenantId);
+    request = request with { TenantId = tenantId };
     var limit = config.GetValue("RateLimiting:PerMinute", 60);
-    if (!await rl.IsAllowedAsync($"tenant:{request.TenantId ?? "default"}:{request.Channel ?? "any"}", limit, ct))
+    if (!await rl.IsAllowedAsync($"tenant:{tenantId ?? "default"}:{request.Channel ?? "any"}", limit, ct))
         return Results.StatusCode(429);
     var (accepted, status) = await orch.AcceptAsync(request, ct);
     if (!accepted) return Results.Conflict(status);
@@ -238,8 +250,13 @@ app.MapGet("/api/v1/analytics/summary", async (DateTimeOffset? from, DateTimeOff
 app.MapGet("/api/v1/compliance/export/{userId}", async (string userId, string? tenantId, IComplianceService compliance, CancellationToken ct) =>
     Results.Ok(await compliance.ExportUserAsync(userId, tenantId, ct))).WithName("ComplianceExport").WithOpenApi();
 
-app.MapDelete("/api/v1/compliance/users/{userId}", async (string userId, string? tenantId, IComplianceService compliance, CancellationToken ct) =>
-{ await compliance.DeleteUserAsync(userId, tenantId, ct); return Results.NoContent(); }).WithName("ComplianceDelete").WithOpenApi();
+app.MapDelete("/api/v1/compliance/users/{userId}", async (string userId, string? tenantId, HttpContext http, IComplianceService compliance, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    await compliance.DeleteUserAsync(userId, tid, ct);
+    return Results.NoContent();
+}).WithName("ComplianceDelete").WithOpenApi();
 
 app.MapGet("/api/v1/inapp/{userId}", async (string userId, string? tenantId, bool unreadOnly, NotificationDbContext db, CancellationToken ct) =>
 {
@@ -260,6 +277,35 @@ app.MapPost("/api/v1/inapp/{id:guid}/read", async (Guid id, NotificationDbContex
 
 app.MapGet("/api/v1/providers/health", (IProviderHealthTracker health) =>
     Results.Ok(health.GetAll())).WithName("GetProviderHealth").WithOpenApi();
+
+
+app.MapPost("/api/v1/admin/api-keys", async (CreateApiKeyRequest request, HttpContext http, IApiKeyStore store, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    // Non-global admin tenant binding: if caller has tenant, force it
+    var auth = http.GetAuthContext()!;
+    var tenantId = auth.TenantId ?? request.TenantId;
+    if (!auth.IsAdmin) return Results.Forbid();
+    var plain = ApiKeyHasher.GeneratePlainKey();
+    var hash = ApiKeyHasher.Hash(plain);
+    var created = await store.CreateAsync(request with { TenantId = tenantId }, plain, hash, ct);
+    return Results.Created($"/api/v1/admin/api-keys/{created.Id}", created);
+}).WithName("CreateApiKey").WithOpenApi();
+
+app.MapGet("/api/v1/admin/api-keys", async (HttpContext http, IApiKeyStore store, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    var auth = http.GetAuthContext()!;
+    var list = await store.ListAsync(auth.IsAdmin ? null : auth.TenantId, ct);
+    return Results.Ok(list);
+}).WithName("ListApiKeys").WithOpenApi();
+
+app.MapDelete("/api/v1/admin/api-keys/{id:guid}", async (Guid id, HttpContext http, IApiKeyStore store, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    var ok = await store.RevokeAsync(id, ct);
+    return ok ? Results.NoContent() : Results.NotFound();
+}).WithName("RevokeApiKey").WithOpenApi();
 
 app.MapGet("/api/v1/admin/providers", (PluginLoader loader) =>
     loader.LoadedPlugins.OfType<IChannelPlugin>().Select(p => new { p.Id, p.Name, p.Channel, Version = p.Version.ToString(), Capabilities = p.Capabilities }))

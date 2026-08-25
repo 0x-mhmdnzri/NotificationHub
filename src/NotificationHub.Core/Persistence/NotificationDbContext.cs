@@ -147,6 +147,20 @@ public sealed class WorkflowTimelineEventEntity
     public DateTimeOffset OccurredAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+
+public sealed class ApiKeyEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = "";
+    public string KeyHash { get; set; } = "";
+    public string? TenantId { get; set; }
+    public string RolesJson { get; set; } = "[]";
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? ExpiresAt { get; set; }
+    public DateTimeOffset? LastUsedAt { get; set; }
+}
+
 public sealed class NotificationDbContext : DbContext
 {
     public NotificationDbContext(DbContextOptions<NotificationDbContext> options) : base(options) { }
@@ -161,6 +175,7 @@ public sealed class NotificationDbContext : DbContext
     public DbSet<SegmentDefinitionEntity> Segments => Set<SegmentDefinitionEntity>();
     public DbSet<InAppMessageEntity> InAppMessages => Set<InAppMessageEntity>();
     public DbSet<TemplateEntity> Templates => Set<TemplateEntity>();
+    public DbSet<ApiKeyEntity> ApiKeys => Set<ApiKeyEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -256,5 +271,16 @@ public sealed class NotificationDbContext : DbContext
         t.Property(x => x.Body).IsRequired();
         t.HasIndex(x => new { x.TenantId, x.Key, x.Channel, x.Locale }).IsUnique();
         t.HasIndex(x => x.IsActive);
+
+        var ak = modelBuilder.Entity<ApiKeyEntity>();
+        ak.ToTable("api_keys");
+        ak.HasKey(x => x.Id);
+        ak.Property(x => x.Name).HasMaxLength(128).IsRequired();
+        ak.Property(x => x.KeyHash).HasMaxLength(128).IsRequired();
+        ak.Property(x => x.TenantId).HasMaxLength(128);
+        ak.Property(x => x.RolesJson).HasMaxLength(512).IsRequired();
+        ak.HasIndex(x => x.KeyHash).IsUnique();
+        ak.HasIndex(x => x.TenantId);
+        ak.HasIndex(x => x.IsActive);
     }
 }
