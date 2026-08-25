@@ -247,6 +247,9 @@ public sealed class NotificationDbContext : DbContext
     public DbSet<DeviceTokenEntity> DeviceTokens => Set<DeviceTokenEntity>();
     public DbSet<NotificationHub.Core.Layouts.LayoutEntity> Layouts => Set<NotificationHub.Core.Layouts.LayoutEntity>();
     public DbSet<NotificationHub.Core.Layouts.PartialEntity> Partials => Set<NotificationHub.Core.Layouts.PartialEntity>();
+    public DbSet<NotificationHub.Core.Cdp.CdpProfileEntity> CdpProfiles => Set<NotificationHub.Core.Cdp.CdpProfileEntity>();
+    public DbSet<NotificationHub.Core.Cdp.CdpEventEntity> CdpEvents => Set<NotificationHub.Core.Cdp.CdpEventEntity>();
+    public DbSet<NotificationHub.Core.I18n.LocalizationEntryEntity> LocalizationEntries => Set<NotificationHub.Core.I18n.LocalizationEntryEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

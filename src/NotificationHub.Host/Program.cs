@@ -25,6 +25,12 @@ using NotificationHub.Core.Workflow.Handlers;
 using NotificationHub.Core.Expressions;
 using NotificationHub.Core.Validation;
 using NotificationHub.Core.Activity;
+using NotificationHub.Core.Auth;
+using NotificationHub.Core.Observability;
+using NotificationHub.Core.I18n;
+using NotificationHub.Core.Campaigns;
+using NotificationHub.Core.Cdp;
+using NotificationHub.Core.Environments;
 using NotificationHub.Core.Sync;
 using NotificationHub.Core.Layouts;
 using NotificationHub.Core.Devices;
@@ -157,6 +163,12 @@ builder.Services.AddScoped<IThrottleService, ThrottleService>();
 builder.Services.AddScoped<ITopicService, TopicService>();
 builder.Services.AddScoped<IDeviceService, DeviceService>();
 builder.Services.AddScoped<IActivityService, ActivityService>();
+builder.Services.AddSingleton<IEnvironmentContext, EnvironmentContext>();
+builder.Services.AddScoped<ICdpService, CdpService>();
+builder.Services.AddScoped<IBroadcastService, BroadcastService>();
+builder.Services.AddScoped<ILocalizationCatalog, LocalizationCatalog>();
+builder.Services.AddSingleton<IMetricsService, InMemoryMetricsService>();
+builder.Services.Configure<OidcOptions>(builder.Configuration.GetSection(OidcOptions.SectionName));
 builder.Services.AddScoped<ILayoutService, LayoutService>();
 builder.Services.AddScoped<ICrossChannelReadSync, CrossChannelReadSync>();
 builder.Services.AddScoped<IWorkflowStepHandler, HttpStepHandler>();
@@ -197,6 +209,7 @@ using (var scope = app.Services.CreateScope())
     await db.Database.MigrateAsync();
     await Phase1Schema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Phase1Schema"));
     await Phase2Schema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Phase2Schema"));
+    await Phase4Schema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Phase4Schema"));
     var seeder = scope.ServiceProvider.GetRequiredService<TemplateSeeder>();
     await seeder.SeedDefaultsAsync();
     var keyBootstrap = scope.ServiceProvider.GetRequiredService<ApiKeyBootstrapper>();
@@ -975,6 +988,88 @@ app.MapPost("/api/v1/notifications/{id:guid}/sync-read", async (Guid id, string?
     var n = await sync.SyncReadAsync(id, userId, http.ResolveTenantId(tenantId), ct);
     return Results.Ok(new { marked = n });
 }).WithName("SyncCrossChannelRead").WithOpenApi();
+
+
+
+// ===== Phase 4 F22–F30 =====
+app.MapGet("/api/v1/environment", (HttpContext http, IEnvironmentContext env) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader) is { } denied) return denied;
+    return Results.Ok(new { env.Name, env.IsProduction, env.AllowDangerousOperations });
+}).WithName("GetEnvironment").WithOpenApi();
+
+app.MapPost("/api/v1/cdp/identify", async (CdpIdentifyRequest req, HttpContext http, ICdpService cdp, IMetricsService metrics, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    req = req with { TenantId = http.ResolveTenantId(req.TenantId) };
+    var profile = await cdp.IdentifyAsync(req, ct);
+    metrics.Increment("cdp.identify");
+    return Results.Ok(profile);
+}).WithName("IdentifyCdp").WithOpenApi();
+
+app.MapPost("/api/v1/cdp/track", async (CdpTrackRequest req, HttpContext http, ICdpService cdp, IMetricsService metrics, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    req = req with { TenantId = http.ResolveTenantId(req.TenantId) };
+    var (profile, runId, _) = await cdp.TrackAsync(req, ct);
+    metrics.Increment("cdp.track", 1, ("event", req.Event));
+    return Results.Ok(new { profile, workflowRunId = runId });
+}).WithName("TrackCdp").WithOpenApi();
+
+app.MapGet("/api/v1/cdp/profiles/{userId}", async (string userId, string? tenantId, HttpContext http, ICdpService cdp, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var p = await cdp.GetProfileAsync(userId, http.ResolveTenantId(tenantId), ct);
+    return p is null ? Results.NotFound() : Results.Ok(p);
+}).WithName("GetCdpProfile").WithOpenApi();
+
+app.MapPost("/api/v1/campaigns/broadcast", async (BroadcastRequest req, HttpContext http, IBroadcastService broadcast, IMetricsService metrics, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    req = req with { TenantId = http.ResolveTenantId(req.TenantId) };
+    var result = await broadcast.SendAsync(req, ct);
+    metrics.Increment("campaign.broadcast.accepted", result.Accepted);
+    metrics.Increment("campaign.broadcast.failed", result.Failed);
+    return Results.Accepted(null, result);
+}).WithName("BroadcastCampaign").WithOpenApi();
+
+app.MapPost("/api/v1/i18n", async (string key, string locale, string value, string? tenantId, HttpContext http, ILocalizationCatalog i18n, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    await i18n.SetAsync(key, locale, value, http.ResolveTenantId(tenantId), ct);
+    return Results.NoContent();
+}).WithName("SetLocalization").WithOpenApi();
+
+app.MapGet("/api/v1/i18n/{locale}", async (string locale, string? tenantId, HttpContext http, ILocalizationCatalog i18n, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    return Results.Ok(await i18n.GetAllAsync(locale, http.ResolveTenantId(tenantId), ct));
+}).WithName("GetLocalization").WithOpenApi();
+
+app.MapGet("/api/v1/admin/metrics", (HttpContext http, IMetricsService metrics) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    return Results.Ok(metrics.Snapshot());
+}).WithName("AdminMetrics").WithOpenApi();
+
+app.MapGet("/api/v1/admin/auth/oidc", (HttpContext http, Microsoft.Extensions.Options.IOptions<OidcOptions> oidc) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    var o = oidc.Value;
+    return Results.Ok(new { o.Enabled, o.Authority, o.ClientId, o.Audience, o.Scopes, hasSecret = !string.IsNullOrEmpty(o.ClientSecret) });
+}).WithName("OidcConfig").WithOpenApi();
+
+app.MapPost("/api/v1/workflows/code-first", async (WorkflowDefinition def, HttpContext http, IWorkflowEngine engine, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    try
+    {
+        WorkflowDsl.Validate(def);
+        def = def with { TenantId = http.ResolveTenantId(def.TenantId) };
+        return Results.Ok(await engine.SaveAsync(def, ct));
+    }
+    catch (ArgumentException ex) { return Results.BadRequest(new { error = ex.Message }); }
+}).WithName("SaveCodeFirstWorkflow").WithOpenApi();
 
 
 // SEC-28: public health is minimal; detailed checks under admin messaging health

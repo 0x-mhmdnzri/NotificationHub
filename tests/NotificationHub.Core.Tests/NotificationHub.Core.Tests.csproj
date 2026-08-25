@@ -25,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\NotificationHub.Core\NotificationHub.Core.csproj" />
     <ProjectReference Include="..\..\src\NotificationHub.Abstractions\NotificationHub.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\NotificationHub.Sdk\NotificationHub.Sdk.csproj" />
   </ItemGroup>
 
   <ItemGroup>
