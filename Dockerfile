@@ -2,7 +2,6 @@
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
 
-# Copy solution and project files first for better layer caching
 COPY NotificationHub.sln ./
 COPY src/NotificationHub.Abstractions/NotificationHub.Abstractions.csproj src/NotificationHub.Abstractions/
 COPY src/NotificationHub.Core/NotificationHub.Core.csproj src/NotificationHub.Core/
@@ -19,24 +18,26 @@ COPY Plugins/NotificationHub.Plugins.Push.Fcm/NotificationHub.Plugins.Push.Fcm.c
 
 RUN dotnet restore
 
-# Copy everything else and build
 COPY . .
 WORKDIR /src/src/NotificationHub.Host
-RUN dotnet publish -c Release -o /app/publish --no-restore
+RUN dotnet publish -c Release -o /app/publish --no-restore /p:UseAppHost=false
 
-# Runtime stage
+# Runtime stage (SEC-18)
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
 WORKDIR /app
 
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+# Non-root user
+RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser \
+    && mkdir -p /app && chown -R appuser:appuser /app
 
-COPY --from=build /app/publish .
+COPY --from=build --chown=appuser:appuser /app/publish .
 
-RUN chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8080
 ENV ASPNETCORE_URLS=http://+:8080
+ENV ASPNETCORE_HTTP_PORTS=8080
 ENV ASPNETCORE_ENVIRONMENT=Production
+ENV DOTNET_EnableDiagnostics=0
 
 ENTRYPOINT ["dotnet", "NotificationHub.Host.dll"]
