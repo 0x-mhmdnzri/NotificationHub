@@ -11,15 +11,22 @@ public sealed class InMemoryInboxEventBus : IInboxEventBus
     public Task PublishAsync(InboxItem item, CancellationToken ct = default)
     {
         var key = Key(item.UserId, item.TenantId);
-        if (Streams.TryGetValue(key, out var ch))
-            ch.Writer.TryWrite(item);
+        // GetOrAdd so a publish that races ahead of Subscribe still buffers the event
+        var ch = Streams.GetOrAdd(key, _ => Channel.CreateBounded<InboxItem>(new BoundedChannelOptions(100)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest
+        }));
+        ch.Writer.TryWrite(item);
         return Task.CompletedTask;
     }
 
     public async IAsyncEnumerable<InboxItem> SubscribeAsync(string userId, string? tenantId, [EnumeratorCancellation] CancellationToken ct = default)
     {
         var key = Key(userId, tenantId);
-        var ch = Streams.GetOrAdd(key, _ => Channel.CreateBounded<InboxItem>(100));
+        var ch = Streams.GetOrAdd(key, _ => Channel.CreateBounded<InboxItem>(new BoundedChannelOptions(100)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest
+        }));
         await foreach (var item in ch.Reader.ReadAllAsync(ct))
             yield return item;
     }
