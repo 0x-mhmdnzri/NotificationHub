@@ -1,0 +1,6 @@
+﻿services:
+  notificationhub.api:
+    image: notificationhub.api
+    build:
+      context: .
+      dockerfile: NotificationHub.API/Dockerfile
