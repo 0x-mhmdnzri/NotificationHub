@@ -37,7 +37,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddHttpClient("webhooks");
+builder.Services.AddHttpClient("webhooks", c =>
+{
+    c.Timeout = TimeSpan.FromSeconds(10);
+});
 
 var cs = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("Connection string 'Default' missing");
@@ -125,6 +128,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseMiddleware<ApiKeyAuthMiddleware>();
 
 using (var scope = app.Services.CreateScope())
@@ -210,93 +214,171 @@ app.MapPost("/api/v1/notifications/sync", async (NotificationRequest request, Ht
     return delivery.Success ? Results.Ok(delivery) : Results.BadRequest(delivery);
 }).WithName("SendNotificationSync").WithOpenApi();
 
-app.MapGet("/api/v1/notifications/{id:guid}", async (Guid id, INotificationStatusStore store, CancellationToken ct) =>
+app.MapGet("/api/v1/notifications/{id:guid}", async (Guid id, HttpContext http, INotificationStatusStore store, CancellationToken ct) =>
 {
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
     var s = await store.GetAsync(id, ct);
-    return s is null ? Results.NotFound() : Results.Ok(s);
+    if (s is null) return Results.NotFound();
+    if (!http.CanAccessTenant(s.TenantId)) return Results.NotFound();
+    return Results.Ok(s);
 }).WithName("GetNotificationStatus").WithOpenApi();
 
-app.MapGet("/api/v1/plugins", (PluginLoader loader) =>
-    loader.LoadedPlugins.Select(p => new { p.Id, p.Name, Version = p.Version.ToString(), Capabilities = p.Capabilities }))
-.WithName("ListPlugins").WithOpenApi();
-
-app.MapPost("/api/v1/templates", async (TemplateDefinition t, ITemplateEngine engine, CancellationToken ct) =>
-{ await engine.RegisterTemplateAsync(t, ct); return Results.Created($"/api/v1/templates/{t.Key}", t); }).WithName("RegisterTemplate").WithOpenApi();
-
-app.MapGet("/api/v1/templates/{key}", async (string key, string channel, string? locale, string? tenantId, ITemplateEngine engine, CancellationToken ct) =>
-{ var t = await engine.GetTemplateAsync(key, channel, locale ?? "en", tenantId, ct); return t is null ? Results.NotFound() : Results.Ok(t); }).WithName("GetTemplate").WithOpenApi();
-
-app.MapGet("/api/v1/templates", async (string? tenantId, string? channel, ITemplateStore store, CancellationToken ct) =>
-    Results.Ok(await store.ListAsync(tenantId, channel, ct))).WithName("ListTemplates").WithOpenApi();
-
-app.MapDelete("/api/v1/templates/{key}", async (string key, string channel, string? locale, string? tenantId, ITemplateStore store, CancellationToken ct) =>
+app.MapGet("/api/v1/plugins", (HttpContext http, PluginLoader loader) =>
 {
-    var ok = await store.DeleteAsync(key, channel, locale ?? "en", tenantId, ct);
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    return Results.Ok(loader.LoadedPlugins.Select(p => new { p.Id, p.Name, Version = p.Version.ToString(), Capabilities = p.Capabilities }));
+}).WithName("ListPlugins").WithOpenApi();
+
+app.MapPost("/api/v1/templates", async (TemplateDefinition t, HttpContext http, ITemplateEngine engine, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    t = t with { TenantId = http.ResolveTenantId(t.TenantId) };
+    await engine.RegisterTemplateAsync(t, ct);
+    return Results.Created($"/api/v1/templates/{t.Key}", t);
+}).WithName("RegisterTemplate").WithOpenApi();
+
+app.MapGet("/api/v1/templates/{key}", async (string key, string channel, string? locale, string? tenantId, HttpContext http, ITemplateEngine engine, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var t = await engine.GetTemplateAsync(key, channel, locale ?? "en", tid, ct);
+    return t is null ? Results.NotFound() : Results.Ok(t);
+}).WithName("GetTemplate").WithOpenApi();
+
+app.MapGet("/api/v1/templates", async (string? tenantId, string? channel, HttpContext http, ITemplateStore store, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    return Results.Ok(await store.ListAsync(tid, channel, ct));
+}).WithName("ListTemplates").WithOpenApi();
+
+app.MapDelete("/api/v1/templates/{key}", async (string key, string channel, string? locale, string? tenantId, HttpContext http, ITemplateStore store, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var ok = await store.DeleteAsync(key, channel, locale ?? "en", tid, ct);
     return ok ? Results.NoContent() : Results.NotFound();
 }).WithName("DeleteTemplate").WithOpenApi();
 
-app.MapPost("/api/v1/templates/preview", async (NotificationRequest request, ITemplateEngine engine, CancellationToken ct) =>
-    Results.Ok(await engine.RenderAsync(request, ct))).WithName("PreviewTemplate").WithOpenApi();
-
-app.MapGet("/api/v1/preferences/{userId}", async (string userId, string? tenantId, IPreferenceService prefs, CancellationToken ct) =>
-{ var p = await prefs.GetAsync(userId, tenantId, ct); return p is null ? Results.NotFound() : Results.Ok(p); }).WithName("GetPreferences").WithOpenApi();
-
-app.MapPut("/api/v1/preferences", async (UserPreference pref, IPreferenceService prefs, CancellationToken ct) =>
-{ await prefs.SaveAsync(pref, ct); return Results.NoContent(); }).WithName("SavePreferences").WithOpenApi();
-
-app.MapPost("/api/v1/webhooks", async (WebhookSubscription sub, NotificationDbContext db, CancellationToken ct) =>
+app.MapPost("/api/v1/templates/preview", async (NotificationRequest request, HttpContext http, ITemplateEngine engine, CancellationToken ct) =>
 {
-    db.WebhookSubscriptions.Add(new WebhookSubscriptionEntity { Id = sub.Id, Url = sub.Url, Secret = sub.Secret, EventsJson = System.Text.Json.JsonSerializer.Serialize(sub.Events), TenantId = sub.TenantId, IsActive = sub.IsActive });
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    request = request with { TenantId = http.ResolveTenantId(request.TenantId) };
+    return Results.Ok(await engine.RenderAsync(request, ct));
+}).WithName("PreviewTemplate").WithOpenApi();
+
+app.MapGet("/api/v1/preferences/{userId}", async (string userId, string? tenantId, HttpContext http, IPreferenceService prefs, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var p = await prefs.GetAsync(userId, tid, ct);
+    return p is null ? Results.NotFound() : Results.Ok(p);
+}).WithName("GetPreferences").WithOpenApi();
+
+app.MapPut("/api/v1/preferences", async (UserPreference pref, HttpContext http, IPreferenceService prefs, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    pref = pref with { TenantId = http.ResolveTenantId(pref.TenantId) };
+    await prefs.SaveAsync(pref, ct);
+    return Results.NoContent();
+}).WithName("SavePreferences").WithOpenApi();
+
+app.MapPost("/api/v1/webhooks", async (WebhookSubscription sub, HttpContext http, NotificationDbContext db, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    if (!WebhookUrlValidator.IsSafe(sub.Url, out var urlError))
+        return Results.BadRequest(new { error = urlError });
+    var tenantId = http.ResolveTenantId(sub.TenantId);
+    db.WebhookSubscriptions.Add(new WebhookSubscriptionEntity
+    {
+        Id = sub.Id == Guid.Empty ? Guid.NewGuid() : sub.Id,
+        Url = sub.Url,
+        Secret = sub.Secret,
+        EventsJson = System.Text.Json.JsonSerializer.Serialize(sub.Events),
+        TenantId = tenantId,
+        IsActive = sub.IsActive
+    });
     await db.SaveChangesAsync(ct);
-    return Results.Created($"/api/v1/webhooks/{sub.Id}", sub);
+    return Results.Created($"/api/v1/webhooks/{sub.Id}", sub with { TenantId = tenantId });
 }).WithName("RegisterWebhook").WithOpenApi();
 
-app.MapGet("/api/v1/audit", async (Guid? notificationId, string? tenantId, int take, NotificationDbContext db, CancellationToken ct) =>
+app.MapGet("/api/v1/audit", async (Guid? notificationId, string? tenantId, int take, HttpContext http, NotificationDbContext db, CancellationToken ct) =>
 {
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader) is { } denied) return denied;
     take = take <= 0 ? 50 : Math.Min(take, 200);
+    var tid = http.ResolveTenantId(tenantId);
     var q = db.AuditEntries.AsNoTracking().OrderByDescending(x => x.CreatedAt).AsQueryable();
     if (notificationId.HasValue) q = q.Where(x => x.NotificationId == notificationId);
-    if (!string.IsNullOrEmpty(tenantId)) q = q.Where(x => x.TenantId == tenantId);
+    if (!string.IsNullOrEmpty(tid)) q = q.Where(x => x.TenantId == tid);
+    else if (!http.GetAuthContext()!.IsAdmin) q = q.Where(x => x.TenantId == null);
     return Results.Ok(await q.Take(take).ToListAsync(ct));
 }).WithName("GetAudit").WithOpenApi();
 
 // Phase 3 APIs
-app.MapPost("/api/v1/workflows", async (WorkflowDefinition def, IWorkflowEngine engine, CancellationToken ct) =>
-    Results.Created($"/api/v1/workflows/{def.Key}", await engine.SaveAsync(def, ct))).WithName("SaveWorkflow").WithOpenApi();
-
-app.MapGet("/api/v1/workflows/{key}", async (string key, string? tenantId, IWorkflowEngine engine, CancellationToken ct) =>
-{ var w = await engine.GetAsync(key, tenantId, ct); return w is null ? Results.NotFound() : Results.Ok(w); }).WithName("GetWorkflow").WithOpenApi();
-
-app.MapPost("/api/v1/workflows/start", async (WorkflowStartRequest request, IWorkflowEngine engine, CancellationToken ct) =>
-{ var id = await engine.StartAsync(request, ct); return Results.Accepted($"/api/v1/workflows/runs/{id}", new { runId = id }); }).WithName("StartWorkflow").WithOpenApi();
-
-app.MapGet("/api/v1/workflows/runs/{runId:guid}", async (Guid runId, IWorkflowEngine engine, CancellationToken ct) =>
+app.MapPost("/api/v1/workflows", async (WorkflowDefinition def, HttpContext http, IWorkflowEngine engine, CancellationToken ct) =>
 {
-    var run = await engine.GetRunAsync(runId, ct);
-    return run is null ? Results.NotFound() : Results.Ok(run);
-}).WithName("GetWorkflowRun").WithOpenApi();
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    def = def with { TenantId = http.ResolveTenantId(def.TenantId) };
+    return Results.Created($"/api/v1/workflows/{def.Key}", await engine.SaveAsync(def, ct));
+}).WithName("SaveWorkflow").WithOpenApi();
 
-app.MapGet("/api/v1/workflows/runs/{runId:guid}/timeline", async (Guid runId, IWorkflowEngine engine, CancellationToken ct) =>
+app.MapGet("/api/v1/workflows/{key}", async (string key, string? tenantId, HttpContext http, IWorkflowEngine engine, CancellationToken ct) =>
 {
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var w = await engine.GetAsync(key, tid, ct);
+    return w is null ? Results.NotFound() : Results.Ok(w);
+}).WithName("GetWorkflow").WithOpenApi();
+
+app.MapPost("/api/v1/workflows/start", async (WorkflowStartRequest request, HttpContext http, IWorkflowEngine engine, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    request = request with { TenantId = http.ResolveTenantId(request.TenantId) };
+    var id = await engine.StartAsync(request, ct);
+    return Results.Accepted($"/api/v1/workflows/runs/{id}", new { runId = id });
+}).WithName("StartWorkflow").WithOpenApi();
+
+app.MapGet("/api/v1/workflows/runs/{runId:guid}", async (Guid runId, HttpContext http, IWorkflowEngine engine, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
     var run = await engine.GetRunAsync(runId, ct);
     if (run is null) return Results.NotFound();
-    var timeline = await engine.GetTimelineAsync(runId, ct);
-    return Results.Ok(timeline);
+    if (!http.CanAccessTenant(run.TenantId)) return Results.NotFound();
+    return Results.Ok(run);
+}).WithName("GetWorkflowRun").WithOpenApi();
+
+app.MapGet("/api/v1/workflows/runs/{runId:guid}/timeline", async (Guid runId, HttpContext http, IWorkflowEngine engine, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var run = await engine.GetRunAsync(runId, ct);
+    if (run is null || !http.CanAccessTenant(run.TenantId)) return Results.NotFound();
+    return Results.Ok(await engine.GetTimelineAsync(runId, ct));
 }).WithName("GetWorkflowTimeline").WithOpenApi();
 
-app.MapPost("/api/v1/workflows/runs/{runId:guid}/cancel", async (Guid runId, IWorkflowEngine engine, CancellationToken ct) =>
+app.MapPost("/api/v1/workflows/runs/{runId:guid}/cancel", async (Guid runId, HttpContext http, IWorkflowEngine engine, CancellationToken ct) =>
 {
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var run = await engine.GetRunAsync(runId, ct);
+    if (run is null || !http.CanAccessTenant(run.TenantId)) return Results.NotFound();
     var ok = await engine.CancelAsync(runId, ct);
     return ok ? Results.NoContent() : Results.NotFound();
 }).WithName("CancelWorkflowRun").WithOpenApi();
 
 
 
-app.MapPost("/api/v1/segments", async (SegmentDefinition seg, ISegmentService segments, CancellationToken ct) =>
-    Results.Created($"/api/v1/segments/{seg.Key}", await segments.SaveAsync(seg, ct))).WithName("SaveSegment").WithOpenApi();
+app.MapPost("/api/v1/segments", async (SegmentDefinition seg, HttpContext http, ISegmentService segments, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    seg = seg with { TenantId = http.ResolveTenantId(seg.TenantId) };
+    return Results.Created($"/api/v1/segments/{seg.Key}", await segments.SaveAsync(seg, ct));
+}).WithName("SaveSegment").WithOpenApi();
 
-app.MapPost("/api/v1/segments/{key}/match", async (string key, Dictionary<string, object?> attributes, string? tenantId, ISegmentService segments, CancellationToken ct) =>
-    Results.Ok(new { matched = await segments.MatchesAsync(key, attributes, tenantId, ct) })).WithName("MatchSegment").WithOpenApi();
+app.MapPost("/api/v1/segments/{key}/match", async (string key, Dictionary<string, object?> attributes, string? tenantId, HttpContext http, ISegmentService segments, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    return Results.Ok(new { matched = await segments.MatchesAsync(key, attributes, tid, ct) });
+}).WithName("MatchSegment").WithOpenApi();
 
 
 // Engagement ingest (authenticated)
@@ -347,6 +429,11 @@ app.MapGet("/t/c/{notificationId:guid}", async (Guid notificationId, string url,
 {
     if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(url, UriKind.Absolute, out var target))
         return Results.BadRequest(new { error = "Valid absolute url query parameter required" });
+    if (!string.Equals(target.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(target.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase))
+        return Results.BadRequest(new { error = "Only http/https redirect targets allowed" });
+    if (target.IsLoopback)
+        return Results.BadRequest(new { error = "Loopback redirect targets are not allowed" });
 
     await engagement.TrackAsync(new EngagementEvent
     {
@@ -361,8 +448,12 @@ app.MapGet("/t/c/{notificationId:guid}", async (Guid notificationId, string url,
     return Results.Redirect(target.ToString());
 }).WithName("TrackClickRedirect").ExcludeFromDescription();
 
-app.MapGet("/api/v1/analytics/summary", async (DateTimeOffset? from, DateTimeOffset? to, string? tenantId, IAnalyticsService analytics, CancellationToken ct) =>
-    Results.Ok(await analytics.GetSummaryAsync(from, to, tenantId, ct))).WithName("AnalyticsSummary").WithOpenApi();
+app.MapGet("/api/v1/analytics/summary", async (DateTimeOffset? from, DateTimeOffset? to, string? tenantId, HttpContext http, IAnalyticsService analytics, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    return Results.Ok(await analytics.GetSummaryAsync(from, to, tid, ct));
+}).WithName("AnalyticsSummary").WithOpenApi();
 
 
 app.MapPost("/api/v1/consents", async (ConsentRecord record, HttpContext http, IConsentService consents, CancellationToken ct) =>
@@ -405,8 +496,12 @@ app.MapPost("/api/v1/admin/retention/sweep", async (HttpContext http, IRetention
     return Results.Ok(await retention.SweepAsync(ct));
 }).WithName("RunRetentionSweep").WithOpenApi();
 
-app.MapGet("/api/v1/compliance/export/{userId}", async (string userId, string? tenantId, IComplianceService compliance, CancellationToken ct) =>
-    Results.Ok(await compliance.ExportUserAsync(userId, tenantId, ct))).WithName("ComplianceExport").WithOpenApi();
+app.MapGet("/api/v1/compliance/export/{userId}", async (string userId, string? tenantId, HttpContext http, IComplianceService compliance, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    return Results.Ok(await compliance.ExportUserAsync(userId, tid, ct));
+}).WithName("ComplianceExport").WithOpenApi();
 
 app.MapDelete("/api/v1/compliance/users/{userId}", async (string userId, string? tenantId, HttpContext http, IComplianceService compliance, CancellationToken ct) =>
 {
@@ -416,25 +511,31 @@ app.MapDelete("/api/v1/compliance/users/{userId}", async (string userId, string?
     return Results.NoContent();
 }).WithName("ComplianceDelete").WithOpenApi();
 
-app.MapGet("/api/v1/inapp/{userId}", async (string userId, string? tenantId, bool unreadOnly, NotificationDbContext db, CancellationToken ct) =>
+app.MapGet("/api/v1/inapp/{userId}", async (string userId, string? tenantId, bool unreadOnly, HttpContext http, NotificationDbContext db, CancellationToken ct) =>
 {
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
     var q = db.InAppMessages.AsNoTracking().Where(x => x.UserId == userId);
-    if (!string.IsNullOrEmpty(tenantId)) q = q.Where(x => x.TenantId == tenantId);
+    if (!string.IsNullOrEmpty(tid)) q = q.Where(x => x.TenantId == tid);
     if (unreadOnly) q = q.Where(x => !x.IsRead);
     return Results.Ok(await q.OrderByDescending(x => x.CreatedAt).Take(100).ToListAsync(ct));
 }).WithName("ListInApp").WithOpenApi();
 
-app.MapPost("/api/v1/inapp/{id:guid}/read", async (Guid id, NotificationDbContext db, CancellationToken ct) =>
+app.MapPost("/api/v1/inapp/{id:guid}/read", async (Guid id, HttpContext http, NotificationDbContext db, CancellationToken ct) =>
 {
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
     var msg = await db.InAppMessages.FirstOrDefaultAsync(x => x.Id == id, ct);
-    if (msg is null) return Results.NotFound();
+    if (msg is null || !http.CanAccessTenant(msg.TenantId)) return Results.NotFound();
     msg.IsRead = true;
     await db.SaveChangesAsync(ct);
     return Results.NoContent();
 }).WithName("MarkInAppRead").WithOpenApi();
 
-app.MapGet("/api/v1/providers/health", (IProviderHealthTracker health) =>
-    Results.Ok(health.GetAll())).WithName("GetProviderHealth").WithOpenApi();
+app.MapGet("/api/v1/providers/health", (HttpContext http, IProviderHealthTracker health) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    return Results.Ok(health.GetAll());
+}).WithName("GetProviderHealth").WithOpenApi();
 
 
 app.MapPost("/api/v1/admin/api-keys", async (CreateApiKeyRequest request, HttpContext http, IApiKeyStore store, CancellationToken ct) =>
@@ -465,12 +566,15 @@ app.MapDelete("/api/v1/admin/api-keys/{id:guid}", async (Guid id, HttpContext ht
     return ok ? Results.NoContent() : Results.NotFound();
 }).WithName("RevokeApiKey").WithOpenApi();
 
-app.MapGet("/api/v1/admin/providers", (PluginLoader loader) =>
-    loader.LoadedPlugins.OfType<IChannelPlugin>().Select(p => new { p.Id, p.Name, p.Channel, Version = p.Version.ToString(), Capabilities = p.Capabilities }))
-.WithName("AdminProviders").WithOpenApi();
-
-app.MapGet("/api/v1/admin/monitoring", async (IAnalyticsService analytics, PluginLoader loader, CancellationToken ct) =>
+app.MapGet("/api/v1/admin/providers", (HttpContext http, PluginLoader loader) =>
 {
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    return Results.Ok(loader.LoadedPlugins.OfType<IChannelPlugin>().Select(p => new { p.Id, p.Name, p.Channel, Version = p.Version.ToString(), Capabilities = p.Capabilities }));
+}).WithName("AdminProviders").WithOpenApi();
+
+app.MapGet("/api/v1/admin/monitoring", async (HttpContext http, IAnalyticsService analytics, PluginLoader loader, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
     var summary = await analytics.GetSummaryAsync(DateTimeOffset.UtcNow.AddDays(-1), null, null, ct);
     return Results.Ok(new
     {
