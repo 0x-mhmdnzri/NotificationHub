@@ -36,7 +36,12 @@ jobs:
           --collect:"XPlat Code Coverage"
 
       - name: Publish (Host)
-        run: dotnet publish src/NotificationHub.Host/NotificationHub.Host.csproj -c Release -o ./publish --no-build
+        # Build Host graph explicitly so plugin projects referenced only by Host are produced
+        run: >
+          dotnet publish src/NotificationHub.Host/NotificationHub.Host.csproj
+          -c Release
+          -o ./publish
+          --no-restore
 
       - name: Upload test results
         if: always()
