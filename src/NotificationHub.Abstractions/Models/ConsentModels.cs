@@ -28,6 +28,8 @@ public sealed class RetentionOptions
     public int AuditDays { get; set; } = 180;
     public int TimelineDays { get; set; } = 90;
     public int ConsentDays { get; set; } = 730; // keep longer for legal
+    public int OutboxPublishedDays { get; set; } = 7;
+    public int InboxDays { get; set; } = 14;
     public bool Enabled { get; set; } = true;
     public int SweepIntervalMinutes { get; set; } = 60;
 }
@@ -37,5 +39,7 @@ public sealed record RetentionSweepResult
     public int NotificationsDeleted { get; init; }
     public int AuditsDeleted { get; init; }
     public int TimelineDeleted { get; init; }
+    public int OutboxDeleted { get; init; }
+    public int InboxDeleted { get; init; }
     public DateTimeOffset RanAt { get; init; } = DateTimeOffset.UtcNow;
 }

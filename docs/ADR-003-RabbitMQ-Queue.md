@@ -104,11 +104,23 @@ We will use **RabbitMQ** as the notification transport, combined with a **Postgr
 - Inbox table grows and needs retention/cleanup
 
 **Risks / follow-up actions:**
-- Alert on `outbox_messages` pending age and `notifications.dlq` depth
-- Add publisher confirms for stronger publish durability
-- Retention job for old inbox/outbox rows
+- ~~Alert on `outbox_messages` pending age and `notifications.dlq` depth~~ → `MessagingHealthMonitorWorker` + `GET /api/v1/admin/messaging/health`
+- ~~Add publisher confirms for stronger publish durability~~ → `CreateChannelOptions(publisherConfirmationsEnabled: true)` + await confirm on publish
+- ~~Retention job for old inbox/outbox rows~~ → `RetentionService` (`OutboxPublishedDays`, `InboxDays`)
 - Load-test prefetch vs provider RPS
 - Optional future: delayed redelivery exchange instead of requeue for backoff
+- Optional future: MassTransit if multi-message sagas dominate
+
+### Implemented reliability controls (post-decision)
+| Control | Mechanism |
+|---------|-----------|
+| Dual-write safety | PostgreSQL outbox + relay |
+| Publish durability | Publisher confirms (tracked await) |
+| Consumer idempotency | `inbox_messages` |
+| Poison messages | DLX/DLQ + max redelivery |
+| Correct ack | Ack only after process success |
+| Ops visibility | Messaging health snapshot + log alerts |
+| Storage growth | Retention sweep for published outbox / old inbox |
 
 ## References
 

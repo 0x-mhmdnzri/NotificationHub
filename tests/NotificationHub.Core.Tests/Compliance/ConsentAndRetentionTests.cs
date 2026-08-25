@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Compliance;
+using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Store;
 using NotificationHub.Core.Tests.Helpers;
 
@@ -80,5 +81,40 @@ public class ConsentAndRetentionTests
         var result = await retention.SweepAsync();
         result.NotificationsDeleted.Should().Be(1);
         db.NotificationStatuses.Count().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TC_F_094_Retention_DeletesOldOutboxAndInbox()
+    {
+        await using var db = TestFixtures.CreateDbContext();
+        db.OutboxMessages.Add(new OutboxMessageEntity
+        {
+            NotificationId = Guid.NewGuid(),
+            PayloadJson = "{}",
+            Status = "published",
+            CreatedAt = DateTimeOffset.UtcNow.AddDays(-30),
+            PublishedAt = DateTimeOffset.UtcNow.AddDays(-30)
+        });
+        db.InboxMessages.Add(new InboxMessageEntity
+        {
+            MessageId = "old-msg",
+            ProcessedAt = DateTimeOffset.UtcNow.AddDays(-30)
+        });
+        await db.SaveChangesAsync();
+
+        var retention = new RetentionService(db, Options.Create(new RetentionOptions
+        {
+            Enabled = true,
+            NotificationDays = 90,
+            AuditDays = 180,
+            TimelineDays = 90,
+            ConsentDays = 730,
+            OutboxPublishedDays = 7,
+            InboxDays = 14
+        }), NullLogger<RetentionService>.Instance);
+
+        var result = await retention.SweepAsync();
+        result.OutboxDeleted.Should().Be(1);
+        result.InboxDeleted.Should().Be(1);
     }
 }

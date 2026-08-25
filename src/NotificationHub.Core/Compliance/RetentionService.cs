@@ -47,6 +47,26 @@ public sealed class RetentionService : IRetentionService
             _db.ConsentLedger.RemoveRange(oldConsents);
         }
 
+        
+        var outboxDeleted = 0;
+        var inboxDeleted = 0;
+        if (_options.OutboxPublishedDays > 0)
+        {
+            var outboxCutoff = now.AddDays(-_options.OutboxPublishedDays);
+            var oldOutbox = await _db.OutboxMessages
+                .Where(x => (x.Status == "published" || x.Status == "failed") && x.CreatedAt < outboxCutoff)
+                .ToListAsync(ct);
+            _db.OutboxMessages.RemoveRange(oldOutbox);
+            outboxDeleted = oldOutbox.Count;
+        }
+        if (_options.InboxDays > 0)
+        {
+            var inboxCutoff = now.AddDays(-_options.InboxDays);
+            var oldInbox = await _db.InboxMessages.Where(x => x.ProcessedAt < inboxCutoff).ToListAsync(ct);
+            _db.InboxMessages.RemoveRange(oldInbox);
+            inboxDeleted = oldInbox.Count;
+        }
+
         await _db.SaveChangesAsync(ct);
 
         var result = new RetentionSweepResult
@@ -54,12 +74,15 @@ public sealed class RetentionService : IRetentionService
             NotificationsDeleted = oldNotifs.Count,
             AuditsDeleted = oldAudits.Count,
             TimelineDeleted = oldTimeline.Count,
+            OutboxDeleted = outboxDeleted,
+            InboxDeleted = inboxDeleted,
             RanAt = now
         };
 
         _logger.LogInformation(
-            "Retention sweep: notifications={N}, audits={A}, timeline={T}",
-            result.NotificationsDeleted, result.AuditsDeleted, result.TimelineDeleted);
+            "Retention sweep: notifications={N}, audits={A}, timeline={T}, outbox={O}, inbox={I}",
+            result.NotificationsDeleted, result.AuditsDeleted, result.TimelineDeleted,
+            result.OutboxDeleted, result.InboxDeleted);
 
         return result;
     }

@@ -24,6 +24,9 @@ public sealed class RabbitMqOptions
     public string DeadLetterRoutingKey { get; set; } = "notification.dead";
     public ushort PrefetchCount { get; set; } = 10;
     public int MaxRedeliveryCount { get; set; } = 5;
+    /// <summary>When true, channel awaits broker publisher confirms on publish.</summary>
+    public bool PublisherConfirms { get; set; } = true;
+    public int PublisherConfirmTimeoutSeconds { get; set; } = 10;
 }
 
 /// <summary>
@@ -57,7 +60,10 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         };
 
         _connection = factory.CreateConnectionAsync().GetAwaiter().GetResult();
-        _channel = _connection.CreateChannelAsync().GetAwaiter().GetResult();
+        var channelOpts = new CreateChannelOptions(
+            publisherConfirmationsEnabled: _options.PublisherConfirms,
+            publisherConfirmationTrackingEnabled: _options.PublisherConfirms);
+        _channel = _connection.CreateChannelAsync(channelOpts).GetAwaiter().GetResult();
 
         // DLX topology
         _channel.ExchangeDeclareAsync(_options.DeadLetterExchange, ExchangeType.Direct, durable: true).GetAwaiter().GetResult();
@@ -99,15 +105,28 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
             }
         };
 
-        await _channel.BasicPublishAsync(
-            exchange: _options.ExchangeName,
-            routingKey: _options.RoutingKey,
-            mandatory: true,
-            basicProperties: props,
-            body: body,
-            cancellationToken: ct);
+        using var confirmCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        if (_options.PublisherConfirms)
+            confirmCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _options.PublisherConfirmTimeoutSeconds)));
 
-        _logger.LogDebug("Published notification {Id} redelivery={Count}", request.Id, redeliveryCount);
+        try
+        {
+            // With publisherConfirmationTrackingEnabled, awaiting BasicPublishAsync waits for broker confirm.
+            await _channel.BasicPublishAsync(
+                exchange: _options.ExchangeName,
+                routingKey: _options.RoutingKey,
+                mandatory: true,
+                basicProperties: props,
+                body: body,
+                cancellationToken: confirmCts.Token);
+
+            _logger.LogDebug("Published+confirmed notification {Id} redelivery={Count}", request.Id, redeliveryCount);
+        }
+        catch (OperationCanceledException) when (_options.PublisherConfirms && !ct.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Publisher confirm timeout after {_options.PublisherConfirmTimeoutSeconds}s for notification {request.Id}");
+        }
     }
 
     public async IAsyncEnumerable<(NotificationRequest Request, ulong DeliveryTag, int RedeliveryCount)> DequeueWithAckAsync(
@@ -164,6 +183,14 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
             await _channel.BasicAckAsync(deliveryTag, false, ct);
             yield return request;
         }
+    }
+
+    
+    public async Task<(uint WorkQueue, uint DeadLetterQueue)> GetQueueDepthsAsync(CancellationToken ct = default)
+    {
+        var work = await _channel.QueueDeclarePassiveAsync(_options.QueueName, ct);
+        var dlq = await _channel.QueueDeclarePassiveAsync(_options.DeadLetterQueue, ct);
+        return (work.MessageCount, dlq.MessageCount);
     }
 
     public Task AckAsync(ulong deliveryTag, CancellationToken ct = default)

@@ -53,6 +53,9 @@ builder.Services.AddSingleton<IProviderRouter, HealthAwareProviderRouter>();
 builder.Services.AddScoped<IOutbox, EfOutbox>();
 builder.Services.AddScoped<IInbox, EfInbox>();
 builder.Services.AddHostedService<OutboxRelayWorker>();
+builder.Services.Configure<MessagingHealthOptions>(builder.Configuration.GetSection(MessagingHealthOptions.SectionName));
+builder.Services.AddScoped<IMessagingHealthService, MessagingHealthService>();
+builder.Services.AddHostedService<MessagingHealthMonitorWorker>();
 builder.Services.AddScoped<IApiKeyStore, PostgresApiKeyStore>();
 builder.Services.AddScoped<IApiKeyValidator, ApiKeyValidator>();
 builder.Services.AddScoped<ApiKeyBootstrapper>();
@@ -353,6 +356,12 @@ app.MapPost("/api/v1/consents/evaluate", async (string subjectId, string purpose
     var tid = http.ResolveTenantId(tenantId);
     return Results.Ok(await consents.EvaluateAsync(subjectId, purpose, channel, tid, ct));
 }).WithName("EvaluateConsent").WithOpenApi();
+
+app.MapGet("/api/v1/admin/messaging/health", async (HttpContext http, IMessagingHealthService health, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    return Results.Ok(await health.CheckAsync(ct));
+}).WithName("GetMessagingHealth").WithOpenApi();
 
 app.MapPost("/api/v1/admin/retention/sweep", async (HttpContext http, IRetentionService retention, CancellationToken ct) =>
 {
