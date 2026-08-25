@@ -68,7 +68,7 @@ public static class TestFixtures
 
         return new NotificationOrchestrator(
             loader,
-            new InMemoryTemplateEngine(NullLogger<InMemoryTemplateEngine>.Instance),
+            new TemplateEngine(new InMemoryTemplateStore(), new PlaceholderTemplateRenderer(), NullLogger<TemplateEngine>.Instance),
             new PostgresNotificationStatusStore(db),
             new PreferenceService(db),
             new AuditService(db),

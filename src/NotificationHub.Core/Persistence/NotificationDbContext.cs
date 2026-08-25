@@ -117,6 +117,23 @@ public sealed class InAppMessageEntity
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+
+public sealed class TemplateEntity
+{
+    public Guid Id { get; set; }
+    public string Key { get; set; } = "";
+    public string Channel { get; set; } = "";
+    public string Locale { get; set; } = "en";
+    public string? TenantId { get; set; }
+    public string Subject { get; set; } = "";
+    public string Body { get; set; } = "";
+    public string? HtmlBody { get; set; }
+    public int Version { get; set; } = 1;
+    public bool IsActive { get; set; } = true;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class NotificationDbContext : DbContext
 {
     public NotificationDbContext(DbContextOptions<NotificationDbContext> options) : base(options) { }
@@ -129,6 +146,7 @@ public sealed class NotificationDbContext : DbContext
     public DbSet<WorkflowRunEntity> WorkflowRuns => Set<WorkflowRunEntity>();
     public DbSet<SegmentDefinitionEntity> Segments => Set<SegmentDefinitionEntity>();
     public DbSet<InAppMessageEntity> InAppMessages => Set<InAppMessageEntity>();
+    public DbSet<TemplateEntity> Templates => Set<TemplateEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -202,5 +220,17 @@ public sealed class NotificationDbContext : DbContext
         i.Property(x => x.Title).HasMaxLength(512);
         i.HasIndex(x => new { x.UserId, x.IsRead });
         i.HasIndex(x => x.CreatedAt);
+
+        var t = modelBuilder.Entity<TemplateEntity>();
+        t.ToTable("templates");
+        t.HasKey(x => x.Id);
+        t.Property(x => x.Key).HasMaxLength(128).IsRequired();
+        t.Property(x => x.Channel).HasMaxLength(64).IsRequired();
+        t.Property(x => x.Locale).HasMaxLength(16).IsRequired();
+        t.Property(x => x.TenantId).HasMaxLength(128);
+        t.Property(x => x.Subject).HasMaxLength(512).IsRequired();
+        t.Property(x => x.Body).IsRequired();
+        t.HasIndex(x => new { x.TenantId, x.Key, x.Channel, x.Locale }).IsUnique();
+        t.HasIndex(x => x.IsActive);
     }
 }

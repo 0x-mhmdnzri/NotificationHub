@@ -45,7 +45,10 @@ builder.Services.Configure<CostOptions>(builder.Configuration.GetSection(CostOpt
 
 builder.Services.AddSingleton<INotificationQueue, RabbitMqNotificationQueue>();
 builder.Services.AddSingleton<PluginLoader>();
-builder.Services.AddSingleton<ITemplateEngine, InMemoryTemplateEngine>();
+builder.Services.AddScoped<ITemplateStore, PostgresTemplateStore>();
+builder.Services.AddSingleton<ITemplateRenderer, PlaceholderTemplateRenderer>();
+builder.Services.AddScoped<ITemplateEngine, TemplateEngine>();
+builder.Services.AddScoped<TemplateSeeder>();
 builder.Services.AddSingleton<IRateLimiter, InMemoryRateLimiter>();
 
 builder.Services.AddScoped<INotificationStatusStore, PostgresNotificationStatusStore>();
@@ -77,6 +80,8 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
     await db.Database.MigrateAsync();
+    var seeder = scope.ServiceProvider.GetRequiredService<TemplateSeeder>();
+    await seeder.SeedDefaultsAsync();
 }
 
 if (app.Environment.IsDevelopment())
@@ -143,6 +148,15 @@ app.MapPost("/api/v1/templates", async (TemplateDefinition t, ITemplateEngine en
 
 app.MapGet("/api/v1/templates/{key}", async (string key, string channel, string? locale, string? tenantId, ITemplateEngine engine, CancellationToken ct) =>
 { var t = await engine.GetTemplateAsync(key, channel, locale ?? "en", tenantId, ct); return t is null ? Results.NotFound() : Results.Ok(t); }).WithName("GetTemplate").WithOpenApi();
+
+app.MapGet("/api/v1/templates", async (string? tenantId, string? channel, ITemplateStore store, CancellationToken ct) =>
+    Results.Ok(await store.ListAsync(tenantId, channel, ct))).WithName("ListTemplates").WithOpenApi();
+
+app.MapDelete("/api/v1/templates/{key}", async (string key, string channel, string? locale, string? tenantId, ITemplateStore store, CancellationToken ct) =>
+{
+    var ok = await store.DeleteAsync(key, channel, locale ?? "en", tenantId, ct);
+    return ok ? Results.NoContent() : Results.NotFound();
+}).WithName("DeleteTemplate").WithOpenApi();
 
 app.MapPost("/api/v1/templates/preview", async (NotificationRequest request, ITemplateEngine engine, CancellationToken ct) =>
     Results.Ok(await engine.RenderAsync(request, ct))).WithName("PreviewTemplate").WithOpenApi();
