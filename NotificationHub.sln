@@ -23,6 +23,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NotificationHub.Plugins.Ema
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NotificationHub.Plugins.Sms.Kavenegar", "Plugins\NotificationHub.Plugins.Sms.Kavenegar\NotificationHub.Plugins.Sms.Kavenegar.csproj", "{A82EDED1-CE12-413B-A996-E98B98AD681D}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NotificationHub.Plugins.Sms.SmsIr", "Plugins\NotificationHub.Plugins.Sms.SmsIr\NotificationHub.Plugins.Sms.SmsIr.csproj", "{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -129,6 +131,18 @@ Global
 		{A82EDED1-CE12-413B-A996-E98B98AD681D}.Release|x64.Build.0 = Release|Any CPU
 		{A82EDED1-CE12-413B-A996-E98B98AD681D}.Release|x86.ActiveCfg = Release|Any CPU
 		{A82EDED1-CE12-413B-A996-E98B98AD681D}.Release|x86.Build.0 = Release|Any CPU
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}.Debug|x64.Build.0 = Debug|Any CPU
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}.Debug|x86.Build.0 = Debug|Any CPU
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}.Release|x64.ActiveCfg = Release|Any CPU
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}.Release|x64.Build.0 = Release|Any CPU
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}.Release|x86.ActiveCfg = Release|Any CPU
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -142,5 +156,6 @@ Global
 		{8ED50553-56C9-4515-A655-754F9FAB9C5D} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{0F94A7D1-9E1E-4F3F-883A-A4FA10104A31} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{A82EDED1-CE12-413B-A996-E98B98AD681D} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
+		{5BC8944D-75A9-4FCB-A4AF-1E730664D19C} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 	EndGlobalSection
 EndGlobal

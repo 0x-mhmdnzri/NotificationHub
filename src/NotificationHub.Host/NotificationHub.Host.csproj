@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Sms.Twilio\NotificationHub.Plugins.Sms.Twilio.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Email.Smtp\NotificationHub.Plugins.Email.Smtp.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Sms.Kavenegar\NotificationHub.Plugins.Sms.Kavenegar.csproj" />
+    <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Sms.SmsIr\NotificationHub.Plugins.Sms.SmsIr.csproj" />
   </ItemGroup>
 
 </Project>

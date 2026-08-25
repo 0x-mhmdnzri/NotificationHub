@@ -1,9 +1,14 @@
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NotificationHub.Abstractions.Channels;
 using NotificationHub.Abstractions.Models;
+using NotificationHub.Core.Audit;
 using NotificationHub.Core.PluginHost;
+using NotificationHub.Core.Preferences;
 using NotificationHub.Core.Store;
 using NotificationHub.Core.Templates;
+using NotificationHub.Core.Webhooks;
 
 namespace NotificationHub.Core.Orchestration;
 
@@ -12,6 +17,10 @@ public sealed class NotificationOrchestrator
     private readonly PluginLoader _pluginLoader;
     private readonly ITemplateEngine _templateEngine;
     private readonly INotificationStatusStore _statusStore;
+    private readonly IPreferenceService _preferences;
+    private readonly IAuditService _audit;
+    private readonly IWebhookDispatcher _webhooks;
+    private readonly ProviderOptions _providerOptions;
     private readonly ILogger<NotificationOrchestrator> _logger;
     private const int MaxRetries = 3;
 
@@ -19,123 +28,195 @@ public sealed class NotificationOrchestrator
         PluginLoader pluginLoader,
         ITemplateEngine templateEngine,
         INotificationStatusStore statusStore,
+        IPreferenceService preferences,
+        IAuditService audit,
+        IWebhookDispatcher webhooks,
+        IOptions<ProviderOptions> providerOptions,
         ILogger<NotificationOrchestrator> logger)
     {
         _pluginLoader = pluginLoader;
         _templateEngine = templateEngine;
         _statusStore = statusStore;
+        _preferences = preferences;
+        _audit = audit;
+        _webhooks = webhooks;
+        _providerOptions = providerOptions.Value;
         _logger = logger;
     }
 
-    /// <summary>
-    /// Enqueue path: called from API. Handles idempotency + status creation.
-    /// </summary>
     public async Task<(bool Accepted, NotificationStatus Status)> AcceptAsync(NotificationRequest request, CancellationToken ct = default)
     {
-        // Idempotency check
         if (!string.IsNullOrEmpty(request.IdempotencyKey))
         {
             var existing = await _statusStore.GetByIdempotencyKeyAsync(request.IdempotencyKey, request.TenantId, ct);
             if (existing is not null)
             {
-                _logger.LogInformation("Idempotent hit for key {Key} -> {Id}", request.IdempotencyKey, existing.NotificationId);
+                _logger.LogInformation("Idempotent hit {Key} -> {Id}", request.IdempotencyKey, existing.NotificationId);
                 return (true, existing);
             }
         }
 
+        var channel = ResolveChannel(request);
+
+        // Preference check
+        var (allowed, reason) = await _preferences.CanSendAsync(request.Recipient, channel, request.Category, request.TenantId, ct);
+        if (!allowed)
+        {
+            var suppressed = new NotificationStatus
+            {
+                NotificationId = request.Id, Channel = channel, Recipient = request.Recipient,
+                Status = DeliveryStatus.Suppressed, TenantId = request.TenantId,
+                IdempotencyKey = request.IdempotencyKey, CorrelationId = request.CorrelationId,
+                Category = request.Category, ErrorMessage = reason
+            };
+            await _statusStore.SaveAsync(suppressed, ct);
+            await _audit.LogAsync("suppressed", request.Id, request.TenantId, details: reason, ct: ct);
+            return (true, suppressed);
+        }
+
+        var isScheduled = request.ScheduledAt.HasValue && request.ScheduledAt > DateTimeOffset.UtcNow;
         var status = new NotificationStatus
         {
-            NotificationId = request.Id,
-            Channel = request.Channel,
-            Recipient = request.Recipient,
-            Status = request.ScheduledAt.HasValue && request.ScheduledAt > DateTimeOffset.UtcNow
-                ? DeliveryStatus.Scheduled
-                : DeliveryStatus.Queued,
-            TenantId = request.TenantId,
-            IdempotencyKey = request.IdempotencyKey,
-            CorrelationId = request.CorrelationId,
-            AttemptCount = 0
+            NotificationId = request.Id, Channel = channel, Recipient = request.Recipient,
+            Status = isScheduled ? DeliveryStatus.Scheduled : DeliveryStatus.Queued,
+            ScheduledAt = request.ScheduledAt, TenantId = request.TenantId,
+            IdempotencyKey = request.IdempotencyKey, CorrelationId = request.CorrelationId,
+            Category = request.Category
         };
 
         await _statusStore.SaveAsync(status, ct);
+        await _statusStore.SavePayloadAsync(request.Id, JsonSerializer.Serialize(request), ct);
+        await _audit.LogAsync(isScheduled ? "scheduled" : "queued", request.Id, request.TenantId, ct: ct);
         return (true, status);
     }
 
-    /// <summary>
-    /// Actual processing with retry + exponential backoff.
-    /// </summary>
     public async Task<DeliveryResult> ProcessAsync(NotificationRequest request, CancellationToken ct = default)
     {
-        var channelPlugins = _pluginLoader.LoadedPlugins
-            .OfType<IChannelPlugin>()
-            .Where(p => p.Channel.Equals(request.Channel, StringComparison.OrdinalIgnoreCase))
-            .ToList();
+        var channel = ResolveChannel(request);
+        var plugins = SelectPlugins(channel, request.PreferredProvider, request.AllowFallback);
 
-        if (channelPlugins.Count == 0)
+        if (plugins.Count == 0)
         {
-            _logger.LogWarning("No plugin found for channel {Channel}", request.Channel);
-            return new DeliveryResult
-            {
-                Success = false,
-                ErrorCode = "NO_PLUGIN",
-                ErrorMessage = $"No plugin registered for channel '{request.Channel}'",
-                AttemptNumber = 1
-            };
+            var fail = new DeliveryResult { Success = false, ErrorCode = "NO_PLUGIN", ErrorMessage = $"No plugin for channel '{channel}'" };
+            await FinalizeAsync(request, fail, ct);
+            return fail;
         }
 
-        var plugin = channelPlugins[0]; // TODO: failover / smart routing later
-        var rendered = await _templateEngine.RenderAsync(request, ct);
+        var rendered = await _templateEngine.RenderAsync(request with { Channel = channel }, ct);
+        rendered = rendered with { PreferredProvider = request.PreferredProvider, Attachments = request.Attachments };
 
         DeliveryResult? lastResult = null;
 
-        for (int attempt = 1; attempt <= MaxRetries; attempt++)
+        foreach (var plugin in plugins)
         {
-            try
+            for (int attempt = 1; attempt <= MaxRetries; attempt++)
             {
-                _logger.LogInformation("Attempt {Attempt}/{Max} for notification {Id} via {Plugin}",
-                    attempt, MaxRetries, request.Id, plugin.Id);
-
-                var result = await plugin.SendAsync(rendered, ct);
-                result = result with { AttemptNumber = attempt };
-
-                if (result.Success)
+                try
                 {
-                    _logger.LogInformation("Notification {Id} sent successfully on attempt {Attempt}", request.Id, attempt);
-                    return result;
+                    _logger.LogInformation("Send {Id} via {Plugin} attempt {Attempt}", request.Id, plugin.Id, attempt);
+                    await _statusStore.UpdateProviderAsync(request.Id, plugin.Id, ct);
+
+                    var result = await plugin.SendAsync(rendered, ct);
+                    result = result with { AttemptNumber = attempt, ProviderId = plugin.Id };
+
+                    if (result.Success)
+                    {
+                        await FinalizeAsync(request, result, ct);
+                        return result;
+                    }
+
+                    lastResult = result;
+                    _logger.LogWarning("Provider {Plugin} failed: {Error}", plugin.Id, result.ErrorMessage);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Provider {Plugin} exception", plugin.Id);
+                    lastResult = new DeliveryResult { Success = false, ProviderId = plugin.Id, ErrorCode = "EXCEPTION", ErrorMessage = ex.Message, AttemptNumber = attempt };
                 }
 
-                lastResult = result;
-                _logger.LogWarning("Attempt {Attempt} failed for {Id}: {Error}", attempt, request.Id, result.ErrorMessage);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Exception on attempt {Attempt} for {Id}", attempt, request.Id);
-                lastResult = new DeliveryResult
-                {
-                    Success = false,
-                    ErrorCode = "EXCEPTION",
-                    ErrorMessage = ex.Message,
-                    AttemptNumber = attempt
-                };
+                if (attempt < MaxRetries)
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), ct);
             }
 
-            if (attempt < MaxRetries)
-            {
-                var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt)); // exponential: 2s, 4s, 8s
-                await Task.Delay(delay, ct);
-            }
+            if (!request.AllowFallback) break;
+            _logger.LogInformation("Falling back from {Plugin}", plugin.Id);
         }
 
-        return lastResult ?? new DeliveryResult
-        {
-            Success = false,
-            ErrorCode = "MAX_RETRIES",
-            ErrorMessage = "Max retries exceeded",
-            AttemptNumber = MaxRetries
-        };
+        var final = lastResult ?? new DeliveryResult { Success = false, ErrorCode = "MAX_RETRIES", ErrorMessage = "All providers failed" };
+        await FinalizeAsync(request, final, ct);
+        return final;
     }
 
-    // Keep old SendAsync for sync path if needed
     public Task<DeliveryResult> SendAsync(NotificationRequest request, CancellationToken ct = default)
         => ProcessAsync(request, ct);
+
+    private async Task FinalizeAsync(NotificationRequest request, DeliveryResult result, CancellationToken ct)
+    {
+        var status = result.Success ? DeliveryStatus.Sent :
+            result.AttemptNumber >= MaxRetries ? DeliveryStatus.DeadLetter : DeliveryStatus.Failed;
+
+        await _statusStore.UpdateStatusAsync(request.Id, status,
+            providerMessageId: result.ProviderMessageId,
+            errorCode: result.ErrorCode,
+            errorMessage: result.ErrorMessage,
+            attemptCount: result.AttemptNumber, ct: ct);
+
+        await _audit.LogAsync(result.Success ? "sent" : "failed", request.Id, request.TenantId,
+            details: result.Success ? result.ProviderId : $"{result.ErrorCode}: {result.ErrorMessage}", ct: ct);
+
+        await _webhooks.DispatchAsync(result.Success ? "sent" : "failed", new
+        {
+            notificationId = request.Id,
+            channel = ResolveChannel(request),
+            recipient = request.Recipient,
+            success = result.Success,
+            providerId = result.ProviderId,
+            providerMessageId = result.ProviderMessageId,
+            error = result.ErrorMessage
+        }, request.TenantId, ct);
+    }
+
+    private static string ResolveChannel(NotificationRequest request)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Channel)) return request.Channel!;
+        if (request.Channels is { Length: > 0 }) return request.Channels[0];
+        return "email";
+    }
+
+    private List<IChannelPlugin> SelectPlugins(string channel, string? preferredProvider, bool allowFallback)
+    {
+        var all = _pluginLoader.LoadedPlugins.OfType<IChannelPlugin>()
+            .Where(p => p.Channel.Equals(channel, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        if (all.Count == 0) return all;
+
+        var order = channel.Equals("email", StringComparison.OrdinalIgnoreCase)
+            ? _providerOptions.EmailFallbackOrder
+            : channel.Equals("sms", StringComparison.OrdinalIgnoreCase)
+                ? _providerOptions.SmsFallbackOrder
+                : all.Select(p => p.Id).ToArray();
+
+        if (!string.IsNullOrWhiteSpace(preferredProvider))
+            order = new[] { preferredProvider }.Concat(order.Where(x => x != preferredProvider)).ToArray();
+        else if (channel.Equals("email", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(_providerOptions.PreferredEmailProvider))
+            order = new[] { _providerOptions.PreferredEmailProvider! }.Concat(order.Where(x => x != _providerOptions.PreferredEmailProvider)).ToArray();
+        else if (channel.Equals("sms", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrEmpty(_providerOptions.PreferredSmsProvider))
+            order = new[] { _providerOptions.PreferredSmsProvider! }.Concat(order.Where(x => x != _providerOptions.PreferredSmsProvider)).ToArray();
+
+        var ordered = order
+            .Select(id => all.FirstOrDefault(p => p.Id.Equals(id, StringComparison.OrdinalIgnoreCase)))
+            .Where(p => p is not null)
+            .Cast<IChannelPlugin>()
+            .ToList();
+
+        // append any remaining plugins not in order list
+        foreach (var p in all.Where(p => ordered.All(o => o.Id != p.Id)))
+            ordered.Add(p);
+
+        if (!allowFallback && ordered.Count > 1)
+            return ordered.Take(1).ToList();
+
+        return ordered;
+    }
 }

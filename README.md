@@ -1,127 +1,77 @@
 # NotificationHub
 
-Multi-channel notification service built with **Microkernel (Plugin) Architecture**.
+Multi-channel notification service with **Microkernel (Plugin) Architecture**.
 
-## Architecture
+## Phase 1 + Phase 2 (Complete)
 
-- **Core (Microkernel)**: Orchestration, plugin lifecycle, template engine, queue, retry, status tracking, rate limiting.
-- **Abstractions**: Formal contracts (`IPlugin`, `IChannelPlugin`).
-- **Plugins**: Channel/provider implementations (Email/SendGrid, SMS/Twilio).
-- **Host**: ASP.NET Core API + background worker.
-
-## Phase 1 Features (Implemented)
-
-- Unified Send API (async queue + sync endpoint)
-- Channel abstraction with pluggable providers
-- Template engine with variables (`{{name}}`), versioning, basic localization (en/fa)
-- Asynchronous processing (in-memory channel queue + background worker)
-- Retry with exponential backoff (2s → 4s → 8s) + dead-letter status
-- Delivery status tracking (`queued → processing → sent / failed / deadletter`)
+### Core
+- Unified async/sync Send API
+- Channel abstraction + pluggable providers
+- Preferred provider + automatic failover
+- Template engine (`{{vars}}`, locale, versioning, preview)
+- RabbitMQ durable queue
+- Retry with exponential backoff + DeadLetter
+- PostgreSQL status tracking via PgBouncer
 - Idempotency keys
-- Basic API Key authentication (`X-Api-Key` header)
-- Rate limiting per tenant/channel
-- Structured logging
+- API Key auth
+- Rate limiting
+- Official EF Core migrations
 
-## Quick Start
+### Phase 2
+- User preferences (opt-out, quiet hours, frequency cap)
+- Smart routing & channel/provider fallback
+- Scheduling (timezone-aware via ScheduledAt)
+- Webhooks (HMAC signed)
+- Multi-tenant fields (TenantId isolation indexes)
+- Audit trail
+- Template preview endpoint
+- Attachment support (email plugins)
+- Providers: SendGrid, SMTP, Twilio, Kavenegar, Sms.ir
 
-```bash
-dotnet restore
-dotnet run --project src/NotificationHub.Host
-```
+## Providers
 
-Default API Key: `dev-secret-key-change-me`
+| Channel | Provider  | Id              |
+|---------|-----------|-----------------|
+| Email   | SendGrid  | email-sendgrid  |
+| Email   | SMTP      | email-smtp      |
+| SMS     | Kavenegar | sms-kavenegar   |
+| SMS     | Sms.ir    | sms-smsir       |
+| SMS     | Twilio    | sms-twilio      |
 
-### Send (async - recommended)
-
-```http
-POST /api/v1/notifications
-X-Api-Key: dev-secret-key-change-me
-Content-Type: application/json
-
-{
-  "recipient": "user@example.com",
-  "channel": "email",
-  "templateKey": "welcome",
-  "data": { "name": "Ali" },
-  "idempotencyKey": "welcome-ali-001",
-  "locale": "fa"
-}
-```
-
-### Check status
-
-```http
-GET /api/v1/notifications/{id}
-X-Api-Key: dev-secret-key-change-me
-```
-
-### Sync send
-
-```http
-POST /api/v1/notifications/sync
-```
-
-### Templates
-
-```http
-POST /api/v1/templates
-GET  /api/v1/templates/{key}?channel=email&locale=en
-```
-
-## Configuration
-
-```json
-{
-  "Auth": { "ApiKey": "your-secret" },
-  "RateLimiting": { "PerMinute": 60 },
-  "Plugins": {
-    "SendGrid": { "ApiKey": "SG.xxx" },
-    "Twilio": { "AccountSid": "ACxxx", "AuthToken": "xxx" }
-  }
-}
-```
-
-## Roadmap
-
-**Phase 2**: Preferences, smart routing/fallback, scheduling, digests, webhooks, multi-tenancy, audit trail, attachments  
-**Phase 3**: Workflow engine, Push/WhatsApp/In-App, analytics, compliance, Admin UI
-
-## License
-
-MIT
-
-## Providers (Real)
-
-| Channel | Provider   | Plugin Id          | Config Section              |
-|---------|------------|--------------------|-----------------------------|
-| Email   | SendGrid   | email-sendgrid     | Plugins:SendGrid            |
-| Email   | SMTP       | email-smtp         | Plugins:Smtp                |
-| SMS     | Twilio     | sms-twilio         | Plugins:Twilio              |
-| SMS     | Kavenegar  | sms-kavenegar      | Plugins:Kavenegar           |
-
-Configuration is split across:
-- `appsettings.json` (common)
-- `appsettings.Development.json`
-- `appsettings.Production.json`
-
-Secrets should come from environment variables or secret manager in production (e.g. `Plugins__Kavenegar__ApiKey`).
+Preferred + fallback order configured under `Providers` in appsettings.
 
 ## Infrastructure
 
-| Service    | Port        | Notes                                      |
-|------------|-------------|--------------------------------------------|
-| PostgreSQL | 5432        | Primary data store                         |
-| PgBouncer  | 6432→5432   | Transaction pooling, pool size controlled  |
-| RabbitMQ   | 5672 / 15672| Queue + management UI                      |
-| API        | 8080        | NotificationHub.Host                       |
-
 ```bash
+cp .env.example .env
 docker compose up -d
 ```
 
-Connection string uses:
-- `Minimum Pool Size` / `Maximum Pool Size` (app-side pool)
-- `No Reset On Close=true` (required for PgBouncer transaction mode)
-- App connects to **PgBouncer**, not directly to Postgres
+| Service    | Port        |
+|------------|-------------|
+| PostgreSQL | 5432        |
+| PgBouncer  | 6432        |
+| RabbitMQ   | 5672/15672  |
+| API        | 8080        |
 
-> MARS is SQL Server only and is not used. Npgsql pool + PgBouncer handle concurrency.
+## API
+
+```
+POST /api/v1/notifications
+POST /api/v1/notifications/sync
+GET  /api/v1/notifications/{id}
+GET  /api/v1/plugins
+POST /api/v1/templates
+GET  /api/v1/templates/{key}
+POST /api/v1/templates/preview
+GET  /api/v1/preferences/{userId}
+PUT  /api/v1/preferences
+POST /api/v1/webhooks
+GET  /api/v1/audit
+GET  /health
+```
+
+Header: `X-Api-Key: dev-secret-key-change-me`
+
+## License
+MIT

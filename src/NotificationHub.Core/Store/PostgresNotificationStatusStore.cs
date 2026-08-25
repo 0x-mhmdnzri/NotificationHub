@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Persistence;
@@ -7,51 +8,73 @@ namespace NotificationHub.Core.Store;
 public sealed class PostgresNotificationStatusStore : INotificationStatusStore
 {
     private readonly NotificationDbContext _db;
-
-    public PostgresNotificationStatusStore(NotificationDbContext db)
-    {
-        _db = db;
-    }
+    public PostgresNotificationStatusStore(NotificationDbContext db) => _db = db;
 
     public async Task SaveAsync(NotificationStatus status, CancellationToken ct = default)
     {
-        var entity = NotificationStatusEntity.FromModel(status);
-        _db.NotificationStatuses.Add(entity);
+        _db.NotificationStatuses.Add(new NotificationStatusEntity
+        {
+            Id = status.NotificationId, Channel = status.Channel, Recipient = status.Recipient,
+            Status = status.Status, ProviderId = status.ProviderId, ProviderMessageId = status.ProviderMessageId,
+            ErrorCode = status.ErrorCode, ErrorMessage = status.ErrorMessage, AttemptCount = status.AttemptCount,
+            CreatedAt = status.CreatedAt, UpdatedAt = status.UpdatedAt, ScheduledAt = status.ScheduledAt,
+            TenantId = status.TenantId, IdempotencyKey = status.IdempotencyKey,
+            CorrelationId = status.CorrelationId, Category = status.Category
+        });
         await _db.SaveChangesAsync(ct);
     }
 
     public async Task<NotificationStatus?> GetAsync(Guid notificationId, CancellationToken ct = default)
     {
-        var entity = await _db.NotificationStatuses.AsNoTracking()
-            .FirstOrDefaultAsync(x => x.Id == notificationId, ct);
-        return entity?.ToModel();
+        var e = await _db.NotificationStatuses.AsNoTracking().FirstOrDefaultAsync(x => x.Id == notificationId, ct);
+        return e?.ToModel();
     }
 
     public async Task<NotificationStatus?> GetByIdempotencyKeyAsync(string idempotencyKey, string? tenantId = null, CancellationToken ct = default)
     {
-        var query = _db.NotificationStatuses.AsNoTracking()
-            .Where(x => x.IdempotencyKey == idempotencyKey);
-
-        query = tenantId is null
-            ? query.Where(x => x.TenantId == null)
-            : query.Where(x => x.TenantId == tenantId);
-
-        var entity = await query.FirstOrDefaultAsync(ct);
-        return entity?.ToModel();
+        var q = _db.NotificationStatuses.AsNoTracking().Where(x => x.IdempotencyKey == idempotencyKey);
+        q = tenantId is null ? q.Where(x => x.TenantId == null) : q.Where(x => x.TenantId == tenantId);
+        var e = await q.FirstOrDefaultAsync(ct);
+        return e?.ToModel();
     }
 
-    public async Task UpdateStatusAsync(Guid notificationId, DeliveryStatus status, string? providerMessageId = null, string? errorCode = null, string? errorMessage = null, int? attemptCount = null, CancellationToken ct = default)
+    public async Task UpdateStatusAsync(Guid notificationId, DeliveryStatus status, string? providerMessageId = null,
+        string? errorCode = null, string? errorMessage = null, int? attemptCount = null, CancellationToken ct = default)
     {
-        var entity = await _db.NotificationStatuses.FirstOrDefaultAsync(x => x.Id == notificationId, ct);
-        if (entity is null) return;
-
-        entity.Status = status;
-        entity.UpdatedAt = DateTimeOffset.UtcNow;
-        if (providerMessageId is not null) entity.ProviderMessageId = providerMessageId;
-        if (errorCode is not null) entity.ErrorCode = errorCode;
-        if (errorMessage is not null) entity.ErrorMessage = errorMessage;
-        if (attemptCount is not null) entity.AttemptCount = attemptCount.Value;
-
+        var e = await _db.NotificationStatuses.FirstOrDefaultAsync(x => x.Id == notificationId, ct);
+        if (e is null) return;
+        e.Status = status;
+        e.UpdatedAt = DateTimeOffset.UtcNow;
+        if (providerMessageId is not null) e.ProviderMessageId = providerMessageId;
+        if (errorCode is not null) e.ErrorCode = errorCode;
+        if (errorMessage is not null) e.ErrorMessage = errorMessage;
+        if (attemptCount is not null) e.AttemptCount = attemptCount.Value;
         await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task UpdateProviderAsync(Guid notificationId, string? providerId, CancellationToken ct = default)
+    {
+        var e = await _db.NotificationStatuses.FirstOrDefaultAsync(x => x.Id == notificationId, ct);
+        if (e is null) return;
+        e.ProviderId = providerId;
+        e.UpdatedAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task SavePayloadAsync(Guid notificationId, string payloadJson, CancellationToken ct = default)
+    {
+        var e = await _db.NotificationStatuses.FirstOrDefaultAsync(x => x.Id == notificationId, ct);
+        if (e is null) return;
+        e.PayloadJson = payloadJson;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task<List<NotificationStatusEntity>> GetDueScheduledAsync(DateTimeOffset now, int take = 50, CancellationToken ct = default)
+    {
+        return await _db.NotificationStatuses
+            .Where(x => x.Status == DeliveryStatus.Scheduled && x.ScheduledAt != null && x.ScheduledAt <= now)
+            .OrderBy(x => x.ScheduledAt)
+            .Take(take)
+            .ToListAsync(ct);
     }
 }

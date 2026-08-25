@@ -85,7 +85,8 @@ public sealed class InMemoryTemplateEngine : ITemplateEngine
 
     public async Task<RenderedNotification> RenderAsync(NotificationRequest request, CancellationToken ct = default)
     {
-        var template = await GetTemplateAsync(request.TemplateKey, request.Channel, request.Locale ?? "en", request.TenantId, ct);
+        var channel = request.Channel ?? "email";
+        var template = await GetTemplateAsync(request.TemplateKey, channel, request.Locale ?? "en", request.TenantId, ct);
 
         string subject;
         string body;
@@ -108,7 +109,7 @@ public sealed class InMemoryTemplateEngine : ITemplateEngine
         {
             NotificationId = request.Id,
             Recipient = request.Recipient,
-            Channel = request.Channel,
+            Channel = channel,
             Subject = subject,
             Body = body,
             HtmlBody = htmlBody,
