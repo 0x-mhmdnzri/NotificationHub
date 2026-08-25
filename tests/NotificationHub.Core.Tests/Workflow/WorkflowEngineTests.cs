@@ -4,6 +4,7 @@ using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Tests.Helpers;
 using NotificationHub.Core.Workflow;
 using NotificationHub.Core.Workflow.Handlers;
+using NotificationHub.Core.Expressions;
 
 namespace NotificationHub.Core.Tests.Workflow;
 
@@ -13,12 +14,12 @@ public class WorkflowEngineTests
     {
         var repo = new WorkflowRunRepository(db);
         var timeline = new WorkflowTimeline(db);
+        var evaluator = new SimpleExpressionEvaluator();
         var handlers = new IWorkflowStepHandler[]
         {
             new DelayStepHandler(),
-            new ConditionStepHandler(),
-            new BranchStepHandler()
-            // SendStepHandler needs full DI; omit for unit path focused on delay/condition/timeline
+            new ConditionStepHandler(evaluator),
+            new BranchStepHandler(evaluator)
         };
         return new WorkflowEngine(repo, timeline, handlers, NullLogger<WorkflowEngine>.Instance);
     }
@@ -35,7 +36,7 @@ public class WorkflowEngineTests
             Steps =
             [
                 new WorkflowStep { Id = "d1", Type = "delay", DelaySeconds = 0, Next = "c1" },
-                new WorkflowStep { Id = "c1", Type = "condition", ConditionExpression = "plan == pro", NextOnTrue = null, NextOnFalse = null }
+                new WorkflowStep { Id = "c1", Type = "condition", ConditionExpression = "plan == \"pro\"", NextOnTrue = null, NextOnFalse = null }
             ]
         });
 
@@ -66,7 +67,7 @@ public class WorkflowEngineTests
             Steps =
             [
                 new WorkflowStep { Id = "d1", Type = "delay", DelaySeconds = 0, Next = "c1" },
-                new WorkflowStep { Id = "c1", Type = "condition", ConditionExpression = "plan == pro", NextOnTrue = null, NextOnFalse = null }
+                new WorkflowStep { Id = "c1", Type = "condition", ConditionExpression = "plan == \"pro\"", NextOnTrue = null, NextOnFalse = null }
             ]
         });
 
