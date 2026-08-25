@@ -161,6 +161,21 @@ public sealed class ApiKeyEntity
     public DateTimeOffset? LastUsedAt { get; set; }
 }
 
+
+public sealed class ConsentLedgerEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string SubjectId { get; set; } = "";
+    public string? TenantId { get; set; }
+    public string Purpose { get; set; } = "";
+    public string? Channel { get; set; }
+    public bool Granted { get; set; }
+    public string Source { get; set; } = "api";
+    public string? Actor { get; set; }
+    public string? Evidence { get; set; }
+    public DateTimeOffset OccurredAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class NotificationDbContext : DbContext
 {
     public NotificationDbContext(DbContextOptions<NotificationDbContext> options) : base(options) { }
@@ -176,6 +191,7 @@ public sealed class NotificationDbContext : DbContext
     public DbSet<InAppMessageEntity> InAppMessages => Set<InAppMessageEntity>();
     public DbSet<TemplateEntity> Templates => Set<TemplateEntity>();
     public DbSet<ApiKeyEntity> ApiKeys => Set<ApiKeyEntity>();
+    public DbSet<ConsentLedgerEntity> ConsentLedger => Set<ConsentLedgerEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -282,5 +298,18 @@ public sealed class NotificationDbContext : DbContext
         ak.HasIndex(x => x.KeyHash).IsUnique();
         ak.HasIndex(x => x.TenantId);
         ak.HasIndex(x => x.IsActive);
+
+        var cl = modelBuilder.Entity<ConsentLedgerEntity>();
+        cl.ToTable("consent_ledger");
+        cl.HasKey(x => x.Id);
+        cl.Property(x => x.SubjectId).HasMaxLength(256).IsRequired();
+        cl.Property(x => x.TenantId).HasMaxLength(128);
+        cl.Property(x => x.Purpose).HasMaxLength(128).IsRequired();
+        cl.Property(x => x.Channel).HasMaxLength(64);
+        cl.Property(x => x.Source).HasMaxLength(64);
+        cl.Property(x => x.Actor).HasMaxLength(256);
+        cl.Property(x => x.Evidence).HasMaxLength(2000);
+        cl.HasIndex(x => new { x.TenantId, x.SubjectId, x.Purpose, x.Channel, x.OccurredAt });
+        cl.HasIndex(x => x.OccurredAt);
     }
 }

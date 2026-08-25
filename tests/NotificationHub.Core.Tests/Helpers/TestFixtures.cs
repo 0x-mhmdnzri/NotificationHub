@@ -6,6 +6,7 @@ using NotificationHub.Abstractions.Channels;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Abstractions.Plugins;
 using NotificationHub.Core.Audit;
+using NotificationHub.Core.Compliance;
 using NotificationHub.Core.Orchestration;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.PluginHost;
@@ -82,6 +83,7 @@ public static class TestFixtures
             new TemplateEngine(new InMemoryTemplateStore(), new PlaceholderTemplateRenderer(), NullLogger<TemplateEngine>.Instance),
             new PostgresNotificationStatusStore(db),
             new PreferenceService(db),
+            new ConsentService(db),
             new AuditService(db),
             new NoopWebhookDispatcher(),
             router,

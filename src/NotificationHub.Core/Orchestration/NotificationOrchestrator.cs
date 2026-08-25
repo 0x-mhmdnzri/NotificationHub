@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using NotificationHub.Abstractions.Channels;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Audit;
+using NotificationHub.Core.Compliance;
 using NotificationHub.Core.PluginHost;
 using NotificationHub.Core.Preferences;
 using NotificationHub.Core.Routing;
@@ -19,6 +20,7 @@ public sealed class NotificationOrchestrator
     private readonly ITemplateEngine _templateEngine;
     private readonly INotificationStatusStore _statusStore;
     private readonly IPreferenceService _preferences;
+    private readonly IConsentService _consents;
     private readonly IAuditService _audit;
     private readonly IWebhookDispatcher _webhooks;
     private readonly IProviderRouter _router;
@@ -31,6 +33,7 @@ public sealed class NotificationOrchestrator
         ITemplateEngine templateEngine,
         INotificationStatusStore statusStore,
         IPreferenceService preferences,
+        IConsentService consents,
         IAuditService audit,
         IWebhookDispatcher webhooks,
         IProviderRouter router,
@@ -41,6 +44,7 @@ public sealed class NotificationOrchestrator
         _templateEngine = templateEngine;
         _statusStore = statusStore;
         _preferences = preferences;
+        _consents = consents;
         _audit = audit;
         _webhooks = webhooks;
         _router = router;
@@ -75,6 +79,23 @@ public sealed class NotificationOrchestrator
             };
             await _statusStore.SaveAsync(suppressed, ct);
             await _audit.LogAsync("suppressed", request.Id, request.TenantId, details: reason, ct: ct);
+            return (true, suppressed);
+        }
+
+        // Consent ledger (purpose = category or transactional default)
+        var purpose = string.IsNullOrWhiteSpace(request.Category) ? "transactional" : request.Category;
+        var consent = await _consents.EvaluateAsync(request.Recipient, purpose, channel, request.TenantId, ct);
+        if (!consent.Allowed)
+        {
+            var suppressed = new NotificationStatus
+            {
+                NotificationId = request.Id, Channel = channel, Recipient = request.Recipient,
+                Status = DeliveryStatus.Suppressed, TenantId = request.TenantId,
+                IdempotencyKey = request.IdempotencyKey, CorrelationId = request.CorrelationId,
+                Category = request.Category, ErrorMessage = consent.Reason
+            };
+            await _statusStore.SaveAsync(suppressed, ct);
+            await _audit.LogAsync("suppressed", request.Id, request.TenantId, details: consent.Reason, ct: ct);
             return (true, suppressed);
         }
 

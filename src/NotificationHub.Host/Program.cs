@@ -73,7 +73,11 @@ builder.Services.AddScoped<IWorkflowStepHandler, SendStepHandler>();
 builder.Services.AddScoped<IWorkflowEngine, WorkflowEngine>();
 builder.Services.AddScoped<ISegmentService, SegmentService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
+builder.Services.AddScoped<IConsentService, ConsentService>();
 builder.Services.AddScoped<IComplianceService, ComplianceService>();
+builder.Services.AddScoped<IRetentionService, RetentionService>();
+builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
+builder.Services.AddHostedService<RetentionBackgroundWorker>();
 builder.Services.AddScoped<NotificationOrchestrator>();
 
 builder.Services.AddHostedService<NotificationBackgroundWorker>();
@@ -246,6 +250,41 @@ app.MapPost("/api/v1/segments/{key}/match", async (string key, Dictionary<string
 
 app.MapGet("/api/v1/analytics/summary", async (DateTimeOffset? from, DateTimeOffset? to, string? tenantId, IAnalyticsService analytics, CancellationToken ct) =>
     Results.Ok(await analytics.GetSummaryAsync(from, to, tenantId, ct))).WithName("AnalyticsSummary").WithOpenApi();
+
+
+app.MapPost("/api/v1/consents", async (ConsentRecord record, HttpContext http, IConsentService consents, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tenantId = http.ResolveTenantId(record.TenantId);
+    var auth = http.GetAuthContext();
+    var saved = await consents.RecordAsync(record with
+    {
+        TenantId = tenantId,
+        Actor = auth?.KeyName,
+        Source = string.IsNullOrWhiteSpace(record.Source) ? "api" : record.Source
+    }, ct);
+    return Results.Created($"/api/v1/consents/{saved.SubjectId}", saved);
+}).WithName("RecordConsent").WithOpenApi();
+
+app.MapGet("/api/v1/consents/{subjectId}", async (string subjectId, string? tenantId, HttpContext http, IConsentService consents, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    return Results.Ok(await consents.ListAsync(subjectId, tid, ct));
+}).WithName("ListConsents").WithOpenApi();
+
+app.MapPost("/api/v1/consents/evaluate", async (string subjectId, string purpose, string? channel, string? tenantId, HttpContext http, IConsentService consents, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    return Results.Ok(await consents.EvaluateAsync(subjectId, purpose, channel, tid, ct));
+}).WithName("EvaluateConsent").WithOpenApi();
+
+app.MapPost("/api/v1/admin/retention/sweep", async (HttpContext http, IRetentionService retention, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    return Results.Ok(await retention.SweepAsync(ct));
+}).WithName("RunRetentionSweep").WithOpenApi();
 
 app.MapGet("/api/v1/compliance/export/{userId}", async (string userId, string? tenantId, IComplianceService compliance, CancellationToken ct) =>
     Results.Ok(await compliance.ExportUserAsync(userId, tenantId, ct))).WithName("ComplianceExport").WithOpenApi();

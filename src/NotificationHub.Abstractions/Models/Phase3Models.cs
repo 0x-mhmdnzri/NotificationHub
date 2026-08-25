@@ -91,6 +91,7 @@ public sealed record ComplianceExport
     public UserPreference? Preference { get; init; }
     public IReadOnlyList<NotificationStatus> Notifications { get; init; } = [];
     public IReadOnlyList<InAppMessage> InAppMessages { get; init; } = [];
+    public IReadOnlyList<ConsentRecord> Consents { get; init; } = [];
     public DateTimeOffset ExportedAt { get; init; } = DateTimeOffset.UtcNow;
 }
 
