@@ -45,32 +45,40 @@ public sealed class OutboxRelayWorker : BackgroundService
         var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
         var queue = scope.ServiceProvider.GetService<RabbitMqNotificationQueue>();
 
-        // Claim a batch exclusively so multi-instance relays do not double-publish.
-        // Status "publishing" is short-lived; failed publishes revert to pending with backoff.
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // NpgsqlRetryingExecutionStrategy requires user transactions to run inside CreateExecutionStrategy.
+        var strategy = db.Database.CreateExecutionStrategy();
+        List<OutboxMessageEntity> claimed = [];
 
-        var claimed = await db.OutboxMessages
-            .FromSqlRaw("""
-                SELECT * FROM outbox_messages
-                WHERE "Status" = 'pending'
-                  AND ("NextAttemptAt" IS NULL OR "NextAttemptAt" <= NOW())
-                ORDER BY "CreatedAt"
-                FOR UPDATE SKIP LOCKED
-                LIMIT 50
-                """)
-            .ToListAsync(ct);
+        await strategy.ExecuteAsync(async () =>
+        {
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            claimed = await db.OutboxMessages
+                .FromSqlRaw("""
+                    SELECT * FROM outbox_messages
+                    WHERE "Status" = 'pending'
+                      AND ("NextAttemptAt" IS NULL OR "NextAttemptAt" <= NOW())
+                    ORDER BY "CreatedAt"
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 50
+                    """)
+                .ToListAsync(ct);
+
+            if (claimed.Count == 0)
+            {
+                await tx.CommitAsync(ct);
+                return;
+            }
+
+            foreach (var msg in claimed)
+                msg.Status = "publishing";
+
+            await db.SaveChangesAsync(ct);
+            await tx.CommitAsync(ct);
+        });
 
         if (claimed.Count == 0)
-        {
-            await tx.CommitAsync(ct);
             return;
-        }
-
-        foreach (var msg in claimed)
-            msg.Status = "publishing";
-
-        await db.SaveChangesAsync(ct);
-        await tx.CommitAsync(ct);
 
         if (queue is null)
         {
