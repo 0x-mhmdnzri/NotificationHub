@@ -193,6 +193,26 @@ public sealed class EngagementEventEntity
     public DateTimeOffset OccurredAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+
+public sealed class OutboxMessageEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid NotificationId { get; set; }
+    public string PayloadJson { get; set; } = "";
+    public string Status { get; set; } = "pending"; // pending | published | failed
+    public int Attempts { get; set; }
+    public string? LastError { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset? PublishedAt { get; set; }
+    public DateTimeOffset? NextAttemptAt { get; set; }
+}
+
+public sealed class InboxMessageEntity
+{
+    public string MessageId { get; set; } = ""; // PK - notification id or broker message id
+    public DateTimeOffset ProcessedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed class NotificationDbContext : DbContext
 {
     public NotificationDbContext(DbContextOptions<NotificationDbContext> options) : base(options) { }
@@ -210,6 +230,8 @@ public sealed class NotificationDbContext : DbContext
     public DbSet<ApiKeyEntity> ApiKeys => Set<ApiKeyEntity>();
     public DbSet<ConsentLedgerEntity> ConsentLedger => Set<ConsentLedgerEntity>();
     public DbSet<EngagementEventEntity> EngagementEvents => Set<EngagementEventEntity>();
+    public DbSet<OutboxMessageEntity> OutboxMessages => Set<OutboxMessageEntity>();
+    public DbSet<InboxMessageEntity> InboxMessages => Set<InboxMessageEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -345,5 +367,21 @@ public sealed class NotificationDbContext : DbContext
         ee.HasIndex(x => x.EventType);
         ee.HasIndex(x => x.OccurredAt);
         ee.HasIndex(x => new { x.TenantId, x.OccurredAt });
+
+        var ob = modelBuilder.Entity<OutboxMessageEntity>();
+        ob.ToTable("outbox_messages");
+        ob.HasKey(x => x.Id);
+        ob.Property(x => x.Status).HasMaxLength(32).IsRequired();
+        ob.Property(x => x.PayloadJson).IsRequired();
+        ob.Property(x => x.LastError).HasMaxLength(2000);
+        ob.HasIndex(x => x.Status);
+        ob.HasIndex(x => x.NextAttemptAt);
+        ob.HasIndex(x => x.NotificationId);
+
+        var ib = modelBuilder.Entity<InboxMessageEntity>();
+        ib.ToTable("inbox_messages");
+        ib.HasKey(x => x.MessageId);
+        ib.Property(x => x.MessageId).HasMaxLength(128);
+        ib.HasIndex(x => x.ProcessedAt);
     }
 }

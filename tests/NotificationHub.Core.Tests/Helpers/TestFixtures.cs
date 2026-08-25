@@ -7,6 +7,7 @@ using NotificationHub.Abstractions.Models;
 using NotificationHub.Abstractions.Plugins;
 using NotificationHub.Core.Audit;
 using NotificationHub.Core.Compliance;
+using NotificationHub.Core.Messaging;
 using NotificationHub.Core.Orchestration;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.PluginHost;
@@ -84,6 +85,7 @@ public static class TestFixtures
             new PostgresNotificationStatusStore(db),
             new PreferenceService(db),
             new ConsentService(db),
+            new EfOutbox(db),
             new AuditService(db),
             new NoopWebhookDispatcher(),
             router,

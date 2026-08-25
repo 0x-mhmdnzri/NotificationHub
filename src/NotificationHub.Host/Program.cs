@@ -6,6 +6,7 @@ using NotificationHub.Core.Analytics;
 using NotificationHub.Core.Audit;
 using NotificationHub.Core.Compliance;
 using NotificationHub.Core.Engagement;
+using NotificationHub.Core.Messaging;
 using NotificationHub.Core.Orchestration;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.PluginHost;
@@ -49,12 +50,18 @@ builder.Services.Configure<ProviderOptions>(builder.Configuration.GetSection("Pr
 builder.Services.Configure<ProviderHealthOptions>(builder.Configuration.GetSection(ProviderHealthOptions.SectionName));
 builder.Services.AddSingleton<IProviderHealthTracker, InMemoryProviderHealthTracker>();
 builder.Services.AddSingleton<IProviderRouter, HealthAwareProviderRouter>();
+builder.Services.AddScoped<IOutbox, EfOutbox>();
+builder.Services.AddScoped<IInbox, EfInbox>();
+builder.Services.AddHostedService<OutboxRelayWorker>();
 builder.Services.AddScoped<IApiKeyStore, PostgresApiKeyStore>();
 builder.Services.AddScoped<IApiKeyValidator, ApiKeyValidator>();
 builder.Services.AddScoped<ApiKeyBootstrapper>();
 builder.Services.Configure<CostOptions>(builder.Configuration.GetSection(CostOptions.SectionName));
 
-builder.Services.AddSingleton<INotificationQueue, RabbitMqNotificationQueue>();
+// Transport consumer/publisher (singleton connection)
+builder.Services.AddSingleton<RabbitMqNotificationQueue>();
+// API enqueue path = transactional outbox (scoped with DbContext)
+builder.Services.AddScoped<INotificationQueue, OutboxNotificationQueue>();
 builder.Services.AddSingleton<PluginLoader>();
 builder.Services.AddScoped<ITemplateStore, PostgresTemplateStore>();
 builder.Services.AddSingleton<ITemplateRenderer, PlaceholderTemplateRenderer>();

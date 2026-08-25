@@ -1,4 +1,4 @@
-# ADR 0003: RabbitMQ as the Notification Work Queue
+# ADR 0003: RabbitMQ Work Queue with Transactional Outbox/Inbox
 
 ## Status
 
@@ -10,82 +10,108 @@ Accepted
 
 ## Context
 
-Sending notifications is I/O bound and failure-prone. The API must accept requests quickly, while actual provider delivery happens asynchronously with retries and status transitions.
+Sending notifications is I/O-bound and failure-prone. The API must accept work quickly while provider delivery happens asynchronously.
 
-Requirements:
+Reliability problems we must avoid (from messaging architecture practice):
 
-- Durable queued work
-- Decouple API latency from provider latency
-- Support background workers and scheduled notification promotion
-- Operate cleanly in Docker Compose
+- **Dual-write**: DB status committed but RabbitMQ publish fails (or the reverse) → lost or phantom work.
+- **At-least-once delivery**: consumers may see duplicates after crash between process and ack.
+- **Poison messages**: permanent failures looping forever without a dead-letter path.
+- **Ack-before-process**: acknowledging before business work completes causes silent loss on crash.
 
-In-memory channels are insufficient for multi-instance deployment and process restarts.
+Constraints:
+
+- Self-hosted / Docker Compose friendly
+- PostgreSQL already chosen for persistence
+- Prefer explicit AMQP topology over opaque frameworks for the core path
+- TransactionalBox NuGet was considered but is not production-declared and centers on Kafka transport; we need RabbitMQ
 
 ## Decision
 
-We will use **RabbitMQ** as the notification work queue.
+We will use **RabbitMQ** as the notification transport, combined with a **PostgreSQL transactional outbox** on the publish path and an **inbox** on the consume path.
 
-- API enqueues accepted notifications.
-- `NotificationBackgroundWorker` consumes and processes them.
-- Queue/exchange are durable.
-- Prefetch is configurable to control worker pressure.
-- Scheduled notifications are stored in PostgreSQL and promoted to RabbitMQ by a scheduler worker when due.
+### Topology
+- Durable direct exchange `notifications.exchange`
+- Durable work queue `notifications` with `x-dead-letter-exchange` → `notifications.dlx`
+- Durable DLQ `notifications.dlq`
+- Manual ack, configurable prefetch
+- Persistent messages (`delivery_mode=2`)
+- Header `x-redelivery-count` for poison control
+
+### Publish path (Outbox)
+1. API / orchestrator writes `notification_statuses` and `outbox_messages` (pending).
+2. `OutboxRelayWorker` polls pending outbox rows and publishes to RabbitMQ.
+3. On success marks outbox `published`; on failure applies exponential backoff and eventually `failed`.
+
+### Consume path (Inbox + correct ack)
+1. Worker receives message **without** auto-ack.
+2. Inbox insert (`message_id` unique) — if duplicate, ack and skip.
+3. Process notification (providers, status updates).
+4. **Ack only after successful handling**; on failure nack with requeue until max redelivery, then nack without requeue (DLQ).
+
+### API enqueue abstraction
+- `INotificationQueue` for API callers is `OutboxNotificationQueue` (writes outbox only).
+- `RabbitMqNotificationQueue` is the AMQP transport used by relay + worker.
 
 ## Alternatives Considered
 
-### Option A: In-memory queue only
+### Option A: Direct publish from API to RabbitMQ (no outbox)
 - **Pros:**
-  - Zero infrastructure
-  - Lowest implementation cost
+  - Simpler, fewer moving parts
 - **Cons:**
-  - Lost on process restart
-  - Not shared across instances
+  - Dual-write between PostgreSQL status and broker
+  - Lost notifications when publish fails after DB commit
 - **Why rejected:**
-  - Not production-safe for notification delivery guarantees.
+  - Violates reliability requirements for notification delivery.
 
-### Option B: Redis lists / streams
+### Option B: TransactionalBox library
 - **Pros:**
-  - Lightweight and fast
-  - Already common in many stacks
+  - Ready-made outbox/inbox abstractions
 - **Cons:**
-  - Weaker built-in routing/management UX than RabbitMQ for this use case
-  - Durability and ack semantics need more custom care
+  - Officially not production-ready
+  - Transport focus is Kafka; RabbitMQ not a first-class documented path
 - **Why rejected:**
-  - RabbitMQ provides clearer operational primitives for durable work queues and consumer ack patterns.
+  - Prefer a lean, explicit outbox over an immature dependency for our broker.
 
-### Option C: Azure Service Bus / cloud-native queue
+### Option C: MassTransit
 - **Pros:**
-  - Managed service, less ops burden
+  - Built-in retry, outbox, error queues
 - **Cons:**
-  - Cloud lock-in and cost
-  - Less portable for self-hosted / Iran-friendly deployment assumptions
+  - Heavier abstraction over microkernel-friendly explicit plugins
+  - Larger operational surface for current phase
 - **Why rejected:**
-  - Portability and self-host control are preferred at this stage.
+  - Deferred; may revisit when multi-consumer saga complexity grows.
+
+### Option D: In-memory channel only
+- **Pros:**
+  - Zero infra
+- **Cons:**
+  - Lost on restart; not multi-instance
+- **Why rejected:**
+  - Unacceptable for production delivery guarantees.
 
 ## Consequences
 
 **Positive:**
-- API remains responsive under provider lag
-- Durable asynchronous processing
-- Clean separation between acceptance and delivery
+- Accept path is durable even if RabbitMQ is briefly down (outbox drains later)
+- Consumers are idempotent under redelivery (inbox)
+- Poison messages surface in DLQ instead of infinite retry loops
+- Ack-after-process eliminates the classic loss window
 
 **Negative / trade-offs:**
-- Another infrastructure dependency
-- Need dead-letter operational discipline and monitoring
-- Local dev requires RabbitMQ (or Compose)
+- Extra table + relay lag (seconds) before broker visibility
+- Two write models to operate (outbox depth + queue depth)
+- Inbox table grows and needs retention/cleanup
 
 **Risks / follow-up actions:**
-- Define explicit DLQ topology and poison-message handling beyond status flags
-- Add metrics for queue depth, consumer lag, and retry rate
-- Validate prefetch settings under production-like load
+- Alert on `outbox_messages` pending age and `notifications.dlq` depth
+- Add publisher confirms for stronger publish durability
+- Retention job for old inbox/outbox rows
+- Load-test prefetch vs provider RPS
+- Optional future: delayed redelivery exchange instead of requeue for backoff
 
 ## References
 
-- Related ADRs:
-  - ADR 0001: Microkernel architecture
-  - ADR 0002: PostgreSQL + PgBouncer
-- Design docs:
-  - `src/NotificationHub.Core/Queue/RabbitMqNotificationQueue.cs`
-  - `docker-compose.yml`
-- Discussion threads / tickets:
-  - Phase 1 async processing decision (2026-08-25)
+- Related ADRs: ADR-002 (PostgreSQL), ADR-001 (Microkernel)
+- Internal skills: RabbitMQ reliability patterns (at-least-once, DLX, idempotency); Transactional Outbox/Inbox pattern notes
+- Design: `OutboxRelayWorker`, `EfOutbox`, `EfInbox`, `RabbitMqNotificationQueue`

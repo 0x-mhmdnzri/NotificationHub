@@ -5,6 +5,7 @@ using NotificationHub.Abstractions.Channels;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Audit;
 using NotificationHub.Core.Compliance;
+using NotificationHub.Core.Messaging;
 using NotificationHub.Core.PluginHost;
 using NotificationHub.Core.Preferences;
 using NotificationHub.Core.Routing;
@@ -21,6 +22,7 @@ public sealed class NotificationOrchestrator
     private readonly INotificationStatusStore _statusStore;
     private readonly IPreferenceService _preferences;
     private readonly IConsentService _consents;
+    private readonly IOutbox _outbox;
     private readonly IAuditService _audit;
     private readonly IWebhookDispatcher _webhooks;
     private readonly IProviderRouter _router;
@@ -34,6 +36,7 @@ public sealed class NotificationOrchestrator
         INotificationStatusStore statusStore,
         IPreferenceService preferences,
         IConsentService consents,
+        IOutbox outbox,
         IAuditService audit,
         IWebhookDispatcher webhooks,
         IProviderRouter router,
@@ -45,6 +48,7 @@ public sealed class NotificationOrchestrator
         _statusStore = statusStore;
         _preferences = preferences;
         _consents = consents;
+        _outbox = outbox;
         _audit = audit;
         _webhooks = webhooks;
         _router = router;
