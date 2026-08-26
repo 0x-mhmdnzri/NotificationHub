@@ -335,3 +335,9 @@ Write and read **data-flow pipelines** are separated via **MediatR 12.4.1** + ve
 Pipeline: Validation → Logging → CommandOnly / QueryOnly behaviors.
 
 See [docs/ADR-010-CQRS-MediatR.md](docs/ADR-010-CQRS-MediatR.md).
+
+## Batch Broadcast Campaigns
+
+
+
+Worker:  (config section ). See [docs/ADR-011-Batch-Broadcast-Campaigns.md](docs/ADR-011-Batch-Broadcast-Campaigns.md).

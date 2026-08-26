@@ -219,6 +219,40 @@ public sealed class InboxMessageEntity
     public DateTimeOffset ProcessedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+
+public sealed class BroadcastCampaignEntity
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = "";
+    public string? TenantId { get; set; }
+    public int Status { get; set; }
+    public string TemplateKey { get; set; } = "";
+    public string ChannelsJson { get; set; } = "[]";
+    public string? DataJson { get; set; }
+    public DateTimeOffset? ScheduledAtUtc { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset? StartedAtUtc { get; set; }
+    public DateTimeOffset? CompletedAtUtc { get; set; }
+    public string? CreatedBy { get; set; }
+}
+
+public sealed class BroadcastRecipientEntity
+{
+    public Guid Id { get; set; }
+    public Guid CampaignId { get; set; }
+    public string Address { get; set; } = "";
+    public string Channel { get; set; } = "";
+    public int Status { get; set; }
+    public int Attempts { get; set; }
+    public Guid? NotificationId { get; set; }
+    public string? ErrorCode { get; set; }
+    public string? ErrorMessage { get; set; }
+    public DateTimeOffset CreatedAtUtc { get; set; }
+    public DateTimeOffset? ProcessedAtUtc { get; set; }
+    /// <summary>Idempotency fingerprint CampaignId+Address+Channel.</summary>
+    public string ContentHash { get; set; } = "";
+}
+
 public sealed class NotificationDbContext : DbContext
 {
     public NotificationDbContext(DbContextOptions<NotificationDbContext> options) : base(options) { }
@@ -236,6 +270,8 @@ public sealed class NotificationDbContext : DbContext
     public DbSet<ApiKeyEntity> ApiKeys => Set<ApiKeyEntity>();
     public DbSet<ConsentLedgerEntity> ConsentLedger => Set<ConsentLedgerEntity>();
     public DbSet<EngagementEventEntity> EngagementEvents => Set<EngagementEventEntity>();
+    public DbSet<BroadcastCampaignEntity> BroadcastCampaigns => Set<BroadcastCampaignEntity>();
+    public DbSet<BroadcastRecipientEntity> BroadcastRecipients => Set<BroadcastRecipientEntity>();
     public DbSet<OutboxMessageEntity> OutboxMessages => Set<OutboxMessageEntity>();
     public DbSet<InboxMessageEntity> InboxMessages => Set<InboxMessageEntity>();
     public DbSet<DigestPolicyEntity> DigestPolicies => Set<DigestPolicyEntity>();
@@ -333,6 +369,19 @@ public sealed class NotificationDbContext : DbContext
         i.Property(x => x.Title).HasMaxLength(512);
         i.HasIndex(x => new { x.UserId, x.IsRead });
         i.HasIndex(x => x.CreatedAt);
+
+        var bc = modelBuilder.Entity<BroadcastCampaignEntity>();
+        bc.HasKey(x => x.Id);
+        bc.HasIndex(x => new { x.TenantId, x.Status });
+        bc.HasIndex(x => x.CreatedAtUtc);
+
+        var br = modelBuilder.Entity<BroadcastRecipientEntity>();
+        br.HasKey(x => x.Id);
+        br.HasIndex(x => new { x.CampaignId, x.Status, x.CreatedAtUtc });
+        br.HasIndex(x => x.ContentHash).IsUnique().HasDatabaseName("IX_BroadcastRecipients_Idempotency");
+        br.Property(x => x.Address).HasMaxLength(320);
+        br.Property(x => x.Channel).HasMaxLength(64);
+        br.Property(x => x.ContentHash).HasMaxLength(128);
 
         var t = modelBuilder.Entity<TemplateEntity>();
         t.ToTable("templates");

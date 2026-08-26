@@ -30,6 +30,10 @@ public sealed class TransactionBehavior<TRequest, TResponse>(
         if (db.Database.CurrentTransaction is not null)
             return await next();
 
+        // In-memory provider has no real transactions
+        if (!db.Database.IsRelational())
+            return await next();
+
         logger.LogDebug("Beginning transaction for {Request}", typeof(TRequest).Name);
         await using var tx = await db.Database.BeginTransactionAsync(cancellationToken);
         try

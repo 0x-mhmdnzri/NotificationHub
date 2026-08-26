@@ -34,6 +34,15 @@ using NotificationHub.Application.Features.Workflows.GetRun;
 using NotificationHub.Application.Features.Workflows.GetTimeline;
 using NotificationHub.Application.Features.Workflows.Cancel;
 using NotificationHub.Application.Features.Admin.MessagingHealth;
+using NotificationHub.Application.Features.Campaigns.Create;
+using NotificationHub.Application.Features.Campaigns.AddRecipients;
+using NotificationHub.Application.Features.Campaigns.ImportCsv;
+using NotificationHub.Application.Features.Campaigns.Start;
+using NotificationHub.Application.Features.Campaigns.Cancel;
+using NotificationHub.Application.Features.Campaigns.Get;
+using NotificationHub.Application.Features.Campaigns.GetProgress;
+using NotificationHub.Core.Campaigns;
+
 using NotificationHub.Application.Features.Segments.Save;
 using NotificationHub.Application.Features.Segments.Get;
 using NotificationHub.Application.Features.Segments.Match;
@@ -210,6 +219,10 @@ builder.Services.AddScoped<IWorkflowStepHandler, ConditionStepHandler>();
 builder.Services.AddScoped<IWorkflowStepHandler, BranchStepHandler>();
 builder.Services.AddScoped<IWorkflowStepHandler, SendStepHandler>();
 builder.Services.AddScoped<IWorkflowEngine, WorkflowEngine>();
+builder.Services.AddScoped<ICampaignService, CampaignService>();
+builder.Services.AddScoped<IBroadcastService, BroadcastService>();
+builder.Services.Configure<CampaignDispatchOptions>(builder.Configuration.GetSection(CampaignDispatchOptions.SectionName));
+builder.Services.AddHostedService<CampaignDispatchWorker>();
 builder.Services.AddScoped<ISegmentService, SegmentService>();
 builder.Services.AddScoped<IEngagementService, EngagementService>();
 builder.Services.AddScoped<IInboxFeedService, InboxFeedService>();
@@ -270,6 +283,7 @@ using (var scope = app.Services.CreateScope())
     await db.Database.MigrateAsync();
     await Phase1Schema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Phase1Schema"));
     await Phase2Schema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Phase2Schema"));
+    await BroadcastSchema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("BroadcastSchema"));
     await Phase4Schema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Phase4Schema"));
     var seeder = scope.ServiceProvider.GetRequiredService<TemplateSeeder>();
     await seeder.SeedDefaultsAsync();
@@ -620,3 +634,77 @@ app.MapGet("/api/v1/topics/{key}/subscribers", async (string key, string? tenant
     var result = await sender.Send(new ListTopicSubscribersQuery(key, tid), ct);
     return result.ToHttpResult();
 }).WithName("ListTopicSubscribers");
+
+// --- Campaigns / Batch Broadcast ---
+app.MapPost("/api/v1/campaigns", async (CreateCampaignRequest body, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(body.TenantId);
+    var auth = http.GetAuthContext();
+    var result = await sender.Send(new CreateCampaignCommand(body, tid, auth?.KeyName), ct);
+    return result.ToHttpResult(c => Results.Created($"/api/v1/campaigns/{c.Id}", c));
+}).WithName("CreateCampaign");
+
+app.MapPost("/api/v1/campaigns/{id:guid}/recipients", async (Guid id, AddRecipientsRequest body, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(null);
+    var result = await sender.Send(new AddRecipientsCommand(id, body, tid), ct);
+    return result.ToHttpResult(n => Results.Ok(new { added = n }));
+}).WithName("AddCampaignRecipients");
+
+app.MapPost("/api/v1/campaigns/{id:guid}/recipients/import", async (Guid id, HttpRequest request, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    if (!request.HasFormContentType || request.Form.Files.Count == 0)
+        return Results.BadRequest(new { error = "multipart form with file required" });
+    var file = request.Form.Files[0];
+    if (file.Length > 20 * 1024 * 1024)
+        return Results.BadRequest(new { error = "file too large (max 20MB)" });
+    await using var stream = file.OpenReadStream();
+    var tid = http.ResolveTenantId(null);
+    var result = await sender.Send(new ImportCsvCommand(id, stream, tid), ct);
+    return result.ToHttpResult(n => Results.Ok(new { imported = n }));
+}).WithName("ImportCampaignRecipientsCsv").DisableAntiforgery();
+
+app.MapPost("/api/v1/campaigns/{id:guid}/send", async (Guid id, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(null);
+    var result = await sender.Send(new StartCampaignCommand(id, tid), ct);
+    return result.ToHttpResult();
+}).WithName("StartCampaign");
+
+app.MapPost("/api/v1/campaigns/{id:guid}/cancel", async (Guid id, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    var tid = http.ResolveTenantId(null);
+    var result = await sender.Send(new CancelCampaignCommand(id, tid), ct);
+    return result.ToHttpResult();
+}).WithName("CancelCampaign");
+
+app.MapGet("/api/v1/campaigns/{id:guid}", async (Guid id, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(null);
+    var result = await sender.Send(new GetCampaignQuery(id, tid), ct);
+    return result.ToHttpResult();
+}).WithName("GetCampaign");
+
+app.MapGet("/api/v1/campaigns/{id:guid}/progress", async (Guid id, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(null);
+    var result = await sender.Send(new GetCampaignProgressQuery(id, tid), ct);
+    return result.ToHttpResult();
+}).WithName("GetCampaignProgress");
+
+// Compatibility: one-shot broadcast
+app.MapPost("/api/v1/broadcasts", async (BroadcastRequest body, HttpContext http, IBroadcastService broadcast, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    body = body with { TenantId = http.ResolveTenantId(body.TenantId) };
+    var result = await broadcast.SendAsync(body, ct);
+    return Results.Accepted($"/api/v1/campaigns/{result.CampaignId}", result);
+}).WithName("SendBroadcast");
+

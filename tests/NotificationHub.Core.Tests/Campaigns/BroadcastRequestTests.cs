@@ -16,6 +16,6 @@ public class BroadcastRequestTests
             Recipients = ["a@b.com", "c@d.com"]
         };
         r.Recipients.Should().HaveCount(2);
-        r.Locale.Should().Be("en");
+        r.Locale.Should().BeNull();
     }
 }

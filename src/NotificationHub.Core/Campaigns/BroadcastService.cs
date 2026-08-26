@@ -1,97 +1,37 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NotificationHub.Abstractions.Models;
-using NotificationHub.Core.Orchestration;
-using NotificationHub.Core.Persistence;
-using NotificationHub.Core.Queue;
 
 namespace NotificationHub.Core.Campaigns;
 
-public sealed class BroadcastService : IBroadcastService
+/// <summary>Compatibility façade: create campaign + recipients + start in one call.</summary>
+public sealed class BroadcastService(ICampaignService campaigns, ILogger<BroadcastService> logger) : IBroadcastService
 {
-    private readonly NotificationDbContext _db;
-    private readonly NotificationOrchestrator _orch;
-    private readonly INotificationQueue _queue;
-    private readonly ILogger<BroadcastService> _logger;
-
-    public BroadcastService(
-        NotificationDbContext db,
-        NotificationOrchestrator orch,
-        INotificationQueue queue,
-        ILogger<BroadcastService> logger)
-    {
-        _db = db;
-        _orch = orch;
-        _queue = queue;
-        _logger = logger;
-    }
-
     public async Task<BroadcastResult> SendAsync(BroadcastRequest request, CancellationToken ct = default)
     {
-        var campaignId = Guid.NewGuid();
-        var recipients = new List<string>();
-        if (request.Recipients is { Count: > 0 })
-            recipients.AddRange(request.Recipients);
+        var channels = request.Channels is { Length: > 0 }
+            ? request.Channels
+            : string.IsNullOrWhiteSpace(request.Channel) ? ["email"] : [request.Channel];
 
-        // F33: when SegmentKey set, pull CDP profiles for tenant (simple audience = all known emails)
-        if (!string.IsNullOrWhiteSpace(request.SegmentKey))
+        var campaign = await campaigns.CreateAsync(new CreateCampaignRequest
         {
-            var q = _db.CdpProfiles.AsNoTracking().Where(x => x.Email != null);
-            if (!string.IsNullOrEmpty(request.TenantId))
-                q = q.Where(x => x.TenantId == request.TenantId);
-            var emails = await q.Select(x => x.Email!).Take(10_000).ToListAsync(ct);
-            recipients.AddRange(emails);
-            _logger.LogInformation("Broadcast {Name} segment {Seg} expanded to {N} CDP emails",
-                request.Name, request.SegmentKey, emails.Count);
-        }
+            Name = request.Name,
+            TemplateKey = request.TemplateKey,
+            Channels = channels,
+            Data = request.Data,
+            TenantId = request.TenantId
+        }, createdBy: null, ct);
 
-        recipients = recipients.Distinct(StringComparer.OrdinalIgnoreCase).Take(10_000).ToList();
-        var accepted = 0;
-        var failed = 0;
+        var recipients = request.Recipients ?? [];
+        var added = await campaigns.AddRecipientsAsync(campaign.Id, recipients, null, request.TenantId, ct);
+        await campaigns.StartAsync(campaign.Id, request.TenantId, ct);
 
-        foreach (var r in recipients)
-        {
-            try
-            {
-                var nreq = new NotificationRequest
-                {
-                    Recipient = r,
-                    Channel = request.Channel,
-                    TemplateKey = request.TemplateKey,
-                    Data = request.Data,
-                    TenantId = request.TenantId,
-                    Locale = request.Locale,
-                    Category = $"campaign:{request.Name}",
-                    CollapseKey = $"campaign:{campaignId}:{r}"
-                };
-                var strategy = _db.Database.CreateExecutionStrategy();
-                await strategy.ExecuteAsync(async () =>
-                {
-                    await using var tx = await _db.Database.BeginTransactionAsync(ct);
-                    var (ok, status) = await _orch.AcceptAsync(nreq, ct);
-                    if (!ok) { await tx.RollbackAsync(ct); Interlocked.Increment(ref failed); return; }
-                    if (status.Status == DeliveryStatus.Queued)
-                    {
-                        await _queue.EnqueueAsync(nreq, ct);
-                        await _db.SaveChangesAsync(ct);
-                    }
-                    await tx.CommitAsync(ct);
-                    Interlocked.Increment(ref accepted);
-                });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Broadcast recipient failed {R}", r);
-                Interlocked.Increment(ref failed);
-            }
-        }
-
+        logger.LogInformation("Broadcast façade campaign {Id} recipients={N}", campaign.Id, added);
         return new BroadcastResult
         {
-            CampaignId = campaignId,
-            Accepted = accepted,
-            Failed = failed,
-            Status = "completed"
+            CampaignId = campaign.Id,
+            Accepted = added,
+            Failed = 0,
+            Status = "processing"
         };
     }
 }
