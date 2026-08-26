@@ -34,6 +34,21 @@ using NotificationHub.Application.Features.Workflows.GetRun;
 using NotificationHub.Application.Features.Workflows.GetTimeline;
 using NotificationHub.Application.Features.Workflows.Cancel;
 using NotificationHub.Application.Features.Admin.MessagingHealth;
+using NotificationHub.Application.Features.Segments.Save;
+using NotificationHub.Application.Features.Segments.Get;
+using NotificationHub.Application.Features.Segments.Match;
+using NotificationHub.Application.Features.Engagement.Track;
+using NotificationHub.Application.Features.Engagement.ListByNotification;
+using NotificationHub.Application.Features.Engagement.Count;
+using NotificationHub.Application.Features.Devices.Register;
+using NotificationHub.Application.Features.Devices.Unregister;
+using NotificationHub.Application.Features.Devices.List;
+using NotificationHub.Application.Features.Topics.Save;
+using NotificationHub.Application.Features.Topics.Subscribe;
+using NotificationHub.Application.Features.Topics.Unsubscribe;
+using NotificationHub.Application.Features.Topics.List;
+using NotificationHub.Application.Features.Topics.ListSubscribers;
+
 using NotificationHub.Application.Abstractions;
 using NotificationHub.Host.Http;
 using MediatR;
@@ -486,3 +501,118 @@ app.MapGet("/api/v1/admin/messaging/health", async (HttpContext http, ISender se
     var result = await sender.Send(new GetMessagingHealthQuery(), ct);
     return result.ToHttpResult();
 }).WithName("GetMessagingHealth");
+
+// --- Segments ---
+app.MapPost("/api/v1/segments", async (SegmentDefinition segment, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(segment.TenantId);
+    var result = await sender.Send(new SaveSegmentCommand(segment, tid), ct);
+    return result.ToHttpResult(s => Results.Created($"/api/v1/segments/{s.Key}", s));
+}).WithName("SaveSegment");
+
+app.MapGet("/api/v1/segments/{key}", async (string key, string? tenantId, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var result = await sender.Send(new GetSegmentQuery(key, tid), ct);
+    return result.ToHttpResult();
+}).WithName("GetSegment");
+
+app.MapPost("/api/v1/segments/{key}/match", async (string key, Dictionary<string, object?> attributes, string? tenantId, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var result = await sender.Send(new MatchSegmentQuery(key, attributes, tid), ct);
+    return result.ToHttpResult(m => Results.Ok(new { match = m }));
+}).WithName("MatchSegment");
+
+// --- Engagement ---
+app.MapPost("/api/v1/engagement", async (EngagementEvent evt, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    // open/click tracking may be unauthenticated pixel; allow Sender+Admin; public track via signed links later
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    var result = await sender.Send(new TrackEngagementCommand(evt), ct);
+    return result.ToHttpResult(e => Results.Accepted($"/api/v1/notifications/{e.NotificationId}/engagement", e));
+}).WithName("TrackEngagement");
+
+app.MapGet("/api/v1/notifications/{id:guid}/engagement", async (Guid id, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader, AppRoles.Sender) is { } denied) return denied;
+    var result = await sender.Send(new ListEngagementQuery(id), ct);
+    return result.ToHttpResult();
+}).WithName("ListEngagement");
+
+app.MapGet("/api/v1/engagement/stats", async (DateTimeOffset? from, DateTimeOffset? to, string? tenantId, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var result = await sender.Send(new CountEngagementQuery(from, to, tid), ct);
+    return result.ToHttpResult();
+}).WithName("EngagementStats");
+
+// --- Devices ---
+app.MapPost("/api/v1/devices", async (RegisterDeviceRequest request, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(request.TenantId);
+    var result = await sender.Send(new RegisterDeviceCommand(request, tid), ct);
+    return result.ToHttpResult(d => Results.Created($"/api/v1/devices/{d.UserId}", d));
+}).WithName("RegisterDevice");
+
+app.MapDelete("/api/v1/devices", async (string userId, string token, string? tenantId, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var result = await sender.Send(new UnregisterDeviceCommand(userId, token, tid), ct);
+    return result.ToHttpResult();
+}).WithName("UnregisterDevice");
+
+app.MapGet("/api/v1/devices/{userId}", async (string userId, string? tenantId, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var result = await sender.Send(new ListDevicesQuery(userId, tid), ct);
+    return result.ToHttpResult();
+}).WithName("ListDevices");
+
+// --- Topics ---
+app.MapPost("/api/v1/topics", async (TopicDefinition topic, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin) is { } denied) return denied;
+    var tid = http.ResolveTenantId(topic.TenantId);
+    var result = await sender.Send(new SaveTopicCommand(topic, tid), ct);
+    return result.ToHttpResult(t => Results.Created($"/api/v1/topics/{t.Key}", t));
+}).WithName("SaveTopic");
+
+app.MapGet("/api/v1/topics", async (string? tenantId, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var result = await sender.Send(new ListTopicsQuery(tid), ct);
+    return result.ToHttpResult();
+}).WithName("ListTopics");
+
+app.MapPost("/api/v1/topics/{key}/subscribe", async (string key, string subscriberId, string? channel, string? address, string? tenantId, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var result = await sender.Send(new SubscribeTopicCommand(key, subscriberId, tid, channel, address), ct);
+    return result.ToHttpResult();
+}).WithName("SubscribeTopic");
+
+app.MapPost("/api/v1/topics/{key}/unsubscribe", async (string key, string subscriberId, string? tenantId, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var result = await sender.Send(new UnsubscribeTopicCommand(key, subscriberId, tid), ct);
+    return result.ToHttpResult();
+}).WithName("UnsubscribeTopic");
+
+app.MapGet("/api/v1/topics/{key}/subscribers", async (string key, string? tenantId, HttpContext http, ISender sender, CancellationToken ct) =>
+{
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader) is { } denied) return denied;
+    var tid = http.ResolveTenantId(tenantId);
+    var result = await sender.Send(new ListTopicSubscribersQuery(key, tid), ct);
+    return result.ToHttpResult();
+}).WithName("ListTopicSubscribers");

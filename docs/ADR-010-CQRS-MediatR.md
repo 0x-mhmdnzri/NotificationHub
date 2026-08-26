@@ -74,4 +74,6 @@ MediatR **12.4.1** only. Assembly: `ApplicationAssemblyMarker`.
 
 **Trade-offs:** Gradual migration of remaining endpoints; Application references EF for query composition (Level 1–2 CQRS, same DB).
 
-**Follow-up:** Migrate workflows/consent/webhooks; optional read replica only if measured need.
+**Completed migrations:** Notifications, Templates, Preferences, Webhooks, Consents, Workflows, Segments, Engagement, Devices, Topics, Messaging health.
+
+**Follow-up:** Real AuthorizationBehavior policies; optional TransactionBehavior for multi-write; optional read replica if measured need.
