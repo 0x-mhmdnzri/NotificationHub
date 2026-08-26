@@ -205,7 +205,7 @@ dotnet test
 If this project is useful to you — or you want to improve plugins, docs, tests, workers, or the API — **you are welcome to collaborate**.
 
 - Open an issue or pull request on GitHub  
-- Or write directly: **[nazari.nohammad80@icloud.com](mailto:nazari.nohammad80@icloud.com)**
+- Or write directly: **[nazari.mohammad80@icloud.com](mailto:nazari.mohammad80@icloud.com)**
 
 Ideas, bug reports, and contributions of any size are appreciated.
 
