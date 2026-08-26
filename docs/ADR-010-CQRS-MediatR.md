@@ -1,8 +1,8 @@
-# ADR 0010: CQRS with MediatR 12.4.1 — separated read/write pipelines
+# ADR 0010: CQRS with MediatR 12.4.1 — Vertical Slices & separated data-flow pipelines
 
 ## Status
 
-Accepted
+Accepted (supersedes initial thin MediatR wiring)
 
 ## Date
 
@@ -10,57 +10,68 @@ Accepted
 
 ## Context
 
-NotificationHub mixed orchestration, reads, and writes inside minimal API endpoints and a monolithic orchestrator surface. Scaling validation, logging, and future unit-of-work concerns required a uniform application boundary.
+Initial CQRS wiring used horizontal folders and service-backed queries. The updated engineering standard requires:
+
+- Vertical slice feature folders
+- Result pattern for business failures (not exceptions)
+- Query path: `AsNoTracking` + projection (no aggregate load)
+- Explicit command vs query intent markers
+- Pipeline order: Logging → Validation → Authorization → Performance → Handler
+- No command chaining; thin HTTP adapters via `ISender`
+- Trusted tenant context (not client-only)
 
 ## Decision
 
-Adopt **CQRS** via **MediatR 12.4.1**:
+### Structure (Vertical Slice)
 
-- **Commands** (`ICommand` / `ICommand<T>`) — write path (Accept, SendSync, SaveTemplate, …)
-- **Queries** (`IQuery<T>`) — read path (GetStatus, GetTemplate, ListTemplates, …)
-- **Pipeline behaviors** (ordered):
-  1. `ValidationBehavior` — FluentValidation
-  2. `LoggingBehavior` — timing + CMD/QRY label
-  3. `CommandOnlyBehavior` — write-only hooks (UoW/outbox future)
-  4. `QueryOnlyBehavior` — read-only guarantees / future read replicas
+```text
+Features/
+  Notifications/
+    Accept/     (command)
+    SendSync/   (command)
+    GetStatus/  (query + DTO projection)
+  Templates/
+    Save/       (command)
+    GetByKey/   (query + DTO)
+    List/       (query + DTO)
+```
 
-Layers:
+### Markers
 
-| Project | Role |
-|---------|------|
-| `NotificationHub.Application` | Commands, Queries, Handlers, Behaviors, Validators |
-| `NotificationHub.Infrastructure` | Composition (`AddInfrastructureCqrs`) |
-| `NotificationHub.Core` | Domain services, persistence, messaging (existing) |
-| `NotificationHub.Host` | HTTP adapters → `ISender` only |
+- `ICommand` / `ICommand<T>` — write pipeline
+- `IQuery<T>` — read pipeline (side-effect free for business state)
 
-## Alternatives Considered
+### Result
 
-### Option A: Keep endpoint-local logic
-- **Pros:** Less ceremony
-- **Cons:** No uniform validation/logging; hard to test
-- **Why rejected:** Does not scale feature surface
+`Result` / `Result<T>` + `Error` / `ErrorType` mapped to HTTP only in Host (`ResultHttpExtensions`).
 
-### Option B: Full event-sourced CQRS
-- **Pros:** Ultimate write/read separation
-- **Cons:** Heavy rewrite
-- **Why rejected:** Overkill for current product stage
+### Query rules
+
+Handlers inject `NotificationDbContext` and use:
+
+- `AsNoTracking()`
+- `Select` projections to DTOs
+- tenant filter from **trusted** API context
+
+### Command rules
+
+Handlers orchestrate existing domain services (`NotificationOrchestrator`, template engine).  
+Outbox dual-write remains inside Core accept path (already implemented).
+
+### Pipeline order
+
+1. LoggingBehavior  
+2. ValidationBehavior (FluentValidation)  
+3. AuthorizationBehavior  
+4. PerformanceBehavior (slow threshold 500ms)  
+5. Handler  
+
+MediatR **12.4.1** only. Assembly: `ApplicationAssemblyMarker`.
 
 ## Consequences
 
-**Positive:**
-- Clear write vs read pipelines
-- Validators/behaviors cross-cut without endpoint duplication
-- Handlers unit-testable with `ISender`
+**Positive:** Clear read/write data flows, testable handlers, transport-independent errors, navigable features.
 
-**Negative / trade-offs:**
-- More types per feature
-- Gradual migration of remaining endpoints
+**Trade-offs:** Gradual migration of remaining endpoints; Application references EF for query composition (Level 1–2 CQRS, same DB).
 
-**Risks / follow-up actions:**
-- Migrate remaining admin/workflow endpoints to Commands/Queries
-- Optional read DbContext / replica for queries
-
-## References
-
-- MediatR 12.4.1
-- Skill: dotnet-cqrs-mediatr
+**Follow-up:** Migrate workflows/consent/webhooks; optional read replica only if measured need.

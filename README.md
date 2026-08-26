@@ -323,9 +323,9 @@ To print all available benchmarks use `--list flat` or `--list tree`.
 To learn more about filtering use `--help`.
 Stress target=http://localhost:8080 total=2000 concurrency=100 warmup=50
 
-## Architecture (CQRS)
+## Architecture (CQRS + Vertical Slices)
 
-Write and read pipelines are separated via **MediatR 12.4.1**:
+Write and read **data-flow pipelines** are separated via **MediatR 12.4.1** + vertical feature folders:
 
 | Side | Marker | Examples |
 |------|--------|----------|

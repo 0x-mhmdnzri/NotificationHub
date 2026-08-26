@@ -4,7 +4,7 @@ using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Application.DependencyInjection;
-using NotificationHub.Application.Notifications.Commands.AcceptNotification;
+using NotificationHub.Application.Features.Notifications.Accept;
 using NotificationHub.Core.Tests.Helpers;
 
 namespace NotificationHub.Application.Tests;
@@ -17,6 +17,7 @@ public class AcceptNotificationCommandTests
         services.AddLogging();
         services.AddApplication();
         services.AddSingleton(TestFixtures.CreateOrchestrator(db));
+        services.AddScoped(_ => db);
         return services.BuildServiceProvider();
     }
 
@@ -27,8 +28,8 @@ public class AcceptNotificationCommandTests
         var sender = BuildSp(db).GetRequiredService<ISender>();
         var result = await sender.Send(new AcceptNotificationCommand(
             new NotificationRequest { Recipient = "a@b.com", Channel = "email", TemplateKey = "welcome" }, null));
-        result.Accepted.Should().BeTrue();
-        result.Status.Status.Should().Be(DeliveryStatus.Queued);
+        result.IsSuccess.Should().BeTrue();
+        result.Value!.Status.Should().Be("Queued");
     }
 
     [Fact]
