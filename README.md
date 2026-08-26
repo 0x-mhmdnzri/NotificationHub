@@ -284,3 +284,25 @@ docs/                             # ADRs, ops, SDK
 ## License
 
 MIT
+
+## Build & package management
+
+Versions are centralized:
+
+- `Directory.Packages.props` — NuGet package versions (CPM)
+- `Directory.Build.props` — shared TFM (`net9.0`), nullable, RID list, light-runtime defaults
+
+### Multi-platform publish (x64 / x86 / arm / arm64)
+
+```bash
+./scripts/publish-all.sh
+# artifacts/publish/{linux-x64,linux-arm64,linux-arm,win-x64,win-x86,win-arm64,osx-x64,osx-arm64}
+```
+
+Framework-dependent publish (smaller). Requires matching .NET 9 runtime on the target.
+
+### Light local run
+
+```bash
+./scripts/run-light.sh
+```

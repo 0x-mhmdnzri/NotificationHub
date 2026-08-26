@@ -1,0 +1,38 @@
+<Project>
+  <PropertyGroup>
+    <!-- Shared defaults for all projects -->
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Lightweight runtime characteristics -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishSingleFile Condition="'$(PublishSingleFile)' == ''">false</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>portable</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <!-- Avoid pulling satellite assemblies for every culture unless needed -->
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!-- Multi-RID publish support (used by scripts/publish-all.sh) -->
+    <RuntimeIdentifiers>linux-x64;linux-arm64;linux-arm;win-x64;win-x86;win-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
+
+    <!-- NuGet / restore hygiene -->
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <!-- Host publish defaults: framework-dependent = smaller deploy when runtime is present -->
+  <PropertyGroup Condition="$(MSBuildProjectName) == 'NotificationHub.Host'">
+    <SelfContained Condition="'$(SelfContained)' == ''">false</SelfContained>
+    <PublishTrimmed>false</PublishTrimmed>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <TieredCompilation>true</TieredCompilation>
+  </PropertyGroup>
+</Project>
