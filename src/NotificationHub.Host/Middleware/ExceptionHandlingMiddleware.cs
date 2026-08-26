@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text.Json;
+using NotificationHub.Application.Abstractions;
 
 namespace NotificationHub.Host.Middleware;
 
@@ -26,6 +27,19 @@ public sealed class ExceptionHandlingMiddleware
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
             // client disconnected
+        }
+        catch (AuthorizationException authEx)
+        {
+            if (context.Response.HasStarted) throw;
+            context.Response.Clear();
+            context.Response.StatusCode = authEx.StatusCode;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsync(JsonSerializer.Serialize(new
+            {
+                error = authEx.Code,
+                message = authEx.Message,
+                correlationId = context.GetCorrelationId() ?? "unknown"
+            }));
         }
         catch (Exception ex)
         {

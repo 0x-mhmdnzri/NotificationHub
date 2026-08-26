@@ -20,6 +20,7 @@ public class SegmentAndDeviceTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddApplication();
+        services.AddScoped<NotificationHub.Application.Abstractions.IRequestContext, TestRequestContext>();
         services.AddScoped<ISegmentService, SegmentService>();
         services.AddScoped(_ => db);
         services.AddSingleton(TestFixtures.CreateOrchestrator(db));
@@ -38,6 +39,7 @@ public class SegmentAndDeviceTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddApplication();
+        services.AddScoped<NotificationHub.Application.Abstractions.IRequestContext, TestRequestContext>();
         services.AddScoped<IDeviceService, DeviceService>();
         services.AddScoped(_ => db);
         services.AddSingleton(TestFixtures.CreateOrchestrator(db));

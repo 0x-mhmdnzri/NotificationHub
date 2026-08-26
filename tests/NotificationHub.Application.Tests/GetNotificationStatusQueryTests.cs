@@ -18,6 +18,7 @@ public class GetNotificationStatusQueryTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddApplication();
+        services.AddScoped<NotificationHub.Application.Abstractions.IRequestContext, TestRequestContext>();
         services.AddSingleton(TestFixtures.CreateOrchestrator(db));
         services.AddScoped(_ => db);
         var sp = services.BuildServiceProvider();
@@ -40,6 +41,7 @@ public class GetNotificationStatusQueryTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddApplication();
+        services.AddScoped<NotificationHub.Application.Abstractions.IRequestContext, TestRequestContext>();
         services.AddSingleton(TestFixtures.CreateOrchestrator(db));
         services.AddScoped(_ => db);
         var sender = services.BuildServiceProvider().GetRequiredService<ISender>();

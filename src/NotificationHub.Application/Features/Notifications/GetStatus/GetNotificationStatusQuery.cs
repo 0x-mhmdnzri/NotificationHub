@@ -1,7 +1,9 @@
+using NotificationHub.Abstractions.Models;
 using NotificationHub.Application.Abstractions;
 
 namespace NotificationHub.Application.Features.Notifications.GetStatus;
 
+[AuthorizeRoles(AppRoles.Admin, AppRoles.Reader, AppRoles.Sender)]
 public sealed record GetNotificationStatusQuery(
     Guid NotificationId,
     string? TrustedTenantId,

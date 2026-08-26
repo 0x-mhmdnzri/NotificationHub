@@ -20,6 +20,7 @@ public class ConsentAndWebhookTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddApplication();
+        services.AddScoped<NotificationHub.Application.Abstractions.IRequestContext, TestRequestContext>();
         services.AddScoped<IConsentService, ConsentService>();
         services.AddScoped(_ => db);
         services.AddSingleton(TestFixtures.CreateOrchestrator(db));
@@ -39,6 +40,7 @@ public class ConsentAndWebhookTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddApplication();
+        services.AddScoped<NotificationHub.Application.Abstractions.IRequestContext, TestRequestContext>();
         services.AddScoped(_ => db);
         services.AddSingleton(TestFixtures.CreateOrchestrator(db));
         var sender = services.BuildServiceProvider().GetRequiredService<ISender>();

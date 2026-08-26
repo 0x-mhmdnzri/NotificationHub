@@ -51,6 +51,8 @@ using NotificationHub.Application.Features.Topics.ListSubscribers;
 
 using NotificationHub.Application.Abstractions;
 using NotificationHub.Host.Http;
+using NotificationHub.Host.Security;
+using NotificationHub.Application.Abstractions;
 using MediatR;
 using FluentValidation;
 using NotificationHub.Core.Queue;
@@ -235,6 +237,8 @@ builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(Re
 builder.Services.AddHostedService<RetentionBackgroundWorker>();
 // CQRS Application + pipeline (write/read separated)
 builder.Services.AddInfrastructureCqrs();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<IRequestContext, HttpRequestContext>();
 
 builder.Services.AddScoped<NotificationOrchestrator>();
 
