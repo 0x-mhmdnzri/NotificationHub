@@ -63,82 +63,80 @@ public sealed class NotificationOrchestrator
 
     public async Task<(bool Accepted, NotificationStatus Status)> AcceptAsync(NotificationRequest request, CancellationToken ct = default)
     {
-        // Command write: resource id is application-owned (ignore client-supplied Id)
         request = request with { Id = ServerIds.New() };
+        var channel = ResolveChannel(request);
+
         if (!string.IsNullOrEmpty(request.IdempotencyKey))
         {
-            var existing = await _statusStore.GetByIdempotencyKeyAsync(request.IdempotencyKey, request.TenantId, ct);
+            var existing = await _statusStore.GetByIdempotencyKeyAsync(request.IdempotencyKey, request.TenantId, ct).ConfigureAwait(false);
             if (existing is not null)
             {
-                _logger.LogInformation("Idempotent hit {Key} -> {Id}", request.IdempotencyKey, existing.NotificationId);
+                _metrics?.Increment("notifications.idempotent_hit", 1, ("channel", channel));
                 return (true, existing);
             }
         }
 
-        var channel = ResolveChannel(request);
-        _metrics?.Increment("notifications.accept", 1, ("channel", channel));
-
-        // F12: collapse key — return existing active notification if same recipient+key within 24h
         if (!string.IsNullOrWhiteSpace(request.CollapseKey))
         {
-            var existingCollapse = await _statusStore.FindByCollapseKeyAsync(request.CollapseKey!, request.Recipient, request.TenantId, ct);
+            var existingCollapse = await _statusStore.FindByCollapseKeyAsync(request.CollapseKey!, request.Recipient, request.TenantId, ct).ConfigureAwait(false);
             if (existingCollapse is not null)
             {
-                _logger.LogInformation("Collapse hit {Key} -> {Id}", request.CollapseKey, existingCollapse.NotificationId);
+                _metrics?.Increment("notifications.collapse_hit", 1, ("channel", channel));
                 return (true, existingCollapse);
             }
         }
 
-        // Preference check (F11 critical bypass via priority)
+        _metrics?.Increment("notifications.accept", 1, ("channel", channel));
+
+        // Sequential on shared DbContext (EF is not concurrent). Cache hides preference RTT.
         var isCritical = request.Priority == NotificationPriority.Critical;
-        var (allowed, reason) = await _preferences.CanSendAsync(request.Recipient, channel, request.Category, request.TenantId, isCritical, ct);
+        var purpose = string.IsNullOrWhiteSpace(request.Category) ? "transactional" : request.Category!;
+        var (allowed, reason) = await _preferences.CanSendAsync(request.Recipient, channel, request.Category, request.TenantId, isCritical, ct).ConfigureAwait(false);
         if (!allowed)
         {
-            var suppressed = new NotificationStatus
-            {
-                NotificationId = request.Id, Channel = channel, Recipient = request.Recipient,
-                Status = DeliveryStatus.Suppressed, TenantId = request.TenantId,
-                IdempotencyKey = request.IdempotencyKey, CollapseKey = request.CollapseKey, CorrelationId = request.CorrelationId,
-                Category = request.Category, ErrorMessage = reason
-            };
-            await _statusStore.SaveAsync(suppressed, ct);
-            await _audit.LogAsync("suppressed", request.Id, request.TenantId, details: reason, ct: ct);
+            var suppressed = MakeStatus(request, channel, DeliveryStatus.Suppressed, reason);
+            await _statusStore.SaveAsync(suppressed, ct).ConfigureAwait(false);
+            await FireAudit("suppressed", request.Id, request.TenantId, reason);
             _metrics?.Increment("notifications.suppressed", 1, ("reason", "preference"));
             return (true, suppressed);
         }
 
-        // Consent ledger (purpose = category or transactional default)
-        var purpose = string.IsNullOrWhiteSpace(request.Category) ? "transactional" : request.Category;
-        var consent = await _consents.EvaluateAsync(request.Recipient, purpose, channel, request.TenantId, ct);
+        var consent = await _consents.EvaluateAsync(request.Recipient, purpose, channel, request.TenantId, ct).ConfigureAwait(false);
         if (!consent.Allowed)
         {
-            var suppressed = new NotificationStatus
-            {
-                NotificationId = request.Id, Channel = channel, Recipient = request.Recipient,
-                Status = DeliveryStatus.Suppressed, TenantId = request.TenantId,
-                IdempotencyKey = request.IdempotencyKey, CollapseKey = request.CollapseKey, CorrelationId = request.CorrelationId,
-                Category = request.Category, ErrorMessage = consent.Reason
-            };
-            await _statusStore.SaveAsync(suppressed, ct);
-            await _audit.LogAsync("suppressed", request.Id, request.TenantId, details: consent.Reason, ct: ct);
+            var suppressed = MakeStatus(request, channel, DeliveryStatus.Suppressed, consent.Reason);
+            await _statusStore.SaveAsync(suppressed, ct).ConfigureAwait(false);
+            await FireAudit("suppressed", request.Id, request.TenantId, consent.Reason);
             return (true, suppressed);
         }
 
         var isScheduled = request.ScheduledAt.HasValue && request.ScheduledAt > DateTimeOffset.UtcNow;
-        var status = new NotificationStatus
-        {
-            NotificationId = request.Id, Channel = channel, Recipient = request.Recipient,
-            Status = isScheduled ? DeliveryStatus.Scheduled : DeliveryStatus.Queued,
-            ScheduledAt = request.ScheduledAt, TenantId = request.TenantId,
-            IdempotencyKey = request.IdempotencyKey, CollapseKey = request.CollapseKey, CorrelationId = request.CorrelationId,
-            Category = request.Category
-        };
+        var status = MakeStatus(request, channel, isScheduled ? DeliveryStatus.Scheduled : DeliveryStatus.Queued, null);
+        await _statusStore.SaveAsync(status, ct).ConfigureAwait(false);
+        if (!isScheduled)
+            await _outbox.AddAsync(request, ct).ConfigureAwait(false);
 
-        await _statusStore.SaveAsync(status, ct);
-        await _statusStore.SavePayloadAsync(request.Id, JsonSerializer.Serialize(request), ct);
-        await _audit.LogAsync(isScheduled ? "scheduled" : "queued", request.Id, request.TenantId, ct: ct);
+        await FireAudit("accepted", request.Id, request.TenantId, channel);
         return (true, status);
     }
+
+    private static NotificationStatus MakeStatus(NotificationRequest request, string channel, DeliveryStatus st, string? error) => new()
+    {
+        NotificationId = request.Id,
+        Channel = channel,
+        Recipient = request.Recipient,
+        Status = st,
+        ScheduledAt = request.ScheduledAt,
+        TenantId = request.TenantId,
+        IdempotencyKey = request.IdempotencyKey,
+        CollapseKey = request.CollapseKey,
+        CorrelationId = request.CorrelationId,
+        Category = request.Category,
+        ErrorMessage = error
+    };
+
+    private Task FireAudit(string action, Guid notificationId, string? tenantId, string? details)
+        => _audit.LogAsync(action, notificationId, tenantId, details: details);
 
     public async Task<DeliveryResult> ProcessAsync(NotificationRequest request, CancellationToken ct = default)
     {

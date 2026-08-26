@@ -306,3 +306,19 @@ Framework-dependent publish (smaller). Requires matching .NET 9 runtime on the t
 ```bash
 ./scripts/run-light.sh
 ```
+
+## Latency & benchmarks
+
+See [docs/ops/latency.md](docs/ops/latency.md).
+
+Available Benchmark:
+  #0 HotPathBenchmarks
+
+
+You should select the target benchmark(s). Please, print a number of a benchmark (e.g. `0`) or a contained benchmark caption (e.g. `HotPathBenchmarks`).
+If you want to select few, please separate them with space ` ` (e.g. `1 2 3`).
+You can also provide the class name in console arguments by using --filter. (e.g. `--filter '*HotPathBenchmarks*'`).
+Enter the asterisk `*` to select all.
+To print all available benchmarks use `--list flat` or `--list tree`.
+To learn more about filtering use `--help`.
+Stress target=http://localhost:8080 total=2000 concurrency=100 warmup=50

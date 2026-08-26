@@ -62,6 +62,13 @@ var builder = WebApplication.CreateBuilder(args);
 // SEC-26: limit request body size (DoS)
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 2 * 1024 * 1024); // 2 MB
 
+builder.Services.AddMemoryCache();
+builder.Services.AddResponseCompression(o =>
+{
+    o.EnableForHttps = true;
+    o.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+    o.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpClient("webhooks", c =>
@@ -101,8 +108,8 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
 var cs = builder.Configuration.GetConnectionString("Default")
     ?? throw new InvalidOperationException("Connection string 'Default' missing");
 
-builder.Services.AddDbContext<NotificationDbContext>(opt =>
-    opt.UseNpgsql(cs, n => { n.EnableRetryOnFailure(3); n.CommandTimeout(30); }));
+builder.Services.AddDbContextPool<NotificationDbContext>(opt =>
+    opt.UseNpgsql(cs, n => { n.EnableRetryOnFailure(3); n.CommandTimeout(15); }));
 
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
 builder.Services.Configure<ProviderOptions>(builder.Configuration.GetSection("Providers"));
@@ -146,7 +153,11 @@ else
 }
 
 builder.Services.AddScoped<INotificationStatusStore, PostgresNotificationStatusStore>();
-builder.Services.AddScoped<IPreferenceService, PreferenceService>();
+builder.Services.AddScoped<PreferenceService>();
+builder.Services.AddScoped<IPreferenceService>(sp =>
+    new CachingPreferenceService(
+        sp.GetRequiredService<PreferenceService>(),
+        sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>()));
 builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddScoped<IWebhookDispatcher, WebhookDispatcher>();
 builder.Services.AddScoped<IWorkflowRunRepository, WorkflowRunRepository>();
@@ -235,6 +246,7 @@ if (corsOrigins.Length > 0)
     app.UseCors("AppCors");
 
 app.UseMiddleware<AdminIpAllowlistMiddleware>();
+app.UseResponseCompression();
 app.UseMiddleware<ApiKeyAuthMiddleware>();
 
 using (var scope = app.Services.CreateScope())
