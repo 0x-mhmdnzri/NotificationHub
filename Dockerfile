@@ -12,6 +12,7 @@ COPY src/NotificationHub.Host/NotificationHub.Host.csproj src/NotificationHub.Ho
 COPY src/NotificationHub.Sdk/NotificationHub.Sdk.csproj src/NotificationHub.Sdk/
 COPY src/NotificationHub.Application/NotificationHub.Application.csproj src/NotificationHub.Application/
 COPY src/NotificationHub.Infrastructure/NotificationHub.Infrastructure.csproj src/NotificationHub.Infrastructure/
+COPY src/NotificationHub.ServiceDefaults/NotificationHub.ServiceDefaults.csproj src/NotificationHub.ServiceDefaults/
 COPY tests/NotificationHub.Core.Tests/NotificationHub.Core.Tests.csproj tests/NotificationHub.Core.Tests/
 COPY tools/loadtest/NotificationHub.LoadTest.csproj tools/loadtest/
 
@@ -31,7 +32,7 @@ COPY Plugins/NotificationHub.Plugins.Chat.Teams/NotificationHub.Plugins.Chat.Tea
 COPY Plugins/NotificationHub.Plugins.Push.Fcm/NotificationHub.Plugins.Push.Fcm.csproj Plugins/NotificationHub.Plugins.Push.Fcm/
 COPY Plugins/NotificationHub.Plugins.Push.Expo/NotificationHub.Plugins.Push.Expo.csproj Plugins/NotificationHub.Plugins.Push.Expo/
 
-# Restore only the Host graph (pulls all plugin refs); avoids requiring full solution source at this layer
+# Restore only the Host graph (pulls all plugin + ServiceDefaults refs); avoids requiring full solution source at this layer
 RUN dotnet restore src/NotificationHub.Host/NotificationHub.Host.csproj
 
 COPY . .
