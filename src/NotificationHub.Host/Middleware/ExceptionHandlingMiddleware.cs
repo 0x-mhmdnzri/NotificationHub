@@ -1,60 +1,55 @@
 using System.Net;
 using System.Text.Json;
+using FluentValidation;
 using NotificationHub.Application.Abstractions;
 
 namespace NotificationHub.Host.Middleware;
 
-/// <summary>Sanitized error responses — no stack traces or internal details outside Development (SEC-15).</summary>
-public sealed class ExceptionHandlingMiddleware
+/// <summary>
+/// Top-of-pipeline exception handler (SEC-15). Must run early so Auth/CORS failures are also catchable when thrown downstream.
+/// </summary>
+public sealed class ExceptionHandlingMiddleware(
+    RequestDelegate next,
+    ILogger<ExceptionHandlingMiddleware> logger,
+    IHostEnvironment env)
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<ExceptionHandlingMiddleware> _logger;
-    private readonly IHostEnvironment _env;
-
-    public ExceptionHandlingMiddleware(RequestDelegate next, ILogger<ExceptionHandlingMiddleware> logger, IHostEnvironment env)
-    {
-        _next = next;
-        _logger = logger;
-        _env = env;
-    }
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     public async Task InvokeAsync(HttpContext context)
     {
         try
         {
-            await _next(context);
+            await next(context);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
-            // client disconnected
+            // client disconnected — no response
+        }
+        catch (ValidationException vex)
+        {
+            await WriteJsonAsync(context, StatusCodes.Status400BadRequest, new
+            {
+                error = "validation_failed",
+                details = vex.Errors.Select(e => new { e.PropertyName, e.ErrorMessage }),
+                correlationId = context.GetCorrelationId() ?? "unknown"
+            });
         }
         catch (AuthorizationException authEx)
         {
-            if (context.Response.HasStarted) throw;
-            context.Response.Clear();
-            context.Response.StatusCode = authEx.StatusCode;
-            context.Response.ContentType = "application/json";
-            await context.Response.WriteAsync(JsonSerializer.Serialize(new
+            await WriteJsonAsync(context, authEx.StatusCode, new
             {
                 error = authEx.Code,
                 message = authEx.Message,
                 correlationId = context.GetCorrelationId() ?? "unknown"
-            }));
+            });
         }
         catch (Exception ex)
         {
             var correlationId = context.GetCorrelationId() ?? "unknown";
-            _logger.LogError(ex, "Unhandled exception CorrelationId={CorrelationId} Path={Path}",
+            logger.LogError(ex, "Unhandled exception CorrelationId={CorrelationId} Path={Path}",
                 correlationId, context.Request.Path);
 
-            if (context.Response.HasStarted)
-                throw;
-
-            context.Response.Clear();
-            context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
-            context.Response.ContentType = "application/json";
-
-            object body = _env.IsDevelopment()
+            object body = env.IsDevelopment()
                 ? new
                 {
                     error = "An unexpected error occurred",
@@ -68,7 +63,18 @@ public sealed class ExceptionHandlingMiddleware
                     correlationId
                 };
 
-            await context.Response.WriteAsync(JsonSerializer.Serialize(body));
+            await WriteJsonAsync(context, (int)HttpStatusCode.InternalServerError, body);
         }
+    }
+
+    private static async Task WriteJsonAsync(HttpContext context, int statusCode, object body)
+    {
+        if (context.Response.HasStarted)
+            throw new InvalidOperationException("The response has already started; cannot write error payload.");
+
+        context.Response.Clear();
+        context.Response.StatusCode = statusCode;
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsync(JsonSerializer.Serialize(body, JsonOpts));
     }
 }

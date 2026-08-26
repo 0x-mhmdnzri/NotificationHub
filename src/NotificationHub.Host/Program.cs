@@ -291,11 +291,36 @@ using (var scope = app.Services.CreateScope())
     await keyBootstrap.EnsureBootstrapKeyAsync();
 }
 
+// ---------------------------------------------------------------------------
+// Middleware order (ASP.NET Core best practice / "Hidden Bug in Program.cs"):
+// 1. ForwardedHeaders   — correct scheme/IP behind proxy
+// 2. ExceptionHandler   — catch failures early (outermost)
+// 3. CorrelationId      — available for error logs
+// 4. HSTS / HTTPS       — transport security (non-Development)
+// 5. Security headers
+// 6. Response compression
+// 7. Static/Swagger (dev)
+// 8. Routing
+// 9. CORS               — before Auth so preflight OPTIONS succeeds
+// 10. Admin IP allowlist
+// 11. Authentication    — ApiKeyAuthMiddleware (custom AuthN)
+// 12. Authorization     — enforced in endpoints + MediatR [AuthorizeRoles]
+// 13. Map endpoints
+// ---------------------------------------------------------------------------
 app.UseForwardedHeaders();
 
-app.UseMiddleware<CorrelationIdMiddleware>();
+// Exception handler near the top so downstream middleware/endpoint failures are captured
 app.UseMiddleware<ExceptionHandlingMiddleware>();
+app.UseMiddleware<CorrelationIdMiddleware>();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
+
 app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseResponseCompression();
 
 if (app.Environment.IsDevelopment())
 {
@@ -303,25 +328,17 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseRouting();
+
+// CORS must run before authentication so browser preflight is not blocked by 401
 if (corsOrigins.Length > 0)
     app.UseCors("AppCors");
 
 app.UseMiddleware<AdminIpAllowlistMiddleware>();
-app.UseResponseCompression();
-app.Use(async (ctx, next) =>
-{
-    try { await next(); }
-    catch (ValidationException vex)
-    {
-        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
-        await ctx.Response.WriteAsJsonAsync(new
-        {
-            error = "validation_failed",
-            details = vex.Errors.Select(e => new { e.PropertyName, e.ErrorMessage })
-        });
-    }
-});
+
+// AuthN (API key) — equivalent to UseAuthentication for this API
 app.UseMiddleware<ApiKeyAuthMiddleware>();
+// AuthZ: RequireRoles on endpoints + AuthorizationBehavior on MediatR commands
 
 using (var scope = app.Services.CreateScope())
 {
