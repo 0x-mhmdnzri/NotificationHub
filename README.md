@@ -13,6 +13,7 @@ Core stays small and stable; channels, providers, and extensions load as plugins
 - Preferred provider + automatic failover
 - Templates with `{{placeholders}}`, locales, versioning, and preview
 - Durable RabbitMQ queues (ack, prefetch, DLX/TTL, publisher confirms)
+- **Per-channel work queues** (`notifications.email` / `.sms` / `.push`, …) with independent consumers
 - EF Core Outbox + Inbox (SKIP LOCKED claiming, dual-write safe transactions)
 - PostgreSQL status store (optionally via PgBouncer)
 - Scheduling (`ScheduledAt`), retry / dead-letter, audit trail
@@ -24,6 +25,7 @@ Core stays small and stable; channels, providers, and extensions load as plugins
 - Preference **embed contract** for preference centers
 
 ### Orchestration
+- **Broadcast state machine** (`BroadcastStateMachine`) for campaign lifecycle
 - Workflow engine: `send`, `delay`, `condition`, `branch`, `http`
 - Workflow DSL export / import and code-first `WorkflowBuilder`
 - Segments, topics + broadcast, digest buffer + flush worker
@@ -46,9 +48,14 @@ Core stays small and stable; channels, providers, and extensions load as plugins
 - Rate limiting (in-memory or **Redis**), auth failure-only limits
 - Webhook URL / redirect SSRF guards, request body size limits
 - Circuit breaker on provider health
-- Minimal public `/health` + `/health/ready`
+- Minimal public `/health` + `/health/live` + `/health/ready` (Postgres / Redis / RabbitMQ)
 - OIDC config stub for future dashboard SSO
 - Plugin hot-reload from directory (`POST /api/v1/admin/plugins/reload`)
+
+### Observability
+- **Serilog** enriched logs (console text or JSON for ELK)
+- **OpenTelemetry** traces/metrics → OTLP (**Jaeger**)
+- **.NET Aspire** AppHost for local composition and health
 
 ---
 
@@ -79,6 +86,23 @@ Plugin SDK notes: [`docs/sdk/plugin-sdk.md`](docs/sdk/plugin-sdk.md)
 
 ## Quick start
 
+### Aspire (recommended for local full topology)
+
+```bash
+dotnet run --project src/NotificationHub.AppHost
+```
+
+Composes:
+
+| Resource | Role |
+|----------|------|
+| `notification-api` | HTTP API + outbox relay (no delivery consume) |
+| `worker-email` / `worker-sms` / `worker-push` | Per-channel delivery consumers |
+| Postgres (`notificationdb`) | Persistence |
+| RabbitMQ | Work queues + management UI |
+| Redis | Rate limit + inbox bus |
+| Jaeger | Traces (`http://localhost:16686`) |
+
 ### Docker Compose
 
 ```bash
@@ -94,7 +118,7 @@ docker compose up -d --build
 | Redis      | 6379 (optional) |
 | API        | 8080        |
 
-### Local run
+### Monolithic local run (single process)
 
 ```bash
 dotnet restore
@@ -102,6 +126,7 @@ dotnet build
 dotnet run --project src/NotificationHub.Host
 ```
 
+Default `Workers:*` flags keep API + delivery consumer + background jobs in one host.  
 Swagger is available only in **Development**.
 
 ---
@@ -112,13 +137,20 @@ Swagger is available only in **Development**.
 |-----|---------|
 | `ConnectionStrings:Default` | PostgreSQL |
 | `ConnectionStrings:Redis` | Optional: distributed rate limit + inbox SSE |
-| `RabbitMQ:*` | Host, credentials, queue topology |
+| `RabbitMQ:*` | Host, credentials, topology |
+| `RabbitMQ:ChannelRouting` | `true` → per-channel queues (default in Aspire) |
+| `RabbitMQ:ConsumeChannel` | `email` / `sms` / `push` / … for a dedicated worker process |
+| `Workers:RunDeliveryConsumer` | Register `NotificationBackgroundWorker` |
+| `Workers:RunOutboxRelay` | Register `OutboxRelayWorker` |
+| `Workers:RunCampaignDispatch` / `RunScheduled` / `RunWorkflow` / … | Role flags for Aspire split |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint (Jaeger collector) |
+| `Serilog:UseJsonConsole` | Structured JSON for ELK / Filebeat |
 | `Auth:BootstrapApiKey` | Bootstrap key (`nh_{guid}_{secret}`) |
 | `Auth:AdminIpAllowlist` | Optional admin IP list |
 | `ForwardedHeaders:KnownProxies` | Trusted proxies only |
 | `RateLimiting:PerMinute` / `AuthFailuresPerMinute` | Limits |
 | `CircuitBreaker:*` | Failure threshold / open duration |
-| `Plugins:Telegram:BotToken` etc. | Per-provider secrets |
+| `Plugins:*` | Per-provider secrets |
 | `Plugins:Directory` | Optional DLL folder for hot-load |
 | `NotificationHub:Environment` | `Development` / `Staging` / `Production` |
 | `Auth:Oidc:*` | Future dashboard SSO (stub) |
@@ -129,7 +161,7 @@ Swagger is available only in **Development**.
 
 ## Authentication
 
-All API routes (except `/health`, `/health/ready`, and Development swagger) require:
+All API routes (except `/health*`, and Development swagger) require:
 
 ```http
 X-Api-Key: nh_<keyId>_<secret>
@@ -157,13 +189,13 @@ Roles: `Admin`, `Sender`, `Reader` (and combinations on endpoints).
 | `POST`     | `/api/v1/webhooks` |
 | `GET`      | `/api/v1/audit` |
 
-### Workflows & segments
+### Workflows, segments, campaigns
 | Method | Path |
 |--------|------|
-| `POST/GET` | `/api/v1/workflows`, `/api/v1/workflows/{key}` |
-| `POST`     | `/api/v1/workflows/start`, `.../import`, `.../code-first` |
-| `GET`      | `/api/v1/workflows/{key}/export`, runs, timeline |
+| `POST/GET` | `/api/v1/workflows`, runs, timeline, import/export |
 | `POST`     | `/api/v1/segments`, `/api/v1/segments/{key}/match` |
+| `POST`     | `/api/v1/campaigns`, recipients, CSV, start, cancel |
+| `GET`      | `/api/v1/campaigns/{id}`, `/api/v1/campaigns/{id}/progress` |
 
 ### Inbox, digest, topics, devices
 | Method | Path |
@@ -173,19 +205,11 @@ Roles: `Admin`, `Sender`, `Reader` (and combinations on endpoints).
 | `POST`     | `/api/v1/topics`, subscribe, broadcast |
 | `POST/GET/DELETE` | `/api/v1/devices` |
 
-### CDP, campaigns, i18n
-| Method | Path |
-|--------|------|
-| `POST` | `/api/v1/cdp/identify`, `/api/v1/cdp/track` |
-| `GET`  | `/api/v1/cdp/profiles/{userId}` |
-| `POST` | `/api/v1/campaigns/broadcast` |
-| `POST/GET` | `/api/v1/i18n`, `/api/v1/i18n/{locale}` |
-
 ### Admin & health
 | Method | Path |
 |--------|------|
-| `GET`  | `/health`, `/health/ready` |
-| `GET`  | `/api/v1/admin/messaging/health`, `/api/v1/admin/metrics`, `/api/v1/admin/activity` |
+| `GET`  | `/health`, `/health/live`, `/health/ready` |
+| `GET`  | `/api/v1/admin/messaging/health`, metrics, activity |
 | `GET/POST` | `/api/v1/admin/api-keys` |
 | `POST` | `/api/v1/admin/plugins/reload`, retention, digest flush |
 | `GET`  | `/api/v1/providers/health`, `/api/v1/environment` |
@@ -201,8 +225,6 @@ Public tracking (rate-limited): `/t/o/{id}`, `/t/c/{id}?url=...`
 | .NET   | `src/NotificationHub.Sdk` (`NotificationHubClient`) |
 | Node   | `clients/notificationhub.js` |
 | Python | `clients/notificationhub.py` |
-
-Example (.NET):
 
 ```csharp
 using var client = new NotificationHubClient("http://localhost:8080", apiKey);
@@ -220,32 +242,69 @@ await client.SendAsync(new NotificationRequest
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  HTTP API   │────▶│ Orchestrator │────▶│   Outbox    │
-│  (Minimal)  │     │ Preferences  │     │  (EF Core)  │
-└─────────────┘     │ Throttle/CDP │     └──────┬──────┘
-                    └──────────────┘            │
-                                                ▼
-                                         ┌─────────────┐
-                                         │  RabbitMQ   │
-                                         └──────┬──────┘
-                                                │
-                    ┌───────────────────────────┼──────────────────┐
-                    ▼                           ▼                  ▼
-              Channel plugins            Inbox / Digests     Workflow worker
-           (email/sms/chat/push)         Redis optional      Step handlers
+┌────────────────── Aspire AppHost ──────────────────┐
+│  API (outbox)   worker-email   worker-sms  worker-push │
+│       │              │             │            │      │
+│       └──────────────┴──────┬──────┴────────────┘      │
+│                             ▼                          │
+│              Postgres · RabbitMQ · Redis · Jaeger      │
+└────────────────────────────────────────────────────────┘
+
+HTTP API ──▶ Orchestrator / Campaigns ──▶ EF Outbox
+                                              │
+                                              ▼
+                                    RabbitMQ (per-channel)
+                                              │
+                    ┌─────────────────────────┼─────────────────────┐
+                    ▼                         ▼                     ▼
+              Email plugins              SMS plugins           Push plugins
 ```
 
-**ADRs**
-- [ADR 0001: Microkernel](docs/ADR-001-Microkernel-Architecture.md)
-- [ADR 0002: PostgreSQL + PgBouncer](docs/ADR-002-PostgreSQL-PgBouncer-Persistence.md)
-- [ADR 0003: RabbitMQ](docs/ADR-003-RabbitMQ-Queue.md)
-- [ADR 0004: Regional SMS](docs/ADR-004-Regional-SMS-Providers.md)
+**Important distinction (see ADRs):**
 
-**Ops notes**
+| Layer | What it is | What it is not |
+|-------|------------|----------------|
+| Aspire AppHost | Process composition & infra wiring | Business workflow engine |
+| `BroadcastStateMachine` | Campaign lifecycle rules | Message broker topology |
+| Channel workers | Independent delivery consumers | Orchestrators of other channels |
+
+### Architecture Decision Records
+
+| ADR | Title |
+|-----|--------|
+| [001](docs/ADR-001-Microkernel-Architecture.md) | Microkernel / plugin architecture |
+| [002](docs/ADR-002-PostgreSQL-PgBouncer-Persistence.md) | PostgreSQL + PgBouncer persistence |
+| [003](docs/ADR-003-RabbitMQ-Queue.md) | RabbitMQ + transactional outbox/inbox |
+| [004](docs/ADR-004-Regional-SMS-Providers.md) | Regional SMS providers |
+| [010](docs/ADR-010-CQRS-MediatR.md) | CQRS + MediatR vertical slices |
+| [011](docs/ADR-011-Batch-Broadcast-Campaigns.md) | Batch broadcast campaigns |
+| [012](docs/ADR-012-Aspire-Composition-vs-Business-Orchestration.md) | Aspire composition vs business orchestration |
+| [013](docs/ADR-013-Per-Channel-Delivery-Workers.md) | Per-channel delivery workers |
+
+Index: [`docs/README.md`](docs/README.md)
+
+### Ops notes
+- [Orchestration, OTEL, Aspire](docs/ops/orchestration-otel-aspire.md)
 - [Messaging reliability](docs/ops/messaging-reliability.md)
 - [Security hardening](docs/ops/security-hardening-phase0.md)
-- [Phase 1–5 feature notes](docs/ops/)
+- [Latency](docs/ops/latency.md) · [Prefetch tuning](docs/ops/prefetch-tuning.md)
+- Phase feature notes under [`docs/ops/`](docs/ops/)
+
+---
+
+## Observability
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/health` / `/health/live` | Liveness |
+| `/health/ready` | Postgres + Redis + RabbitMQ readiness (JSON) |
+| Jaeger UI | Traces (Aspire / compose → port **16686**) |
+| Aspire dashboard | Resource graph, health, logs |
+
+- **Serilog**: enrichers (Application, Environment, MachineName, ThreadId, LogContext / CorrelationId)
+- **Console**: human template in dev; **JSON** when `Serilog:UseJsonConsole=true` or Production (ELK-friendly)
+- **OTLP**: traces + metrics when `OTEL_EXPORTER_OTLP_ENDPOINT` is set
+- **ActivitySource** `NotificationHub.Broadcast` on campaign state transitions
 
 ---
 
@@ -253,15 +312,13 @@ await client.SendAsync(new NotificationRequest
 
 ```bash
 dotnet test
-```
-
-- Unit tests: `tests/NotificationHub.Core.Tests` (requirement-driven cases under `tests/docs/`)
-- CI (GitHub Actions): restore → build → test → publish Host; NuGet vulnerability audit; Docker image build
-
-```bash
 dotnet build NotificationHub.sln -c Release
 dotnet publish src/NotificationHub.Host/NotificationHub.Host.csproj -c Release -o ./publish
 ```
+
+- Unit tests: `tests/NotificationHub.Core.Tests`, `tests/NotificationHub.Application.Tests`
+- CI: restore → build → test; NuGet vulnerability audit; Docker image build/publish
+- Dockerfile restores **ServiceDefaults** in the Host project graph (required for publish)
 
 ---
 
@@ -269,95 +326,36 @@ dotnet publish src/NotificationHub.Host/NotificationHub.Host.csproj -c Release -
 
 ```
 src/
-  NotificationHub.Abstractions/   # contracts & models
-  NotificationHub.Core/           # domain, messaging, security
-  NotificationHub.Host/           # Minimal API host
-  NotificationHub.Sdk/            # .NET client
-Plugins/                          # channel plugins (one package each)
-clients/                          # JS / Python samples
-tests/                            # xUnit tests + case catalogs
-docs/                             # ADRs, ops, SDK
+  NotificationHub.Abstractions/     # contracts & models
+  NotificationHub.Core/             # domain, messaging, orchestration, security
+  NotificationHub.Application/      # CQRS vertical slices
+  NotificationHub.Infrastructure/   # DI wiring for application layer
+  NotificationHub.Host/             # Minimal API host (also used as channel workers)
+  NotificationHub.ServiceDefaults/  # Serilog, OTEL, health checks
+  NotificationHub.AppHost/          # Aspire composition
+  NotificationHub.Sdk/              # .NET client
+Plugins/                            # channel plugins
+clients/                            # JS / Python samples
+tests/                              # xUnit + benchmarks
+docs/                               # ADRs, ops, SDK
 ```
 
 ---
 
+## Build & package management
 
-## Observability & Aspire
+- `Directory.Packages.props` — central NuGet versions (CPM)
+- `Directory.Build.props` — shared TFM (`net9.0`), nullable, RID list
 
 ```bash
-# Full local topology (API + Postgres + RabbitMQ + Redis + Jaeger)
-dotnet run --project src/NotificationHub.AppHost
+./scripts/publish-all.sh   # multi-RID under artifacts/publish/
+./scripts/run-light.sh     # light local run
 ```
 
-| Endpoint | Purpose |
-|----------|---------|
-| `/health` / `/health/live` | Liveness |
-| `/health/ready` | Postgres + Redis + RabbitMQ readiness (JSON detail) |
-| Jaeger UI | Trace exploration (port 16686 via Aspire/compose) |
+Benchmarks: `tests/NotificationHub.Benchmarks` (filter e.g. `--filter '*HotPathBenchmarks*'`).
 
-- **Serilog**: console + optional OTLP sink (`OTEL_EXPORTER_OTLP_ENDPOINT`)
-- **OpenTelemetry**: ASP.NET, HTTP, EF Core, runtime metrics → Jaeger/OTLP
-- **Broadcast state machine**: `BroadcastStateMachine` owns campaign lifecycle transitions
-
-See [docs/ops/orchestration-otel-aspire.md](docs/ops/orchestration-otel-aspire.md).
+---
 
 ## License
 
 MIT
-
-## Build & package management
-
-Versions are centralized:
-
-- `Directory.Packages.props` — NuGet package versions (CPM)
-- `Directory.Build.props` — shared TFM (`net9.0`), nullable, RID list, light-runtime defaults
-
-### Multi-platform publish (x64 / x86 / arm / arm64)
-
-```bash
-./scripts/publish-all.sh
-# artifacts/publish/{linux-x64,linux-arm64,linux-arm,win-x64,win-x86,win-arm64,osx-x64,osx-arm64}
-```
-
-Framework-dependent publish (smaller). Requires matching .NET 9 runtime on the target.
-
-### Light local run
-
-```bash
-./scripts/run-light.sh
-```
-
-## Latency & benchmarks
-
-See [docs/ops/latency.md](docs/ops/latency.md).
-
-Available Benchmark:
-  #0 HotPathBenchmarks
-
-
-You should select the target benchmark(s). Please, print a number of a benchmark (e.g. `0`) or a contained benchmark caption (e.g. `HotPathBenchmarks`).
-If you want to select few, please separate them with space ` ` (e.g. `1 2 3`).
-You can also provide the class name in console arguments by using --filter. (e.g. `--filter '*HotPathBenchmarks*'`).
-Enter the asterisk `*` to select all.
-To print all available benchmarks use `--list flat` or `--list tree`.
-To learn more about filtering use `--help`.
-Stress target=http://localhost:8080 total=2000 concurrency=100 warmup=50
-
-## Architecture (CQRS + Vertical Slices)
-
-Write and read **data-flow pipelines** are separated via **MediatR 12.4.1** + vertical feature folders:
-
-| Side | Marker | Examples |
-|------|--------|----------|
-| Write | `ICommand` / `ICommand<T>` | AcceptNotification, SaveTemplate, SendSync |
-| Read | `IQuery<T>` | GetNotificationStatus, GetTemplate, ListTemplates |
-
-Pipeline: Validation → Logging → CommandOnly / QueryOnly behaviors.
-
-See [docs/ADR-010-CQRS-MediatR.md](docs/ADR-010-CQRS-MediatR.md).
-
-## Batch Broadcast Campaigns
-
-
-
-Worker:  (config section ). See [docs/ADR-011-Batch-Broadcast-Campaigns.md](docs/ADR-011-Batch-Broadcast-Campaigns.md).

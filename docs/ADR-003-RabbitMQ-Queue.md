@@ -30,7 +30,7 @@ Constraints:
 
 We will use **RabbitMQ** as the notification transport, combined with a **PostgreSQL transactional outbox** on the publish path and an **inbox** on the consume path.
 
-### Topology
+### Topology (baseline)
 - Durable direct exchange `notifications.exchange`
 - Durable work queue `notifications` with `x-dead-letter-exchange` → `notifications.dlx`
 - Durable DLQ `notifications.dlq`
@@ -45,13 +45,28 @@ We will use **RabbitMQ** as the notification transport, combined with a **Postgr
 
 ### Consume path (Inbox + correct ack)
 1. Worker receives message **without** auto-ack.
-2. Inbox insert (`message_id` unique) — if duplicate, ack and skip.
+2. Inbox check — if already processed, ack and skip.
 3. Process notification (providers, status updates).
-4. **Ack only after successful handling**; on failure nack with requeue until max redelivery, then nack without requeue (DLQ).
+4. **Ack only after successful handling**; on failure schedule delayed redelivery or nack without requeue (DLQ) after max attempts.
 
 ### API enqueue abstraction
 - `INotificationQueue` for API callers is `OutboxNotificationQueue` (writes outbox only).
 - `RabbitMqNotificationQueue` is the AMQP transport used by relay + worker.
+
+## Amendment — Per-channel routing (2026-08-26)
+
+**Status:** Accepted (see **ADR-013**)
+
+When `RabbitMQ:ChannelRouting` is `true`:
+
+- Work queues: `notifications.{channel}` (e.g. `notifications.email`, `notifications.sms`, `notifications.push`)
+- Routing keys: `notification.send.{channel}`
+- Retry TTL queues remain per work-queue prefix; DLX/DLQ shared
+- Publish selects channel from the notification payload; consumers set `RabbitMQ:ConsumeChannel` to bind to one queue
+
+When `ChannelRouting` is `false`, the baseline single-queue topology above still applies.
+
+This amendment does **not** change outbox/inbox semantics—only broker partitioning for independent scale and isolation.
 
 ## Alternatives Considered
 
@@ -80,7 +95,7 @@ We will use **RabbitMQ** as the notification transport, combined with a **Postgr
   - Heavier abstraction over microkernel-friendly explicit plugins
   - Larger operational surface for current phase
 - **Why rejected:**
-  - Deferred; may revisit when multi-consumer saga complexity grows.
+  - Deferred; may revisit when multi-message saga complexity grows.
 
 ### Option D: In-memory channel only
 - **Pros:**
@@ -97,19 +112,22 @@ We will use **RabbitMQ** as the notification transport, combined with a **Postgr
 - Consumers are idempotent under redelivery (inbox)
 - Poison messages surface in DLQ instead of infinite retry loops
 - Ack-after-process eliminates the classic loss window
+- (Amendment) Channel isolation and independent consumer scale
 
 **Negative / trade-offs:**
 - Extra table + relay lag (seconds) before broker visibility
 - Two write models to operate (outbox depth + queue depth)
 - Inbox table grows and needs retention/cleanup
+- (Amendment) More queues to monitor when channel routing is on
 
 **Risks / follow-up actions:**
 - ~~Alert on `outbox_messages` pending age and `notifications.dlq` depth~~ → `MessagingHealthMonitorWorker` + `GET /api/v1/admin/messaging/health`
 - ~~Add publisher confirms for stronger publish durability~~ → `CreateChannelOptions(publisherConfirmationsEnabled: true)` + await confirm on publish
 - ~~Retention job for old inbox/outbox rows~~ → `RetentionService` (`OutboxPublishedDays`, `InboxDays`)
 - ~~Load-test prefetch vs provider RPS~~ → `tools/loadtest` + `docs/ops/prefetch-tuning.md`
-- ~~Optional future: delayed redelivery exchange instead of requeue for backoff~~ → TTL retry queues (`notifications.retry.{N}s`) dead-letter back to work queue
+- ~~Optional future: delayed redelivery exchange instead of requeue for backoff~~ → TTL retry queues (`*.retry.{N}s`) dead-letter back to work queue
 - Optional future: MassTransit if multi-message sagas dominate
+- Per-channel depth alerts when `ChannelRouting` is enabled (ADR-013)
 
 ### Implemented reliability controls (post-decision)
 | Control | Mechanism |
@@ -122,9 +140,10 @@ We will use **RabbitMQ** as the notification transport, combined with a **Postgr
 | Ops visibility | Messaging health snapshot + log alerts |
 | Delayed redelivery | TTL retry queues → DLX back to work queue (not immediate requeue) |
 | Storage growth | Retention sweep for published outbox / old inbox |
+| Channel isolation | Optional per-channel queues + workers (ADR-013) |
 
 ## References
 
-- Related ADRs: ADR-002 (PostgreSQL), ADR-001 (Microkernel)
+- Related ADRs: ADR-002 (PostgreSQL), ADR-001 (Microkernel), ADR-013 (channel workers)
 - Internal skills: RabbitMQ reliability patterns (at-least-once, DLX, idempotency); Transactional Outbox/Inbox pattern notes
 - Design: `OutboxRelayWorker`, `EfOutbox`, `EfInbox`, `RabbitMqNotificationQueue`
