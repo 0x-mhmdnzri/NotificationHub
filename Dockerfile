@@ -4,6 +4,8 @@ WORKDIR /src
 
 # Copy project graph for restore layer caching
 COPY NotificationHub.sln ./
+# Central package/build props must exist before restore (TargetFramework + package versions)
+COPY Directory.Build.props Directory.Packages.props ./
 COPY src/NotificationHub.Abstractions/NotificationHub.Abstractions.csproj src/NotificationHub.Abstractions/
 COPY src/NotificationHub.Core/NotificationHub.Core.csproj src/NotificationHub.Core/
 COPY src/NotificationHub.Host/NotificationHub.Host.csproj src/NotificationHub.Host/
