@@ -16,6 +16,8 @@ public sealed class RabbitMqOptions
     public string UserName { get; set; } = "guest";
     public string Password { get; set; } = "guest";
     public string VirtualHost { get; set; } = "/";
+
+    /// <summary>Legacy single queue (used when ChannelRouting is false).</summary>
     public string QueueName { get; set; } = "notifications";
     public string ExchangeName { get; set; } = "notifications.exchange";
     public string RoutingKey { get; set; } = "notification.send";
@@ -23,7 +25,22 @@ public sealed class RabbitMqOptions
     public string DeadLetterQueue { get; set; } = "notifications.dlq";
     public string DeadLetterRoutingKey { get; set; } = "notification.dead";
     public string RetryExchangeName { get; set; } = "notifications.retry";
-    /// <summary>Backoff steps in seconds for delayed redelivery (TTL queues).</summary>
+
+    /// <summary>
+    /// When true, declare and route to per-channel work queues (email/sms/push/...).
+    /// Aspire channel workers set <see cref="ConsumeChannel"/> to one of these.
+    /// </summary>
+    public bool ChannelRouting { get; set; } = true;
+
+    /// <summary>Channels that get dedicated queues when ChannelRouting is enabled.</summary>
+    public string[] Channels { get; set; } = ["email", "sms", "push", "inapp", "chat"];
+
+    /// <summary>
+    /// When set (e.g. "email"), this process only consumes that channel's queue.
+    /// Null = consume legacy/default queue only (publisher still routes if ChannelRouting).
+    /// </summary>
+    public string? ConsumeChannel { get; set; }
+
     public int[] RetryDelaySeconds { get; set; } = [5, 15, 30, 60, 120];
     public ushort PrefetchCount { get; set; } = 10;
     public int MaxRedeliveryCount { get; set; } = 5;
@@ -32,11 +49,7 @@ public sealed class RabbitMqOptions
 }
 
 /// <summary>
-/// AMQP transport with:
-/// - durable work queue + DLQ
-/// - delayed redelivery via per-delay TTL queues that dead-letter back to the work queue
-/// - publisher confirms
-/// - manual ack after processing
+/// AMQP transport with durable work queues (optional per-channel), DLQ, delayed redelivery, publisher confirms.
 /// </summary>
 public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDisposable
 {
@@ -48,6 +61,7 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
     public const string HeaderRedeliveryCount = "x-redelivery-count";
+    public const string HeaderChannel = "x-channel";
 
     public RabbitMqNotificationQueue(IOptions<RabbitMqOptions> options, ILogger<RabbitMqNotificationQueue> logger)
     {
@@ -76,82 +90,119 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
 
         DeclareTopology();
         _logger.LogInformation(
-            "RabbitMQ connected. Queue={Queue} DLQ={Dlq} Prefetch={Prefetch} Confirms={Confirms} RetryDelays=[{Delays}]",
-            _options.QueueName, _options.DeadLetterQueue, _options.PrefetchCount, _options.PublisherConfirms,
-            string.Join(',', _retryDelays));
+            "RabbitMQ connected. ChannelRouting={ChannelRouting} ConsumeChannel={Consume} Prefetch={Prefetch}",
+            _options.ChannelRouting, _options.ConsumeChannel ?? "(none)", _options.PrefetchCount);
     }
+
+    public static string NormalizeChannel(string? channel)
+    {
+        if (string.IsNullOrWhiteSpace(channel))
+            return "email";
+        return channel.Trim().ToLowerInvariant();
+    }
+
+    public static string WorkQueueName(RabbitMqOptions o, string channel)
+        => o.ChannelRouting ? $"{o.QueueName}.{NormalizeChannel(channel)}" : o.QueueName;
+
+    public static string WorkRoutingKey(RabbitMqOptions o, string channel)
+        => o.ChannelRouting ? $"{o.RoutingKey}.{NormalizeChannel(channel)}" : o.RoutingKey;
 
     private void DeclareTopology()
     {
-        // Final DLQ for poison messages
         _channel.ExchangeDeclareAsync(_options.DeadLetterExchange, ExchangeType.Direct, durable: true).GetAwaiter().GetResult();
         _channel.QueueDeclareAsync(_options.DeadLetterQueue, durable: true, exclusive: false, autoDelete: false).GetAwaiter().GetResult();
         _channel.QueueBindAsync(_options.DeadLetterQueue, _options.DeadLetterExchange, _options.DeadLetterRoutingKey).GetAwaiter().GetResult();
 
-        // Main work exchange/queue (failed permanent → DLQ)
-        var workArgs = new Dictionary<string, object?>
-        {
-            ["x-dead-letter-exchange"] = _options.DeadLetterExchange,
-            ["x-dead-letter-routing-key"] = _options.DeadLetterRoutingKey
-        };
         _channel.ExchangeDeclareAsync(_options.ExchangeName, ExchangeType.Direct, durable: true).GetAwaiter().GetResult();
-        _channel.QueueDeclareAsync(_options.QueueName, durable: true, exclusive: false, autoDelete: false, arguments: workArgs).GetAwaiter().GetResult();
-        _channel.QueueBindAsync(_options.QueueName, _options.ExchangeName, _options.RoutingKey).GetAwaiter().GetResult();
-        _channel.BasicQosAsync(0, _options.PrefetchCount, false).GetAwaiter().GetResult();
-
-        // Retry exchange + per-delay TTL queues that dead-letter back to the work queue
         _channel.ExchangeDeclareAsync(_options.RetryExchangeName, ExchangeType.Direct, durable: true).GetAwaiter().GetResult();
-        foreach (var delay in _retryDelays)
+
+        var channels = _options.ChannelRouting
+            ? (_options.Channels is { Length: > 0 } ? _options.Channels : ["email", "sms", "push"])
+            : [""];
+
+        foreach (var ch in channels)
         {
-            var q = RetryQueueName(delay);
-            var rk = RetryRoutingKey(delay);
-            var args = new Dictionary<string, object?>
+            var channelKey = string.IsNullOrEmpty(ch) ? null : NormalizeChannel(ch);
+            var qName = channelKey is null ? _options.QueueName : WorkQueueName(_options, channelKey);
+            var rk = channelKey is null ? _options.RoutingKey : WorkRoutingKey(_options, channelKey);
+
+            var workArgs = new Dictionary<string, object?>
             {
-                ["x-message-ttl"] = delay * 1000,
-                ["x-dead-letter-exchange"] = _options.ExchangeName,
-                ["x-dead-letter-routing-key"] = _options.RoutingKey
+                ["x-dead-letter-exchange"] = _options.DeadLetterExchange,
+                ["x-dead-letter-routing-key"] = _options.DeadLetterRoutingKey
             };
-            _channel.QueueDeclareAsync(q, durable: true, exclusive: false, autoDelete: false, arguments: args).GetAwaiter().GetResult();
-            _channel.QueueBindAsync(q, _options.RetryExchangeName, rk).GetAwaiter().GetResult();
+            _channel.QueueDeclareAsync(qName, durable: true, exclusive: false, autoDelete: false, arguments: workArgs)
+                .GetAwaiter().GetResult();
+            _channel.QueueBindAsync(qName, _options.ExchangeName, rk).GetAwaiter().GetResult();
+
+            foreach (var delay in _retryDelays)
+            {
+                var rq = RetryQueueName(qName, delay);
+                var rrk = RetryRoutingKey(channelKey, delay);
+                var args = new Dictionary<string, object?>
+                {
+                    ["x-message-ttl"] = delay * 1000,
+                    ["x-dead-letter-exchange"] = _options.ExchangeName,
+                    ["x-dead-letter-routing-key"] = rk
+                };
+                _channel.QueueDeclareAsync(rq, durable: true, exclusive: false, autoDelete: false, arguments: args)
+                    .GetAwaiter().GetResult();
+                _channel.QueueBindAsync(rq, _options.RetryExchangeName, rrk).GetAwaiter().GetResult();
+            }
         }
+
+        _channel.BasicQosAsync(0, _options.PrefetchCount, false).GetAwaiter().GetResult();
     }
 
-    private string RetryQueueName(int delaySeconds) => $"{_options.QueueName}.retry.{delaySeconds}s";
-    private static string RetryRoutingKey(int delaySeconds) => $"notification.retry.{delaySeconds}";
+    private static string RetryQueueName(string workQueue, int delaySeconds) => $"{workQueue}.retry.{delaySeconds}s";
+
+    private static string RetryRoutingKey(string? channel, int delaySeconds)
+        => channel is null
+            ? $"notification.retry.{delaySeconds}"
+            : $"notification.retry.{channel}.{delaySeconds}";
+
+    private string ResolveChannel(NotificationRequest request)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Channel))
+            return NormalizeChannel(request.Channel);
+        if (request.Channels is { Length: > 0 } && !string.IsNullOrWhiteSpace(request.Channels[0]))
+            return NormalizeChannel(request.Channels[0]);
+        return "email";
+    }
 
     public async ValueTask EnqueueAsync(NotificationRequest request, CancellationToken ct = default)
         => await PublishAsync(request, redeliveryCount: 0, ct);
 
     public async Task PublishAsync(NotificationRequest request, int redeliveryCount, CancellationToken ct = default)
     {
+        var channel = ResolveChannel(request);
         var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, JsonOptions));
-        var props = BuildProps(request, redeliveryCount);
-        await PublishWithConfirmAsync(_options.ExchangeName, _options.RoutingKey, props, body, ct);
-        _logger.LogDebug("Published+confirmed notification {Id} redelivery={Count}", request.Id, redeliveryCount);
+        var props = BuildProps(request, redeliveryCount, channel);
+        var rk = WorkRoutingKey(_options, channel);
+        await PublishWithConfirmAsync(_options.ExchangeName, rk, props, body, ct);
+        _logger.LogDebug("Published+confirmed notification {Id} channel={Channel} redelivery={Count}",
+            request.Id, channel, redeliveryCount);
     }
 
-    /// <summary>
-    /// Schedules delayed redelivery via TTL retry queue. Does not requeue the original delivery.
-    /// Caller must ack the original message after this succeeds.
-    /// </summary>
     public async Task ScheduleDelayedRedeliveryAsync(NotificationRequest request, int currentRedeliveryCount, CancellationToken ct = default)
     {
         var next = currentRedeliveryCount + 1;
         if (next > _options.MaxRedeliveryCount)
             throw new InvalidOperationException($"Max redelivery exceeded for {request.Id}");
 
+        var channel = ResolveChannel(request);
         var delay = _retryDelays[Math.Min(next - 1, _retryDelays.Length - 1)];
         var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, JsonOptions));
-        var props = BuildProps(request, next);
-        var rk = RetryRoutingKey(delay);
+        var props = BuildProps(request, next, channel);
+        var rk = RetryRoutingKey(_options.ChannelRouting ? channel : null, delay);
 
         await PublishWithConfirmAsync(_options.RetryExchangeName, rk, props, body, ct);
         _logger.LogInformation(
-            "Scheduled delayed redelivery for {Id} attempt={Attempt} delay={Delay}s",
-            request.Id, next, delay);
+            "Scheduled delayed redelivery for {Id} channel={Channel} attempt={Attempt} delay={Delay}s",
+            request.Id, channel, next, delay);
     }
 
-    private BasicProperties BuildProps(NotificationRequest request, int redeliveryCount) => new()
+    private BasicProperties BuildProps(NotificationRequest request, int redeliveryCount, string channel) => new()
     {
         Persistent = true,
         MessageId = request.Id.ToString(),
@@ -159,7 +210,8 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         ContentType = "application/json",
         Headers = new Dictionary<string, object?>
         {
-            [HeaderRedeliveryCount] = redeliveryCount
+            [HeaderRedeliveryCount] = redeliveryCount,
+            [HeaderChannel] = channel
         }
     };
 
@@ -185,9 +237,17 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         }
     }
 
+    private string ConsumeQueueName()
+    {
+        if (!string.IsNullOrWhiteSpace(_options.ConsumeChannel))
+            return WorkQueueName(_options, _options.ConsumeChannel);
+        return _options.QueueName;
+    }
+
     public async IAsyncEnumerable<(NotificationRequest Request, ulong DeliveryTag, int RedeliveryCount)> DequeueWithAckAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
+        var queueName = ConsumeQueueName();
         var consumer = new AsyncEventingBasicConsumer(_channel);
         var channel = System.Threading.Channels.Channel.CreateUnbounded<(NotificationRequest, ulong, int)>();
 
@@ -224,7 +284,8 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
             }
         };
 
-        await _channel.BasicConsumeAsync(_options.QueueName, autoAck: false, consumer, ct);
+        await _channel.BasicConsumeAsync(queueName, autoAck: false, consumer, ct);
+        _logger.LogInformation("Consuming RabbitMQ queue {Queue}", queueName);
 
         await foreach (var item in channel.Reader.ReadAllAsync(ct))
             yield return item;
@@ -242,15 +303,35 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
 
     public async Task<(uint WorkQueue, uint DeadLetterQueue, uint RetryQueue)> GetQueueDepthsAsync(CancellationToken ct = default)
     {
-        var work = await _channel.QueueDeclarePassiveAsync(_options.QueueName, ct);
+        uint work = 0;
+        if (_options.ChannelRouting)
+        {
+            foreach (var ch in _options.Channels)
+            {
+                var q = await _channel.QueueDeclarePassiveAsync(WorkQueueName(_options, ch), ct);
+                work += q.MessageCount;
+            }
+        }
+        else
+        {
+            var q = await _channel.QueueDeclarePassiveAsync(_options.QueueName, ct);
+            work = q.MessageCount;
+        }
+
         var dlq = await _channel.QueueDeclarePassiveAsync(_options.DeadLetterQueue, ct);
         uint retry = 0;
-        foreach (var delay in _retryDelays)
+        var bases = _options.ChannelRouting
+            ? _options.Channels.Select(c => WorkQueueName(_options, c))
+            : [_options.QueueName];
+        foreach (var baseQ in bases)
         {
-            var q = await _channel.QueueDeclarePassiveAsync(RetryQueueName(delay), ct);
-            retry += q.MessageCount;
+            foreach (var delay in _retryDelays)
+            {
+                var q = await _channel.QueueDeclarePassiveAsync(RetryQueueName(baseQ, delay), ct);
+                retry += q.MessageCount;
+            }
         }
-        return (work.MessageCount, dlq.MessageCount, retry);
+        return (work, dlq.MessageCount, retry);
     }
 
     public Task AckAsync(ulong deliveryTag, CancellationToken ct = default)
