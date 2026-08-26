@@ -18,7 +18,7 @@ public static class Phase4Schema
                     "TenantId" varchar(128) NULL,
                     "Email" varchar(512) NULL,
                     "Phone" varchar(64) NULL,
-                    "TraitsJson" text NOT NULL DEFAULT '{}',
+                    "TraitsJson" text NOT NULL DEFAULT '{{}}',
                     "UpdatedAt" timestamptz NOT NULL
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS ix_cdp_profiles_user ON cdp_profiles ("UserId", "TenantId");
