@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Persistence;
+using NotificationHub.Core.Common;
 
 namespace NotificationHub.Core.Compliance;
 
@@ -13,7 +14,7 @@ public sealed class ConsentService : IConsentService
     {
         _db.ConsentLedger.Add(new ConsentLedgerEntity
         {
-            Id = record.Id == Guid.Empty ? Guid.NewGuid() : record.Id,
+            Id = ServerIds.New(),
             SubjectId = record.SubjectId,
             TenantId = record.TenantId,
             Purpose = record.Purpose.Trim().ToLowerInvariant(),

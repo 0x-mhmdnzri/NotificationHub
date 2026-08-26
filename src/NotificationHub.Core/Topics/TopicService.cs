@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Persistence;
+using NotificationHub.Core.Common;
 
 namespace NotificationHub.Core.Topics;
 
@@ -14,7 +15,7 @@ public sealed class TopicService : ITopicService
         var e = await _db.Topics.FirstOrDefaultAsync(x => x.Key == topic.Key && x.TenantId == topic.TenantId, ct);
         if (e is null)
         {
-            e = new TopicEntity { Id = topic.Id == Guid.Empty ? Guid.NewGuid() : topic.Id };
+            e = new TopicEntity { Id = ServerIds.New() };
             _db.Topics.Add(e);
         }
         e.Key = topic.Key;

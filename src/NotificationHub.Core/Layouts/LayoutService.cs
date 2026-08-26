@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Templates;
+using NotificationHub.Core.Common;
 
 namespace NotificationHub.Core.Layouts;
 
@@ -29,7 +30,7 @@ public sealed partial class LayoutService : ILayoutService
         var e = await _db.Layouts.FirstOrDefaultAsync(x => x.Key == layout.Key && x.TenantId == layout.TenantId, ct);
         if (e is null)
         {
-            e = new LayoutEntity { Id = layout.Id == Guid.Empty ? Guid.NewGuid() : layout.Id };
+            e = new LayoutEntity { Id = ServerIds.New() };
             _db.Layouts.Add(e);
         }
         e.Key = layout.Key;
@@ -47,7 +48,7 @@ public sealed partial class LayoutService : ILayoutService
         var e = await _db.Partials.FirstOrDefaultAsync(x => x.Key == partial.Key && x.TenantId == partial.TenantId, ct);
         if (e is null)
         {
-            e = new PartialEntity { Id = partial.Id == Guid.Empty ? Guid.NewGuid() : partial.Id };
+            e = new PartialEntity { Id = ServerIds.New() };
             _db.Partials.Add(e);
         }
         e.Key = partial.Key;

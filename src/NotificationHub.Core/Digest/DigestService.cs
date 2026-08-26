@@ -6,6 +6,7 @@ using NotificationHub.Core.Messaging;
 using NotificationHub.Core.Orchestration;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Queue;
+using NotificationHub.Core.Common;
 
 namespace NotificationHub.Core.Digest;
 
@@ -33,7 +34,7 @@ public sealed class DigestService : IDigestService
         var e = await _db.DigestPolicies.FirstOrDefaultAsync(x => x.Key == policy.Key && x.TenantId == policy.TenantId, ct);
         if (e is null)
         {
-            e = new DigestPolicyEntity { Id = policy.Id == Guid.Empty ? Guid.NewGuid() : policy.Id };
+            e = new DigestPolicyEntity { Id = ServerIds.New() };
             _db.DigestPolicies.Add(e);
         }
         e.Key = policy.Key;

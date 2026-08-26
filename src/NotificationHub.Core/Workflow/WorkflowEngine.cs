@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Persistence;
+using NotificationHub.Core.Common;
 
 namespace NotificationHub.Core.Workflow;
 
@@ -42,8 +43,8 @@ public sealed class WorkflowEngine : IWorkflowEngine
 
     public async Task<WorkflowDefinition> SaveAsync(WorkflowDefinition definition, CancellationToken ct = default)
     {
-        await _repo.SaveDefinitionAsync(definition, ct);
-        return definition;
+        var id = await _repo.SaveDefinitionAsync(definition, ct);
+        return definition with { Id = id };
     }
 
     public Task<WorkflowDefinition?> GetAsync(string key, string? tenantId = null, CancellationToken ct = default)
@@ -58,7 +59,7 @@ public sealed class WorkflowEngine : IWorkflowEngine
 
         var run = new WorkflowRunEntity
         {
-            Id = Guid.NewGuid(),
+            Id = ServerIds.New(),
             WorkflowId = def.Id,
             WorkflowKey = def.Key,
             Recipient = request.Recipient,

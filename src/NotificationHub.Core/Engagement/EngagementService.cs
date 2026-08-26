@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Persistence;
+using NotificationHub.Core.Common;
 using NotificationHub.Core.Store;
 
 namespace NotificationHub.Core.Engagement;
@@ -43,7 +44,7 @@ public sealed class EngagementService : IEngagementService
 
         var entity = new EngagementEventEntity
         {
-            Id = evt.Id == Guid.Empty ? Guid.NewGuid() : evt.Id,
+            Id = ServerIds.New(),
             NotificationId = evt.NotificationId,
             TenantId = evt.TenantId ?? status?.TenantId,
             EventType = type,

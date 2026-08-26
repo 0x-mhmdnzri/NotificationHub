@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Persistence;
+using NotificationHub.Core.Common;
 
 namespace NotificationHub.Core.Segmentation;
 
@@ -22,7 +23,7 @@ public sealed class SegmentService : ISegmentService
         var e = await _db.Segments.FirstOrDefaultAsync(x => x.Key == segment.Key && x.TenantId == segment.TenantId, ct);
         if (e is null)
         {
-            e = new SegmentDefinitionEntity { Id = segment.Id, Key = segment.Key, TenantId = segment.TenantId };
+            e = new SegmentDefinitionEntity { Id = ServerIds.New(), Key = segment.Key, TenantId = segment.TenantId };
             _db.Segments.Add(e);
         }
         e.MatchAll = segment.MatchAll;

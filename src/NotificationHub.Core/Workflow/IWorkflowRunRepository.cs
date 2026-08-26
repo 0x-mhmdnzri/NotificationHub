@@ -6,7 +6,7 @@ namespace NotificationHub.Core.Workflow;
 /// <summary>Persistence for workflow definitions and runs (SRP).</summary>
 public interface IWorkflowRunRepository
 {
-    Task SaveDefinitionAsync(WorkflowDefinition definition, CancellationToken ct = default);
+    Task<Guid> SaveDefinitionAsync(WorkflowDefinition definition, CancellationToken ct = default);
     Task<WorkflowDefinition?> GetDefinitionAsync(string key, string? tenantId, CancellationToken ct = default);
     Task<Guid> CreateRunAsync(WorkflowRunEntity run, CancellationToken ct = default);
     Task<WorkflowRunEntity?> GetRunAsync(Guid runId, CancellationToken ct = default);

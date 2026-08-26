@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Persistence;
+using NotificationHub.Core.Common;
 
 namespace NotificationHub.Core.Throttle;
 
@@ -14,7 +15,7 @@ public sealed class ThrottleService : IThrottleService
         var e = await _db.ThrottlePolicies.FirstOrDefaultAsync(x => x.Key == policy.Key && x.TenantId == policy.TenantId, ct);
         if (e is null)
         {
-            e = new ThrottlePolicyEntity { Id = policy.Id == Guid.Empty ? Guid.NewGuid() : policy.Id };
+            e = new ThrottlePolicyEntity { Id = ServerIds.New() };
             _db.ThrottlePolicies.Add(e);
         }
         e.Key = policy.Key;

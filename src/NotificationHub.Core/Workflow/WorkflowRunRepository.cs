@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Persistence;
+using NotificationHub.Core.Common;
 
 namespace NotificationHub.Core.Workflow;
 
@@ -10,18 +11,20 @@ public sealed class WorkflowRunRepository : IWorkflowRunRepository
     private readonly NotificationDbContext _db;
     public WorkflowRunRepository(NotificationDbContext db) => _db = db;
 
-    public async Task SaveDefinitionAsync(WorkflowDefinition definition, CancellationToken ct = default)
+    public async Task<Guid> SaveDefinitionAsync(WorkflowDefinition definition, CancellationToken ct = default)
     {
         var entity = await _db.Workflows.FirstOrDefaultAsync(x => x.Key == definition.Key && x.TenantId == definition.TenantId, ct);
         if (entity is null)
         {
-            entity = new WorkflowDefinitionEntity { Id = definition.Id == Guid.Empty ? Guid.NewGuid() : definition.Id, Key = definition.Key, TenantId = definition.TenantId };
+            entity = new WorkflowDefinitionEntity { Id = ServerIds.New(), Key = definition.Key, TenantId = definition.TenantId };
             _db.Workflows.Add(entity);
         }
         entity.IsActive = definition.IsActive;
         entity.StepsJson = JsonSerializer.Serialize(definition.Steps);
-        entity.CreatedAt = definition.CreatedAt == default ? DateTimeOffset.UtcNow : definition.CreatedAt;
+        if (entity.CreatedAt == default)
+            entity.CreatedAt = definition.CreatedAt == default ? DateTimeOffset.UtcNow : definition.CreatedAt;
         await _db.SaveChangesAsync(ct);
+        return entity.Id;
     }
 
     public async Task<WorkflowDefinition?> GetDefinitionAsync(string key, string? tenantId, CancellationToken ct = default)

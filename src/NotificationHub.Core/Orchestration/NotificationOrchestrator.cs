@@ -6,6 +6,7 @@ using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Audit;
 using NotificationHub.Core.Compliance;
 using NotificationHub.Core.Messaging;
+using NotificationHub.Core.Common;
 using NotificationHub.Core.PluginHost;
 using NotificationHub.Core.Preferences;
 using NotificationHub.Core.Routing;
@@ -62,6 +63,8 @@ public sealed class NotificationOrchestrator
 
     public async Task<(bool Accepted, NotificationStatus Status)> AcceptAsync(NotificationRequest request, CancellationToken ct = default)
     {
+        // Command write: resource id is application-owned (ignore client-supplied Id)
+        request = request with { Id = ServerIds.New() };
         if (!string.IsNullOrEmpty(request.IdempotencyKey))
         {
             var existing = await _statusStore.GetByIdempotencyKeyAsync(request.IdempotencyKey, request.TenantId, ct);
