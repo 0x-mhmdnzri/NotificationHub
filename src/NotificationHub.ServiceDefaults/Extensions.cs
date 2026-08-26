@@ -12,6 +12,7 @@ using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using RabbitMQ.Client;
 using Serilog;
 using Serilog.Events;
 using Serilog.Formatting.Json;
@@ -162,6 +163,7 @@ public static class Extensions
             checks.AddRedis(redis, name: "redis", tags: [ReadyTag], timeout: TimeSpan.FromSeconds(3));
         }
 
+        // AspNetCore.HealthChecks.Rabbitmq 9.x: no connection-string overload — provide IConnection factory.
         var rmqCs = builder.Configuration.GetConnectionString("rabbitmq")
             ?? builder.Configuration.GetConnectionString("RabbitMQ");
         var rmqHost = builder.Configuration["RabbitMQ:HostName"];
@@ -170,32 +172,57 @@ public static class Extensions
         var rmqPort = builder.Configuration["RabbitMQ:Port"] ?? "5672";
         var rmqVhost = builder.Configuration["RabbitMQ:VirtualHost"] ?? "/";
 
-        if (!string.IsNullOrWhiteSpace(rmqCs))
+        if (!string.IsNullOrWhiteSpace(rmqCs) || !string.IsNullOrWhiteSpace(rmqHost))
         {
-            checks.AddRabbitMQ(rmqCs, name: "rabbitmq", tags: [ReadyTag], timeout: TimeSpan.FromSeconds(5));
-        }
-        else if (!string.IsNullOrWhiteSpace(rmqHost))
-        {
+            // Capture config at registration time (health factory may run outside request scope).
+            var connectionString = rmqCs;
+            var host = rmqHost;
+            var user = rmqUser;
+            var pass = rmqPass;
+            var portStr = rmqPort;
+            var vhost = rmqVhost;
+
             checks.AddRabbitMQ(
-                sp =>
-                {
-                    var factory = new RabbitMQ.Client.ConnectionFactory
-                    {
-                        HostName = rmqHost,
-                        Port = int.TryParse(rmqPort, out var port) ? port : 5672,
-                        UserName = rmqUser,
-                        Password = rmqPass,
-                        VirtualHost = string.IsNullOrWhiteSpace(rmqVhost) ? "/" : rmqVhost,
-                        RequestedConnectionTimeout = TimeSpan.FromSeconds(3)
-                    };
-                    return factory.CreateConnectionAsync("notificationhub-health").GetAwaiter().GetResult();
-                },
+                sp => CreateRabbitHealthConnection(connectionString, host, user, pass, portStr, vhost),
                 name: "rabbitmq",
                 tags: [ReadyTag],
                 timeout: TimeSpan.FromSeconds(5));
         }
 
         return builder;
+    }
+
+    /// <summary>
+    /// Builds a short-lived IConnection for health probes. Prefer Aspire amqp URI when present.
+    /// </summary>
+    private static IConnection CreateRabbitHealthConnection(
+        string? connectionString,
+        string? host,
+        string user,
+        string pass,
+        string portStr,
+        string vhost)
+    {
+        var factory = new ConnectionFactory
+        {
+            RequestedConnectionTimeout = TimeSpan.FromSeconds(3)
+        };
+
+        if (!string.IsNullOrWhiteSpace(connectionString))
+        {
+            // Aspire / standard: amqp://user:pass@host:5672/vhost
+            factory.Uri = new Uri(connectionString);
+        }
+        else
+        {
+            factory.HostName = host!;
+            factory.Port = int.TryParse(portStr, out var port) ? port : 5672;
+            factory.UserName = user;
+            factory.Password = pass;
+            factory.VirtualHost = string.IsNullOrWhiteSpace(vhost) ? "/" : vhost;
+        }
+
+        return factory.CreateConnectionAsync("notificationhub-health").GetAwaiter().GetResult();
     }
 
     public static WebApplication MapNotificationHubHealthEndpoints(this WebApplication app)
