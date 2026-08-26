@@ -1,13 +1,21 @@
 namespace NotificationHub.Abstractions.Models;
 
+/// <summary>
+/// Broadcast lifecycle states (orchestrated). Delivery state is separate (BroadcastRecipientStatus).
+/// </summary>
 public enum CampaignStatus
 {
     Draft = 0,
     Scheduled = 1,
+    /// <summary>Legacy aggregate processing; prefer Preparing/Dispatching/Delivering.</summary>
     Processing = 2,
     Completed = 3,
     Failed = 4,
-    Cancelled = 5
+    Cancelled = 5,
+    Preparing = 6,
+    Dispatching = 7,
+    Delivering = 8,
+    PartiallyCompleted = 9
 }
 
 public enum BroadcastRecipientStatus

@@ -281,6 +281,26 @@ docs/                             # ADRs, ops, SDK
 
 ---
 
+
+## Observability & Aspire
+
+```bash
+# Full local topology (API + Postgres + RabbitMQ + Redis + Jaeger)
+dotnet run --project src/NotificationHub.AppHost
+```
+
+| Endpoint | Purpose |
+|----------|---------|
+| `/health` / `/health/live` | Liveness |
+| `/health/ready` | Postgres + Redis + RabbitMQ readiness (JSON detail) |
+| Jaeger UI | Trace exploration (port 16686 via Aspire/compose) |
+
+- **Serilog**: console + optional OTLP sink (`OTEL_EXPORTER_OTLP_ENDPOINT`)
+- **OpenTelemetry**: ASP.NET, HTTP, EF Core, runtime metrics → Jaeger/OTLP
+- **Broadcast state machine**: `BroadcastStateMachine` owns campaign lifecycle transitions
+
+See [docs/ops/orchestration-otel-aspire.md](docs/ops/orchestration-otel-aspire.md).
+
 ## License
 
 MIT

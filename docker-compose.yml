@@ -57,6 +57,32 @@ services:
     networks:
       - nh-net
 
+
+  redis:
+    image: redis:7-alpine
+    container_name: nh-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks:
+      - nh-net
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.64
+    container_name: nh-jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    networks:
+      - nh-net
+
   api:
     build:
       context: .
@@ -71,6 +97,9 @@ services:
       RabbitMQ__UserName: ${RABBITMQ_USER:-notificationhub}
       RabbitMQ__Password: ${RABBITMQ_PASSWORD:-notificationhub}
       Auth__ApiKey: ${AUTH_API_KEY:-dev-secret-key-change-me}
+      ConnectionStrings__Redis: redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
+      OpenTelemetry__OtlpEndpoint: http://jaeger:4317
     ports:
       - "8080:8080"
     depends_on:

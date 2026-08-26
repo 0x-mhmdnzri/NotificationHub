@@ -13,6 +13,7 @@
     <ProjectReference Include="..\NotificationHub.Application\NotificationHub.Application.csproj" />
     <ProjectReference Include="..\NotificationHub.Infrastructure\NotificationHub.Infrastructure.csproj" />
     <ProjectReference Include="..\NotificationHub.Abstractions\NotificationHub.Abstractions.csproj" />
+    <ProjectReference Include="..\NotificationHub.ServiceDefaults\NotificationHub.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Email.SendGrid\NotificationHub.Plugins.Email.SendGrid.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Email.Smtp\NotificationHub.Plugins.Email.Smtp.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Sms.Kavenegar\NotificationHub.Plugins.Sms.Kavenegar.csproj" />

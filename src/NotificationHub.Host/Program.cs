@@ -1,3 +1,5 @@
+using Serilog;
+using NotificationHub.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Channels;
@@ -109,6 +111,9 @@ using NotificationHub.Plugins.Chat.Discord;
 using NotificationHub.Plugins.Chat.Telegram;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Serilog + OTEL (Jaeger via OTLP) + health checks + service discovery
+builder.AddNotificationHubDefaults();
 
 // SEC-26: limit request body size (DoS)
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 2 * 1024 * 1024); // 2 MB
@@ -276,6 +281,7 @@ builder.Services.AddSingleton<IPlugin, FcmPushPlugin>();
 builder.Services.AddSingleton<IPlugin, ExpoPushPlugin>();
 
 var app = builder.Build();
+app.UseSerilogRequestLogging();
 
 using (var scope = app.Services.CreateScope())
 {
@@ -725,3 +731,5 @@ app.MapPost("/api/v1/broadcasts", async (BroadcastRequest body, HttpContext http
     return Results.Accepted($"/api/v1/campaigns/{result.CampaignId}", result);
 }).WithName("SendBroadcast");
 
+app.MapNotificationHubHealthEndpoints();
+app.Run();

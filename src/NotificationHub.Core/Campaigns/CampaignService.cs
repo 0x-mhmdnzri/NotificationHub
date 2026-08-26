@@ -125,6 +125,9 @@ public sealed class CampaignService(
             return;
         }
 
+        BroadcastStateMachine.EnsureTransition((CampaignStatus)campaign.Status, CampaignStatus.Preparing);
+        campaign.Status = (int)CampaignStatus.Preparing;
+        BroadcastStateMachine.EnsureTransition(CampaignStatus.Preparing, CampaignStatus.Processing);
         campaign.Status = (int)CampaignStatus.Processing;
         campaign.StartedAtUtc = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -199,6 +202,10 @@ public sealed class CampaignService(
             .ToListAsync(ct);
         foreach (var c in due)
         {
+            var from = (CampaignStatus)c.Status;
+            BroadcastStateMachine.EnsureTransition(from, CampaignStatus.Preparing);
+            c.Status = (int)CampaignStatus.Preparing;
+            BroadcastStateMachine.EnsureTransition(CampaignStatus.Preparing, CampaignStatus.Processing);
             c.Status = (int)CampaignStatus.Processing;
             c.StartedAtUtc = DateTimeOffset.UtcNow;
         }
@@ -206,7 +213,10 @@ public sealed class CampaignService(
             await db.SaveChangesAsync(ct);
 
         var processingIds = await db.BroadcastCampaigns.AsNoTracking()
-            .Where(x => x.Status == (int)CampaignStatus.Processing)
+            .Where(x => x.Status == (int)CampaignStatus.Processing
+                     || x.Status == (int)CampaignStatus.Preparing
+                     || x.Status == (int)CampaignStatus.Dispatching
+                     || x.Status == (int)CampaignStatus.Delivering)
             .Select(x => x.Id)
             .Take(50)
             .ToListAsync(ct);
@@ -234,7 +244,14 @@ public sealed class CampaignService(
                 if (remaining == 0)
                 {
                     var camp = await db.BroadcastCampaigns.FirstAsync(x => x.Id == cid, ct);
-                    camp.Status = (int)CampaignStatus.Completed;
+                    var total = await db.BroadcastRecipients.CountAsync(x => x.CampaignId == cid, ct);
+                    var sent = await db.BroadcastRecipients.CountAsync(x => x.CampaignId == cid && x.Status == (int)BroadcastRecipientStatus.Sent, ct);
+                    var failed = await db.BroadcastRecipients.CountAsync(x => x.CampaignId == cid && (x.Status == (int)BroadcastRecipientStatus.Failed || x.Status == (int)BroadcastRecipientStatus.DeadLettered), ct);
+                    var cancelled = await db.BroadcastRecipients.CountAsync(x => x.CampaignId == cid && x.Status == (int)BroadcastRecipientStatus.Cancelled, ct);
+                    var skipped = await db.BroadcastRecipients.CountAsync(x => x.CampaignId == cid && x.Status == (int)BroadcastRecipientStatus.Skipped, ct);
+                    var next = BroadcastStateMachine.ResolveCompletion(total, sent, failed, cancelled, skipped);
+                    BroadcastStateMachine.EnsureTransition((CampaignStatus)camp.Status, next);
+                    camp.Status = (int)next;
                     camp.CompletedAtUtc = DateTimeOffset.UtcNow;
                 }
             }
