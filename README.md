@@ -322,3 +322,16 @@ Enter the asterisk `*` to select all.
 To print all available benchmarks use `--list flat` or `--list tree`.
 To learn more about filtering use `--help`.
 Stress target=http://localhost:8080 total=2000 concurrency=100 warmup=50
+
+## Architecture (CQRS)
+
+Write and read pipelines are separated via **MediatR 12.4.1**:
+
+| Side | Marker | Examples |
+|------|--------|----------|
+| Write | `ICommand` / `ICommand<T>` | AcceptNotification, SaveTemplate, SendSync |
+| Read | `IQuery<T>` | GetNotificationStatus, GetTemplate, ListTemplates |
+
+Pipeline: Validation → Logging → CommandOnly / QueryOnly behaviors.
+
+See [docs/ADR-010-CQRS-MediatR.md](docs/ADR-010-CQRS-MediatR.md).

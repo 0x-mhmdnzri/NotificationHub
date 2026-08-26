@@ -10,6 +10,8 @@ COPY src/NotificationHub.Abstractions/NotificationHub.Abstractions.csproj src/No
 COPY src/NotificationHub.Core/NotificationHub.Core.csproj src/NotificationHub.Core/
 COPY src/NotificationHub.Host/NotificationHub.Host.csproj src/NotificationHub.Host/
 COPY src/NotificationHub.Sdk/NotificationHub.Sdk.csproj src/NotificationHub.Sdk/
+COPY src/NotificationHub.Application/NotificationHub.Application.csproj src/NotificationHub.Application/
+COPY src/NotificationHub.Infrastructure/NotificationHub.Infrastructure.csproj src/NotificationHub.Infrastructure/
 COPY tests/NotificationHub.Core.Tests/NotificationHub.Core.Tests.csproj tests/NotificationHub.Core.Tests/
 COPY tools/loadtest/NotificationHub.LoadTest.csproj tools/loadtest/
 

@@ -10,6 +10,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NotificationHub.Core\NotificationHub.Core.csproj" />
+    <ProjectReference Include="..\NotificationHub.Application\NotificationHub.Application.csproj" />
+    <ProjectReference Include="..\NotificationHub.Infrastructure\NotificationHub.Infrastructure.csproj" />
     <ProjectReference Include="..\NotificationHub.Abstractions\NotificationHub.Abstractions.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Email.SendGrid\NotificationHub.Plugins.Email.SendGrid.csproj" />
     <ProjectReference Include="..\..\Plugins\NotificationHub.Plugins.Email.Smtp\NotificationHub.Plugins.Email.Smtp.csproj" />

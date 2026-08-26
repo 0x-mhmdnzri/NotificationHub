@@ -13,6 +13,15 @@ using NotificationHub.Core.Orchestration;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.PluginHost;
 using NotificationHub.Core.Preferences;
+using NotificationHub.Infrastructure.DependencyInjection;
+using NotificationHub.Application.Notifications.Commands.AcceptNotification;
+using NotificationHub.Application.Notifications.Commands.SendNotificationSync;
+using NotificationHub.Application.Notifications.Queries.GetNotificationStatus;
+using NotificationHub.Application.Templates.Commands.SaveTemplate;
+using NotificationHub.Application.Templates.Queries.GetTemplate;
+using NotificationHub.Application.Templates.Queries.ListTemplates;
+using MediatR;
+using FluentValidation;
 using NotificationHub.Core.Queue;
 using NotificationHub.Core.RateLimiting;
 using NotificationHub.Core.Routing;
@@ -193,6 +202,9 @@ builder.Services.AddScoped<IComplianceService, ComplianceService>();
 builder.Services.AddScoped<IRetentionService, RetentionService>();
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
 builder.Services.AddHostedService<RetentionBackgroundWorker>();
+// CQRS Application + pipeline (write/read separated)
+builder.Services.AddInfrastructureCqrs();
+
 builder.Services.AddScoped<NotificationOrchestrator>();
 
 builder.Services.AddHostedService<NotificationBackgroundWorker>();
@@ -247,6 +259,19 @@ if (corsOrigins.Length > 0)
 
 app.UseMiddleware<AdminIpAllowlistMiddleware>();
 app.UseResponseCompression();
+app.Use(async (ctx, next) =>
+{
+    try { await next(); }
+    catch (ValidationException vex)
+    {
+        ctx.Response.StatusCode = StatusCodes.Status400BadRequest;
+        await ctx.Response.WriteAsJsonAsync(new
+        {
+            error = "validation_failed",
+            details = vex.Errors.Select(e => new { e.PropertyName, e.ErrorMessage })
+        });
+    }
+});
 app.UseMiddleware<ApiKeyAuthMiddleware>();
 
 using (var scope = app.Services.CreateScope())
@@ -264,88 +289,46 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.MapPost("/api/v1/notifications", async (
-    NotificationRequest request,
-    HttpContext http,
-    NotificationOrchestrator orch,
-    INotificationQueue queue,
-    IRateLimiter rl,
-    IThrottleService throttle,
-    IConfiguration config,
-    NotificationDbContext db,
-    CancellationToken ct) =>
+    NotificationRequest request, HttpContext http, ISender sender, IRateLimiter rl, IConfiguration config, CancellationToken ct) =>
 {
-    if (http.RequireRoles(AppRoles.Sender) is { } denied) return denied;
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
     var tenantId = http.ResolveTenantId(request.TenantId);
-    request = request with { TenantId = tenantId };
-    var limit = config.GetValue("RateLimiting:PerMinute", 60);
+    var limit = config.GetValue("RateLimiting:PerMinute", 120);
     if (!await rl.IsAllowedAsync($"tenant:{tenantId ?? "default"}:{request.Channel ?? "any"}", limit, ct))
         return Results.StatusCode(429);
-    if (!RequestValidators.TryValidate(request, out var valErr))
-        return Results.BadRequest(new { error = valErr });
-    var (thOk, thReason) = await throttle.CheckAndIncrementAsync(request.Recipient, request.Channel, tenantId, ct);
-    if (!thOk) return Results.Json(new { error = thReason }, statusCode: 429);
 
-    // Single transaction: status (Queued) + outbox row commit together (no dual-write window).
-    // Execution strategy required when EnableRetryOnFailure is on and we use explicit transactions.
-    IResult? result = null;
-    var strategy = db.Database.CreateExecutionStrategy();
-    await strategy.ExecuteAsync(async () =>
+    try
     {
-        await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var (accepted, status) = await orch.AcceptAsync(request, ct);
-        if (!accepted)
-        {
-            await tx.RollbackAsync(ct);
-            result = Results.Conflict(status);
-            return;
-        }
-
+        var result = await sender.Send(new AcceptNotificationCommand(request, tenantId), ct);
+        var status = result.Status;
         if (status.Status == DeliveryStatus.Suppressed)
-        {
-            await tx.CommitAsync(ct);
-            result = Results.Ok(new { id = status.NotificationId, status = status.Status.ToString(), reason = status.ErrorMessage });
-            return;
-        }
-
-        if (status.Status != DeliveryStatus.Scheduled)
-        {
-            // Stages outbox entity only; SaveChanges persists it inside this transaction.
-            await queue.EnqueueAsync(request, ct);
-            await db.SaveChangesAsync(ct);
-        }
-
-        await tx.CommitAsync(ct);
-        result = Results.Accepted($"/api/v1/notifications/{status.NotificationId}", new { id = status.NotificationId, status = status.Status.ToString() });
-    });
-
-    return result!;
+            return Results.Ok(new { id = status.NotificationId, status = status.Status.ToString(), reason = status.ErrorMessage });
+        return Results.Accepted($"/api/v1/notifications/{status.NotificationId}", new { id = status.NotificationId, status = status.Status.ToString() });
+    }
+    catch (ValidationException vex)
+    {
+        return Results.BadRequest(new { error = "validation_failed", details = vex.Errors.Select(e => new { e.PropertyName, e.ErrorMessage }) });
+    }
 }).WithName("SendNotification");
 
-app.MapPost("/api/v1/notifications/sync", async (NotificationRequest request, HttpContext http, NotificationOrchestrator orch, IRateLimiter rl, IConfiguration config, CancellationToken ct) =>
+app.MapPost("/api/v1/notifications/sync", async (NotificationRequest request, HttpContext http, ISender sender, IRateLimiter rl, IConfiguration config, CancellationToken ct) =>
 {
-    if (http.RequireRoles(AppRoles.Sender) is { } denied) return denied;
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
     var tenantId = http.ResolveTenantId(request.TenantId);
-    request = request with { TenantId = tenantId };
     var limit = config.GetValue("RateLimiting:PerMinute", 60);
-    if (!await rl.IsAllowedAsync($"tenant:{tenantId ?? "default"}:{request.Channel ?? "any"}", limit, ct))
+    if (!await rl.IsAllowedAsync($"tenant:{tenantId ?? "default"}:sync", limit, ct))
         return Results.StatusCode(429);
-    if (!RequestValidators.TryValidate(request, out var valErr))
-        return Results.BadRequest(new { error = valErr });
-    var (accepted, status) = await orch.AcceptAsync(request, ct);
-    if (!accepted) return Results.Conflict(status);
-    if (status.Status == DeliveryStatus.Suppressed)
-        return Results.Ok(new { status = "Suppressed", reason = status.ErrorMessage });
-    var delivery = await orch.ProcessAsync(request, ct);
-    return delivery.Success ? Results.Ok(delivery) : Results.BadRequest(delivery);
+    var result = await sender.Send(new SendNotificationSyncCommand(request, tenantId), ct);
+    return Results.Ok(result);
 }).WithName("SendNotificationSync");
 
-app.MapGet("/api/v1/notifications/{id:guid}", async (Guid id, HttpContext http, INotificationStatusStore store, CancellationToken ct) =>
+app.MapGet("/api/v1/notifications/{id:guid}", async (Guid id, HttpContext http, ISender sender, CancellationToken ct) =>
 {
-    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
-    var s = await store.GetAsync(id, ct);
-    if (s is null) return Results.NotFound();
-    if (!http.CanAccessTenant(s.TenantId)) return Results.NotFound();
-    return Results.Ok(s);
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader, AppRoles.Sender) is { } denied) return denied;
+    var auth = http.GetAuthContext();
+    var result = await sender.Send(new GetNotificationStatusQuery(id, auth?.TenantId, auth?.IsAdmin ?? false), ct);
+    if (!result.IsSuccess) return Results.NotFound();
+    return Results.Ok(result.Value);
 }).WithName("GetNotificationStatus");
 
 app.MapGet("/api/v1/plugins", (HttpContext http, PluginLoader loader) =>
@@ -354,29 +337,29 @@ app.MapGet("/api/v1/plugins", (HttpContext http, PluginLoader loader) =>
     return Results.Ok(loader.LoadedPlugins.Select(p => new { p.Id, p.Name, Version = p.Version.ToString(), Capabilities = p.Capabilities }));
 }).WithName("ListPlugins");
 
-app.MapPost("/api/v1/templates", async (TemplateDefinition t, HttpContext http, ITemplateEngine engine, CancellationToken ct) =>
+app.MapPost("/api/v1/templates", async (TemplateDefinition t, HttpContext http, ISender sender, CancellationToken ct) =>
 {
     if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender) is { } denied) return denied;
     t = t with { TenantId = http.ResolveTenantId(t.TenantId) };
-    if (!RequestValidators.TryValidate(t, out var valErr))
-        return Results.BadRequest(new { error = valErr });
-    await engine.RegisterTemplateAsync(t, ct);
-    return Results.Created($"/api/v1/templates/{t.Key}", t);
-}).WithName("RegisterTemplate");
+    var saved = await sender.Send(new SaveTemplateCommand(t), ct);
+    return Results.Created($"/api/v1/templates/{saved.Key}", saved);
+}).WithName("SaveTemplate");
 
-app.MapGet("/api/v1/templates/{key}", async (string key, string channel, string? locale, string? tenantId, HttpContext http, ITemplateEngine engine, CancellationToken ct) =>
+app.MapGet("/api/v1/templates/{key}", async (string key, string channel, string? locale, string? tenantId, HttpContext http, ISender sender, CancellationToken ct) =>
 {
-    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader, AppRoles.Sender) is { } denied) return denied;
     var tid = http.ResolveTenantId(tenantId);
-    var t = await engine.GetTemplateAsync(key, channel, locale ?? "en", tid, ct);
-    return t is null ? Results.NotFound() : Results.Ok(t);
+    var result = await sender.Send(new GetTemplateQuery(key, channel, locale, tid), ct);
+    if (!result.IsSuccess) return Results.NotFound();
+    return Results.Ok(result.Value);
 }).WithName("GetTemplate");
 
-app.MapGet("/api/v1/templates", async (string? tenantId, string? channel, HttpContext http, ITemplateStore store, CancellationToken ct) =>
+app.MapGet("/api/v1/templates", async (string? tenantId, string? channel, HttpContext http, ISender sender, CancellationToken ct) =>
 {
-    if (http.RequireRoles(AppRoles.Admin, AppRoles.Sender, AppRoles.Reader) is { } denied) return denied;
+    if (http.RequireRoles(AppRoles.Admin, AppRoles.Reader, AppRoles.Sender) is { } denied) return denied;
     var tid = http.ResolveTenantId(tenantId);
-    return Results.Ok(await store.ListAsync(tid, channel, ct));
+    var list = await sender.Send(new ListTemplatesQuery(tid, channel), ct);
+    return Results.Ok(list);
 }).WithName("ListTemplates");
 
 app.MapDelete("/api/v1/templates/{key}", async (string key, string channel, string? locale, string? tenantId, HttpContext http, ITemplateStore store, CancellationToken ct) =>
