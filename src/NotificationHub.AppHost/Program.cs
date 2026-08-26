@@ -14,7 +14,7 @@ var rabbit = builder.AddRabbitMQ("rabbitmq")
 var redis = builder.AddRedis("redis")
     .WithDataVolume();
 
-// Jaeger all-in-one (OTLP + UI) for local tracing
+// Jaeger all-in-one (OTLP + UI) for local tracing — dashboard: http://localhost:16686
 var jaeger = builder.AddContainer("jaeger", "jaegertracing/all-in-one", "1.64")
     .WithEndpoint(port: 16686, targetPort: 16686, name: "ui", scheme: "http")
     .WithEndpoint(port: 4317, targetPort: 4317, name: "otlp-grpc", scheme: "http")
@@ -30,6 +30,7 @@ builder.AddProject<Projects.NotificationHub_Host>("notification-api")
     .WaitFor(redis)
     .WithEnvironment("OTEL_EXPORTER_OTLP_ENDPOINT", jaeger.GetEndpoint("otlp-grpc"))
     .WithEnvironment("OpenTelemetry__OtlpEndpoint", jaeger.GetEndpoint("otlp-grpc"))
+    .WithEnvironment("Serilog__UseJsonConsole", "false") // human-readable in Aspire dashboard; set true for ELK
     .WithHttpHealthCheck("/health/ready");
 
 builder.Build().Run();

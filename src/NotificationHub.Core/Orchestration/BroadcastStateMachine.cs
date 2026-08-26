@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using NotificationHub.Abstractions.Models;
 
 namespace NotificationHub.Core.Orchestration;
@@ -8,6 +9,8 @@ namespace NotificationHub.Core.Orchestration;
 /// </summary>
 public static class BroadcastStateMachine
 {
+    public static readonly ActivitySource ActivitySource = new("NotificationHub.Broadcast");
+
     private static readonly Dictionary<CampaignStatus, HashSet<CampaignStatus>> Allowed = new()
     {
         [CampaignStatus.Draft] = [CampaignStatus.Scheduled, CampaignStatus.Preparing, CampaignStatus.Processing, CampaignStatus.Cancelled],
@@ -29,6 +32,20 @@ public static class BroadcastStateMachine
     {
         if (!CanTransition(from, to))
             throw new InvalidOperationException($"Illegal broadcast transition {from} → {to}");
+    }
+
+    /// <summary>
+    /// Applies transition with OTEL activity + validation. Returns <paramref name="to"/>.
+    /// </summary>
+    public static CampaignStatus Transition(CampaignStatus from, CampaignStatus to, Guid? broadcastId = null)
+    {
+        EnsureTransition(from, to);
+        using var activity = ActivitySource.StartActivity("broadcast.transition", ActivityKind.Internal);
+        activity?.SetTag("broadcast.from_status", from.ToString());
+        activity?.SetTag("broadcast.to_status", to.ToString());
+        if (broadcastId is { } id)
+            activity?.SetTag("broadcast.id", id.ToString("N"));
+        return to;
     }
 
     /// <summary>

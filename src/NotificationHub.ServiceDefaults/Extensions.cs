@@ -14,12 +14,14 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
 using Serilog.Events;
+using Serilog.Formatting.Compact;
 using Serilog.Sinks.OpenTelemetry;
 
 namespace NotificationHub.ServiceDefaults;
 
 /// <summary>
-/// Cross-cutting defaults: Serilog, OpenTelemetry (Jaeger via OTLP), health checks, service discovery.
+/// Cross-cutting defaults: Serilog (console + ELK-friendly JSON + OTLP), OpenTelemetry (Jaeger via OTLP),
+/// health checks for Postgres / Redis / RabbitMQ, service discovery.
 /// Aspire AppHost composes apps; this is NOT a business orchestrator.
 /// </summary>
 public static class Extensions
@@ -43,35 +45,51 @@ public static class Extensions
 
     public static IHostApplicationBuilder ConfigureSerilog(this IHostApplicationBuilder builder)
     {
-        Log.Logger = new LoggerConfiguration()
+        var useJson = builder.Configuration.GetValue("Serilog:UseJsonConsole", false)
+                      || string.Equals(builder.Configuration["Serilog:ConsoleFormatter"], "json", StringComparison.OrdinalIgnoreCase)
+                      || builder.Environment.IsProduction();
+
+        var cfg = new LoggerConfiguration()
             .MinimumLevel.Information()
             .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
             .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+            .MinimumLevel.Override("System.Net.Http.HttpClient", LogEventLevel.Warning)
             .Enrich.FromLogContext()
             .Enrich.WithProperty("Application", builder.Environment.ApplicationName)
             .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
             .Enrich.WithMachineName()
             .Enrich.WithThreadId()
             .Enrich.WithEnvironmentName()
-            .ReadFrom.Configuration(builder.Configuration)
-            .WriteTo.Console(outputTemplate:
-                "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext} {Message:lj} {Properties:j}{NewLine}{Exception}")
-            .WriteTo.Conditional(
-                _ => !string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"])
-                     || !string.IsNullOrWhiteSpace(builder.Configuration["OpenTelemetry:OtlpEndpoint"]),
-                wt => wt.OpenTelemetry(options =>
+            .ReadFrom.Configuration(builder.Configuration);
+
+        if (useJson)
+        {
+            // Compact JSON → Filebeat / Fluent Bit / ELK
+            cfg = cfg.WriteTo.Console(new RenderedCompactJsonFormatter());
+        }
+        else
+        {
+            cfg = cfg.WriteTo.Console(outputTemplate:
+                "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext} {Message:lj} {Properties:j}{NewLine}{Exception}");
+        }
+
+        cfg = cfg.WriteTo.Conditional(
+            _ => !string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"])
+                 || !string.IsNullOrWhiteSpace(builder.Configuration["OpenTelemetry:OtlpEndpoint"]),
+            wt => wt.OpenTelemetry(options =>
+            {
+                options.Endpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]
+                    ?? builder.Configuration["OpenTelemetry:OtlpEndpoint"]
+                    ?? "http://localhost:4317";
+                options.Protocol = OtlpProtocol.Grpc;
+                options.ResourceAttributes = new Dictionary<string, object>
                 {
-                    options.Endpoint = builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]
-                        ?? builder.Configuration["OpenTelemetry:OtlpEndpoint"]
-                        ?? "http://localhost:4317";
-                    options.Protocol = OtlpProtocol.Grpc;
-                    options.ResourceAttributes = new Dictionary<string, object>
-                    {
-                        ["service.name"] = builder.Environment.ApplicationName,
-                        ["deployment.environment"] = builder.Environment.EnvironmentName
-                    };
-                }))
-            .CreateLogger();
+                    ["service.name"] = builder.Environment.ApplicationName,
+                    ["deployment.environment"] = builder.Environment.EnvironmentName
+                };
+            }));
+
+        Log.Logger = cfg.CreateLogger();
 
         builder.Logging.ClearProviders();
         builder.Services.AddSerilog(Log.Logger, dispose: true);
@@ -110,7 +128,8 @@ public static class Extensions
                     })
                     .AddHttpClientInstrumentation()
                     .AddEntityFrameworkCoreInstrumentation()
-                    .AddSource("NotificationHub");
+                    .AddSource("NotificationHub")
+                    .AddSource("NotificationHub.Broadcast");
             });
 
         if (!string.IsNullOrWhiteSpace(otlp))
@@ -127,7 +146,9 @@ public static class Extensions
         var checks = builder.Services.AddHealthChecks()
             .AddCheck("self", () => HealthCheckResult.Healthy(), tags: [LiveTag, ReadyTag]);
 
+        // Aspire injects ConnectionStrings__notificationdb / postgres / redis etc.
         var pg = builder.Configuration.GetConnectionString("Default")
+            ?? builder.Configuration.GetConnectionString("notificationdb")
             ?? builder.Configuration.GetConnectionString("postgres");
         if (!string.IsNullOrWhiteSpace(pg))
         {
@@ -135,18 +156,27 @@ public static class Extensions
         }
 
         var redis = builder.Configuration.GetConnectionString("Redis")
+            ?? builder.Configuration.GetConnectionString("redis")
             ?? builder.Configuration["ConnectionStrings:Redis"];
         if (!string.IsNullOrWhiteSpace(redis))
         {
             checks.AddRedis(redis, name: "redis", tags: [ReadyTag], timeout: TimeSpan.FromSeconds(3));
         }
 
+        // RabbitMQ: Aspire connection string form or classic section
+        var rmqCs = builder.Configuration.GetConnectionString("rabbitmq")
+            ?? builder.Configuration.GetConnectionString("RabbitMQ");
         var rmqHost = builder.Configuration["RabbitMQ:HostName"];
         var rmqUser = builder.Configuration["RabbitMQ:UserName"] ?? "guest";
         var rmqPass = builder.Configuration["RabbitMQ:Password"] ?? "guest";
         var rmqPort = builder.Configuration["RabbitMQ:Port"] ?? "5672";
         var rmqVhost = builder.Configuration["RabbitMQ:VirtualHost"] ?? "/";
-        if (!string.IsNullOrWhiteSpace(rmqHost))
+
+        if (!string.IsNullOrWhiteSpace(rmqCs))
+        {
+            checks.AddRabbitMQ(rmqCs, name: "rabbitmq", tags: [ReadyTag], timeout: TimeSpan.FromSeconds(5));
+        }
+        else if (!string.IsNullOrWhiteSpace(rmqHost))
         {
             checks.AddRabbitMQ(
                 sp =>

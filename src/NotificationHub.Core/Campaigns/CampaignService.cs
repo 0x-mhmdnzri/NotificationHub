@@ -37,6 +37,7 @@ public sealed class CampaignService(
         };
         db.BroadcastCampaigns.Add(entity);
         await db.SaveChangesAsync(ct);
+        logger.LogInformation("Campaign {CampaignId} created status={Status} tenant={TenantId}", entity.Id, CampaignStatus.Draft, entity.TenantId);
         return ToModel(entity);
     }
 
@@ -70,7 +71,6 @@ public sealed class CampaignService(
                 foreach (var ch in chans)
                 {
                     var hash = ContentHash(campaignId, addr, ch);
-                    // Skip if unique constraint would fire — check local first
                     if (await db.BroadcastRecipients.AnyAsync(x => x.ContentHash == hash, ct))
                         continue;
 
@@ -95,7 +95,6 @@ public sealed class CampaignService(
             }
             catch (DbUpdateException)
             {
-                // Concurrent insert race on unique hash — clear tracker and continue
                 foreach (var e in db.ChangeTracker.Entries<BroadcastRecipientEntity>().ToList())
                     e.State = EntityState.Detached;
             }
@@ -115,23 +114,23 @@ public sealed class CampaignService(
         var campaign = await GetEntityAsync(campaignId, tenantId, ct)
             ?? throw new InvalidOperationException("Campaign not found.");
 
-        if (campaign.Status is (int)CampaignStatus.Cancelled or (int)CampaignStatus.Completed)
+        var from = (CampaignStatus)campaign.Status;
+        if (BroadcastStateMachine.IsTerminal(from) && from != CampaignStatus.Failed)
             throw new InvalidOperationException("Campaign cannot be started from current state.");
 
         if (campaign.ScheduledAtUtc is { } sched && sched > DateTimeOffset.UtcNow)
         {
-            campaign.Status = (int)CampaignStatus.Scheduled;
+            campaign.Status = (int)BroadcastStateMachine.Transition(from, CampaignStatus.Scheduled, campaignId);
             await db.SaveChangesAsync(ct);
+            logger.LogInformation("Campaign {CampaignId} scheduled for {ScheduledAt}", campaignId, sched);
             return;
         }
 
-        BroadcastStateMachine.EnsureTransition((CampaignStatus)campaign.Status, CampaignStatus.Preparing);
-        campaign.Status = (int)CampaignStatus.Preparing;
-        BroadcastStateMachine.EnsureTransition(CampaignStatus.Preparing, CampaignStatus.Processing);
-        campaign.Status = (int)CampaignStatus.Processing;
+        campaign.Status = (int)BroadcastStateMachine.Transition(from, CampaignStatus.Preparing, campaignId);
+        campaign.Status = (int)BroadcastStateMachine.Transition(CampaignStatus.Preparing, CampaignStatus.Processing, campaignId);
         campaign.StartedAtUtc = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(ct);
-        logger.LogInformation("Campaign {Id} started processing", campaignId);
+        logger.LogInformation("Campaign {CampaignId} started processing", campaignId);
     }
 
     public async Task CancelAsync(Guid campaignId, string? tenantId, CancellationToken ct = default)
@@ -139,7 +138,14 @@ public sealed class CampaignService(
         var campaign = await GetEntityAsync(campaignId, tenantId, ct)
             ?? throw new InvalidOperationException("Campaign not found.");
 
-        campaign.Status = (int)CampaignStatus.Cancelled;
+        var from = (CampaignStatus)campaign.Status;
+        if (BroadcastStateMachine.IsTerminal(from))
+        {
+            logger.LogWarning("Campaign {CampaignId} already terminal ({Status}); cancel ignored", campaignId, from);
+            return;
+        }
+
+        campaign.Status = (int)BroadcastStateMachine.Transition(from, CampaignStatus.Cancelled, campaignId);
         campaign.CompletedAtUtc = DateTimeOffset.UtcNow;
 
         await db.BroadcastRecipients
@@ -151,6 +157,7 @@ public sealed class CampaignService(
                 .SetProperty(x => x.ProcessedAtUtc, DateTimeOffset.UtcNow), ct);
 
         await db.SaveChangesAsync(ct);
+        logger.LogInformation("Campaign {CampaignId} cancelled from {FromStatus}", campaignId, from);
     }
 
     public async Task<BroadcastCampaign?> GetAsync(Guid campaignId, string? tenantId, CancellationToken ct = default)
@@ -194,7 +201,6 @@ public sealed class CampaignService(
     /// </summary>
     public async Task<int> ProcessPendingBatchAsync(int batchSize, CancellationToken ct = default)
     {
-        // Promote scheduled campaigns whose time has come
         var due = await db.BroadcastCampaigns
             .Where(x => x.Status == (int)CampaignStatus.Scheduled &&
                         x.ScheduledAtUtc != null &&
@@ -203,10 +209,8 @@ public sealed class CampaignService(
         foreach (var c in due)
         {
             var from = (CampaignStatus)c.Status;
-            BroadcastStateMachine.EnsureTransition(from, CampaignStatus.Preparing);
-            c.Status = (int)CampaignStatus.Preparing;
-            BroadcastStateMachine.EnsureTransition(CampaignStatus.Preparing, CampaignStatus.Processing);
-            c.Status = (int)CampaignStatus.Processing;
+            c.Status = (int)BroadcastStateMachine.Transition(from, CampaignStatus.Preparing, c.Id);
+            c.Status = (int)BroadcastStateMachine.Transition(CampaignStatus.Preparing, CampaignStatus.Processing, c.Id);
             c.StartedAtUtc = DateTimeOffset.UtcNow;
         }
         if (due.Count > 0)
@@ -224,7 +228,6 @@ public sealed class CampaignService(
         if (processingIds.Count == 0)
             return 0;
 
-        // Claim pending rows (optimistic)
         var batch = await db.BroadcastRecipients
             .Where(x => processingIds.Contains(x.CampaignId) &&
                         x.Status == (int)BroadcastRecipientStatus.Pending)
@@ -234,7 +237,6 @@ public sealed class CampaignService(
 
         if (batch.Count == 0)
         {
-            // Mark campaigns complete when no pending/processing left
             foreach (var cid in processingIds)
             {
                 var remaining = await db.BroadcastRecipients.CountAsync(
@@ -250,9 +252,11 @@ public sealed class CampaignService(
                     var cancelled = await db.BroadcastRecipients.CountAsync(x => x.CampaignId == cid && x.Status == (int)BroadcastRecipientStatus.Cancelled, ct);
                     var skipped = await db.BroadcastRecipients.CountAsync(x => x.CampaignId == cid && x.Status == (int)BroadcastRecipientStatus.Skipped, ct);
                     var next = BroadcastStateMachine.ResolveCompletion(total, sent, failed, cancelled, skipped);
-                    BroadcastStateMachine.EnsureTransition((CampaignStatus)camp.Status, next);
-                    camp.Status = (int)next;
+                    camp.Status = (int)BroadcastStateMachine.Transition((CampaignStatus)camp.Status, next, cid);
                     camp.CompletedAtUtc = DateTimeOffset.UtcNow;
+                    logger.LogInformation(
+                        "Campaign {CampaignId} completed status={Status} total={Total} sent={Sent} failed={Failed}",
+                        cid, next, total, sent, failed);
                 }
             }
             await db.SaveChangesAsync(ct);
@@ -273,7 +277,6 @@ public sealed class CampaignService(
             if (!campaigns.TryGetValue(row.CampaignId, out var camp))
                 continue;
 
-            // Observe cancellation
             if (camp.Status == (int)CampaignStatus.Cancelled)
             {
                 row.Status = (int)BroadcastRecipientStatus.Cancelled;
@@ -322,7 +325,6 @@ public sealed class CampaignService(
                         : (int)BroadcastRecipientStatus.Failed;
                     row.ErrorCode = status.ErrorCode;
                     row.ErrorMessage = status.ErrorMessage;
-                    // Failed → re-queue as Pending for retry (bounded attempts)
                     if (row.Status == (int)BroadcastRecipientStatus.Failed)
                         row.Status = (int)BroadcastRecipientStatus.Pending;
                 }
@@ -330,7 +332,7 @@ public sealed class CampaignService(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Broadcast recipient {Id} failed", row.Id);
+                logger.LogWarning(ex, "Broadcast recipient {RecipientId} campaign={CampaignId} failed", row.Id, row.CampaignId);
                 row.Attempts++;
                 row.ErrorMessage = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
                 row.Status = row.Attempts >= 5
