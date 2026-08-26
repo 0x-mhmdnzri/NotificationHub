@@ -14,7 +14,7 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using Serilog;
 using Serilog.Events;
-using Serilog.Formatting.Compact;
+using Serilog.Formatting.Json;
 using Serilog.Sinks.OpenTelemetry;
 
 namespace NotificationHub.ServiceDefaults;
@@ -64,8 +64,8 @@ public static class Extensions
 
         if (useJson)
         {
-            // Compact JSON → Filebeat / Fluent Bit / ELK
-            cfg = cfg.WriteTo.Console(new RenderedCompactJsonFormatter());
+            // Structured JSON for Filebeat / Fluent Bit / ELK
+            cfg = cfg.WriteTo.Console(new JsonFormatter(renderMessage: true));
         }
         else
         {
@@ -146,7 +146,6 @@ public static class Extensions
         var checks = builder.Services.AddHealthChecks()
             .AddCheck("self", () => HealthCheckResult.Healthy(), tags: [LiveTag, ReadyTag]);
 
-        // Aspire injects ConnectionStrings__notificationdb / postgres / redis etc.
         var pg = builder.Configuration.GetConnectionString("Default")
             ?? builder.Configuration.GetConnectionString("notificationdb")
             ?? builder.Configuration.GetConnectionString("postgres");
@@ -163,7 +162,6 @@ public static class Extensions
             checks.AddRedis(redis, name: "redis", tags: [ReadyTag], timeout: TimeSpan.FromSeconds(3));
         }
 
-        // RabbitMQ: Aspire connection string form or classic section
         var rmqCs = builder.Configuration.GetConnectionString("rabbitmq")
             ?? builder.Configuration.GetConnectionString("RabbitMQ");
         var rmqHost = builder.Configuration["RabbitMQ:HostName"];
