@@ -66,6 +66,17 @@ public sealed class RabbitMqOptions
     /// </summary>
     public bool PriorityRouting { get; set; } = true;
 
+    /// <summary>
+    /// When true with PriorityRouting, this process only consumes *.critical queues
+    /// (dedicated critical delivery workers with higher concurrency).
+    /// </summary>
+    public bool ConsumeCriticalOnly { get; set; } = false;
+    /// <summary>
+    /// When true with PriorityRouting, skip *.critical queues (standard workers only).
+    /// Mutually exclusive with ConsumeCriticalOnly.
+    /// </summary>
+    public bool ConsumeNonCriticalOnly { get; set; } = false;
+
     /// <summary>Topic exchange for integration events (downstream analytics, webhooks bridge, other services).</summary>
     public string EventsExchangeName { get; set; } = "notification.events";
     /// <summary>When true, declare events exchange and publish integration payloads.</summary>
@@ -346,18 +357,26 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
     private IReadOnlyList<string> ResolveConsumeQueues()
     {
         var queues = new List<string>();
+        var wantNormal = !_options.ConsumeCriticalOnly;
+        var wantCritical = _options.PriorityRouting && !_options.ConsumeNonCriticalOnly;
+
         if (!string.IsNullOrWhiteSpace(_options.ConsumeChannel))
         {
-            queues.Add(WorkQueueName(_options, _options.ConsumeChannel, critical: false));
-            if (_options.PriorityRouting)
+            if (wantNormal)
+                queues.Add(WorkQueueName(_options, _options.ConsumeChannel, critical: false));
+            if (wantCritical)
                 queues.Add(WorkQueueName(_options, _options.ConsumeChannel, critical: true));
         }
         else
         {
-            queues.Add(_options.QueueName);
-            if (_options.PriorityRouting)
+            if (wantNormal)
+                queues.Add(_options.QueueName);
+            if (wantCritical)
                 queues.Add($"{_options.QueueName}.critical");
         }
+
+        if (queues.Count == 0)
+            queues.Add(_options.QueueName); // safety net
         return queues;
     }
 

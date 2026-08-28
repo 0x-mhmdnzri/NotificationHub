@@ -194,11 +194,40 @@ if (hangfireEnabled && !string.IsNullOrWhiteSpace(hangfireCs))
         .UseSimpleAssemblyNameTypeSerializer()
         .UseRecommendedSerializerSettings()
         .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(hangfireCs)));
-    builder.Services.AddHangfireServer(options =>
+    // Dedicated critical server: only queue "critical", higher WorkerCount — bulk cannot starve OTP.
+    var hfOpts = builder.Configuration.GetSection(HangfireMessagingOptions.SectionName).Get<HangfireMessagingOptions>()
+                 ?? new HangfireMessagingOptions();
+    var criticalWorkers = hfOpts.CriticalWorkerCount > 0
+        ? hfOpts.CriticalWorkerCount
+        : Math.Max(4, Environment.ProcessorCount);
+    var standardWorkers = hfOpts.StandardWorkerCount > 0
+        ? hfOpts.StandardWorkerCount
+        : Math.Max(2, Environment.ProcessorCount);
+
+    if (hfOpts.DedicatedCriticalServer)
     {
-        options.Queues = new[] { MessagingQueues.Critical, MessagingQueues.Notifications, MessagingQueues.Outbox, MessagingQueues.Default };
-        options.WorkerCount = Math.Max(2, Environment.ProcessorCount);
-    });
+        builder.Services.AddHangfireServer(options =>
+        {
+            options.ServerName = $"critical-{Environment.MachineName}";
+            options.Queues = new[] { MessagingQueues.Critical };
+            options.WorkerCount = criticalWorkers;
+        });
+        builder.Services.AddHangfireServer(options =>
+        {
+            options.ServerName = $"standard-{Environment.MachineName}";
+            options.Queues = new[] { MessagingQueues.Notifications, MessagingQueues.Outbox, MessagingQueues.Default };
+            options.WorkerCount = standardWorkers;
+        });
+    }
+    else
+    {
+        builder.Services.AddHangfireServer(options =>
+        {
+            options.ServerName = $"all-{Environment.MachineName}";
+            options.Queues = new[] { MessagingQueues.Critical, MessagingQueues.Notifications, MessagingQueues.Outbox, MessagingQueues.Default };
+            options.WorkerCount = Math.Max(criticalWorkers, standardWorkers);
+        });
+    }
     builder.Services.AddScoped<IOutboxDispatchJob, OutboxDispatchJob>();
     builder.Services.AddScoped<OutboxReconciliationJob>();
     builder.Services.AddSingleton<IOutboxDispatchScheduler, HangfireOutboxDispatchScheduler>();
@@ -349,6 +378,7 @@ var app = builder.Build();
 
 if (hangfireEnabled && !string.IsNullOrWhiteSpace(hangfireCs))
 {
+    app.UseMiddleware<HangfireDashboardRateLimitMiddleware>();
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
         // API key auth (same keys as REST). Header X-Api-Key or ?api_key= — requires Admin by default.

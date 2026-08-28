@@ -21,6 +21,17 @@ public sealed class HangfireMessagingOptions
     public bool DashboardRequireAdmin { get; set; } = true;
     /// <summary>Dev-only: allow dashboard without API key when true.</summary>
     public bool DashboardAllowAnonymousInDevelopment { get; set; } = false;
+    /// <summary>
+    /// When true, run a dedicated Hangfire server process that ONLY polls the critical queue
+    /// with CriticalWorkerCount workers so bulk jobs cannot starve OTP/security dispatch.
+    /// </summary>
+    public bool DedicatedCriticalServer { get; set; } = true;
+    /// <summary>Workers exclusive to queue "critical" (default: max(4, ProcessorCount)).</summary>
+    public int CriticalWorkerCount { get; set; } = 0;
+    /// <summary>Workers for notifications + outbox + default (default: max(2, ProcessorCount)).</summary>
+    public int StandardWorkerCount { get; set; } = 0;
+    /// <summary>Max Hangfire dashboard requests per minute per API key (or IP if no key).</summary>
+    public int DashboardRateLimitPerMinute { get; set; } = 30;
 }
 
 /// <summary>

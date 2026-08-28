@@ -254,7 +254,9 @@ Accept TX (status + outbox) → COMMIT → Hangfire job(outboxId) → RabbitMQ �
 - RabbitMQ = delivery backbone
 - At-least-once + inbox idempotency
 - Recurring reconciliation for stuck outbox rows
-- Dashboard: `/hangfire` (API key required, Admin by default — header `X-Api-Key`)
+- Dashboard: `/hangfire` (API key required, Admin by default — header `X-Api-Key`; rate-limited separately)
+
+Hangfire: dedicated **critical** server (`DedicatedCriticalServer`) with higher `CriticalWorkerCount` so bulk jobs cannot starve OTP dispatch.
 
 ### Queue isolation
 - Hangfire: `critical` > `notifications` > `outbox` > `default`
