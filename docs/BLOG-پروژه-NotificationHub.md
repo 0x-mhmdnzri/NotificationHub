@@ -10,6 +10,327 @@
 
 ---
 
+---
+
+## معماری سیستم — با زبان آدمیزاد و دیاگرام درست
+
+قبل از اینکه بریم سراغ «چی خراب شد و چی درستش کردیم»، باید ببینی **مرز سیستم کجاست** و داده از کجا به کجا می‌رود.  
+این بخش را با قواعد کلاسیک **DFD (Gane & Sarson / Whitten)** کشیدیم: موجودیت بیرونی، پردازش، جریان داده، انبار داده — و بین سطح‌ها **balance** رعایت شده.
+
+### موجودیت‌های بیرونی (External Entities)
+
+| نماد | نقش |
+|------|-----|
+| **Client App** | سرویس محصول تو که API را صدا می‌زند |
+| **Admin Operator** | انسان پشت پنل ادمین |
+| **Channel Provider** | SendGrid / Twilio / FCM / … |
+| **Subscriber System** | سیستم بیرونی که Webhook می‌گیرد |
+
+خودِ NotificationHub = یک سیستم واحد با مرز مشخص؛ provider و کلاینت **داخل** مرز نیستند.
+
+---
+
+### ۱) Context Diagram (نمای ۰ — کل سیستم یک حباب)
+
+کل محصول یک پردازش به شماره **0** است. اینجا **انبار داده نمی‌کشیم**؛ فقط مرز و جریان‌های ورودی/خروجی.
+
+```mermaid
+flowchart LR
+  subgraph boundary[" "]
+    direction TB
+    SYS["0<br/>NotificationHub"]
+  end
+
+  CA["Client App"]
+  AO["Admin Operator"]
+  CP["Channel Provider"]
+  SS["Subscriber System"]
+
+  CA -->|"Send / Query Request"| SYS
+  SYS -->|"Status / ProblemDetails"| CA
+  AO -->|"Admin Commands"| SYS
+  SYS -->|"Admin Views / Results"| AO
+  SYS -->|"Delivery Payload"| CP
+  CP -->|"Provider Result / Callback"| SYS
+  SYS -->|"Lifecycle Event Webhook"| SS
+```
+
+**خواندن دیاگرام:**  
+کلاینت درخواست می‌فرستد و وضعیت می‌گیرد؛ ادمین مدیریت می‌کند؛ هاب به provider می‌فرستد و جواب می‌گیرد؛ در صورت نیاز به سیستم مشترک رویداد می‌دهد. هیچ فلشی مستقیم بین Client و Provider نیست — همه از وسط هاب رد می‌شود.
+
+---
+
+### ۲) Hierarchy (Decomposition) — درخت شکستن پردازش‌ها
+
+این DFD نیست؛ **فهرست سطح‌بندی** است تا بدانی Diagram 0 از کجا می‌آید.
+
+```text
+                    0  NotificationHub
+                    │
+     ┌──────────────┼──────────────┬────────────────┐
+     │              │              │                │
+   1.0            2.0            3.0              4.0
+ Accept &        Deliver via     Manage           Observe &
+ Orchestrate     Channels        Content &        Operate
+ Notifications                   Audience
+     │              │              │
+  1.1 Validate   2.1 Dispatch   3.1 Templates
+  1.2 Apply      2.2 Invoke     3.2 Campaigns
+      Policy         Plugin     3.3 Segments /
+  1.3 Persist    2.3 Record         Topics /
+      + Outbox       Status         Devices
+  1.4 Publish                   3.4 Consents /
+      Integration                   Preferences
+```
+
+---
+
+### ۳) Diagram 0 — سطح بالای منطقی (Logical DFD)
+
+پردازش **0** شکسته می‌شود به چهار پردازش اصلی + انبارهای منطقی.  
+هر فلشِ Context اینجا **همان نام** را دارد یا زیر‌بستهٔ معنی‌دارش (balancing).
+
+```mermaid
+flowchart TB
+  CA["Client App"]
+  AO["Admin Operator"]
+  CP["Channel Provider"]
+  SS["Subscriber System"]
+
+  P1["1.0<br/>Accept and Orchestrate<br/>Notifications"]
+  P2["2.0<br/>Deliver via Channels"]
+  P3["3.0<br/>Manage Content and Audience"]
+  P4["4.0<br/>Observe and Operate"]
+
+  D1[("D1 Notifications")]
+  D2[("D2 Outbox / Inbox")]
+  D3[("D3 Templates & Campaigns")]
+  D4[("D4 Preferences & Consents")]
+  D5[("D5 Audit & Engagement")]
+
+  CA -->|"Send / Query Request"| P1
+  P1 -->|"Status / ProblemDetails"| CA
+  CA -->|"Query Status"| P1
+
+  AO -->|"Admin Commands"| P3
+  P3 -->|"Admin Views"| AO
+  AO -->|"Ops Query"| P4
+  P4 -->|"Health / Metrics Views"| AO
+
+  P1 -->|"Accepted Notification"| D1
+  P1 -->|"Outbox Message"| D2
+  P1 -->|"Policy Check Request"| D4
+  D4 -->|"Policy Decision"| P1
+  P1 -->|"Template Lookup"| D3
+  D3 -->|"Rendered Content Ref"| P1
+
+  D2 -->|"Pending Dispatch"| P2
+  P2 -->|"Delivery Payload"| CP
+  CP -->|"Provider Result"| P2
+  P2 -->|"Status Update"| D1
+  P2 -->|"Inbox / Idempotency Record"| D2
+  P2 -->|"Engagement / Audit Fact"| D5
+  P2 -->|"Lifecycle Event"| SS
+
+  P3 -->|"Template / Campaign / Segment Data"| D3
+  P3 -->|"Consent / Preference Data"| D4
+
+  P4 -->|"Read Health Signals"| D1
+  P4 -->|"Read Health Signals"| D2
+```
+
+**نکتهٔ قانونی DFD:** انبار به انبار یا موجودیت به موجودیت مستقیم وصل نیست؛ همه از پردازش رد می‌شود.
+
+---
+
+### ۴) Child DFD برای 1.0 — قبول اعلان (Primitiveتر)
+
+این همان جایی است که Outbox معنی پیدا می‌کند.
+
+```mermaid
+flowchart TB
+  CA["Client App"]
+  P11["1.1<br/>Validate Request"]
+  P12["1.2<br/>Apply Policy<br/>Consent Preference"]
+  P13["1.3<br/>Persist Notification<br/>and Outbox"]
+  P14["1.4<br/>Schedule Dispatch Job"]
+
+  D1[("D1 Notifications")]
+  D2[("D2 Outbox")]
+  D3[("D3 Templates")]
+  D4[("D4 Preferences & Consents")]
+
+  CA -->|"Send Request"| P11
+  P11 -->|"Validated Request"| P12
+  P11 -->|"Validation Error"| CA
+
+  P12 -->|"Policy Check"| D4
+  D4 -->|"Allow / Deny"| P12
+  P12 -->|"Template Key + Data"| D3
+  D3 -->|"Template Body"| P12
+  P12 -->|"Authorized Send"| P13
+  P12 -->|"Policy Reject"| CA
+
+  P13 -->|"Notification Row"| D1
+  P13 -->|"Outbox Row"| D2
+  P13 -->|"Accepted Id"| P14
+  P14 -->|"Job / Dispatch Trigger"| D2
+  P14 -->|"Status / ProblemDetails"| CA
+```
+
+**چرا این‌قدر اصرار به 1.3؟**  
+چون اگر فقط Notification بنویسی و بعد جداگانه publish کنی، وسط قطعی شبکه می‌گیری «تو DB هست، تو صف نیست». Outbox یعنی **همان تراکنش**.
+
+---
+
+### ۵) Child DFD برای 2.0 — تحویل کانال (منطقی)
+
+```mermaid
+flowchart TB
+  CP["Channel Provider"]
+  SS["Subscriber System"]
+
+  P21["2.1<br/>Claim Outbox and<br/>Enqueue Channel"]
+  P22["2.2<br/>Invoke Channel Plugin"]
+  P23["2.3<br/>Record Result and<br/>Side Effects"]
+
+  D1[("D1 Notifications")]
+  D2[("D2 Outbox / Inbox")]
+  D5[("D5 Audit & Engagement")]
+
+  D2 -->|"Pending Outbox"| P21
+  P21 -->|"Channel Message"| P22
+  P21 -->|"Marked Dispatched"| D2
+
+  P22 -->|"Delivery Payload"| CP
+  CP -->|"Provider Result"| P22
+  P22 -->|"Raw Result"| P23
+
+  P23 -->|"Status Update"| D1
+  P23 -->|"Inbox / Ack Record"| D2
+  P23 -->|"Audit Fact"| D5
+  P23 -->|"Lifecycle Event"| SS
+```
+
+---
+
+### ۶) Physical DFD — «واقعاً توی کد چی به چی وصله» (فناوری‌آگاه)
+
+Logical بالا می‌گوید *چه*؛ Physical می‌گوید *با چه ابزار*.
+
+```mermaid
+flowchart LR
+  subgraph Host["Host process"]
+    API["ASP.NET Minimal API<br/>+ MediatR"]
+    HF["Hangfire workers"]
+    BW["NotificationBackgroundWorker<br/>competing consumers"]
+  end
+
+  PG[("PostgreSQL<br/>Notifications Outbox<br/>Hangfire schema")]
+  RQ[["RabbitMQ<br/>notifications.* queues<br/>critical + DLQ"]]
+  PL["Plugins<br/>Email SMS Push …"]
+  PR["External Providers"]
+
+  API -->|"EF transaction"| PG
+  API -->|"Enqueue job after commit"| HF
+  HF -->|"Publish to broker"| RQ
+  RQ -->|"BasicConsume + ACK"| BW
+  BW -->|"INotificationChannel"| PL
+  PL -->|"HTTPS / SDK"| PR
+  BW -->|"Update status"| PG
+```
+
+** bridging بین Logical و Physical:**
+
+| Logical | Physical |
+|---------|----------|
+| 1.0 Accept | API + Application Handlers + Domain + EF |
+| Outbox store | جدول Outbox در Postgres |
+| 2.1 Claim / Enqueue | Hangfire job → RabbitMQ publish |
+| 2.2 Plugin | اسمبلی‌های `Plugins/*` |
+| صف کانال | `notifications.email` و … + critical |
+| Inbox | رکورد پردازش تکراری در DB |
+
+---
+
+### ۷) Sequence — یک ارسال موفق async (برای حس زمان)
+
+```mermaid
+sequenceDiagram
+  actor Client
+  participant API as Host API
+  participant App as Application Handler
+  participant Dom as Domain Aggregate
+  participant DB as PostgreSQL
+  participant HF as Hangfire
+  participant MQ as RabbitMQ
+  participant W as Channel Worker
+  participant P as Plugin / Provider
+
+  Client->>API: POST /api/v1/notifications
+  API->>App: AcceptNotificationCommand
+  App->>Dom: Accept (invariants)
+  App->>DB: BEGIN TX write Notification + Outbox
+  DB-->>App: Commit
+  App-->>API: Result Success id
+  API-->>Client: 202 / 200 + id
+
+  HF->>DB: Read pending Outbox
+  HF->>MQ: Publish channel routing key
+  MQ->>W: Deliver message
+  W->>P: SendAsync
+  P-->>W: Provider result
+  W->>DB: Update status + Inbox
+  W->>MQ: ACK
+```
+
+---
+
+### ۸) لایه‌های کد چطور روی این DFD می‌نشینند
+
+```text
+  External entities
+        │
+        ▼
+   Host (API)          ← مرز HTTP، API Key، ProblemDetails
+        │
+   Application         ← 1.1 / 1.2 / use-case orchestration (MediatR)
+        │
+   Domain              ← قوانین Aggregate (نه I/O)
+        │
+   Infrastructure      ← D1…D5 فیزیکی، Hangfire، EF
+        │
+   Plugins             ← 2.2 فقط
+        │
+   Providers / Webhooks
+```
+
+Microkernel یعنی **1.0 و 2.1 و انبارها در هسته می‌مانند**؛ **2.2 قابل تعویض** است بدون دست زدن به دامنه.
+
+---
+
+### ۹) جریان اولویت / لود (مکمل Physical)
+
+```mermaid
+flowchart TB
+  O[Outbox claim] --> R{Priority / channel}
+  R -->|critical| QC[["Queue notifications.*.critical"]]
+  R -->|normal email| QE[["Queue notifications.email"]]
+  R -->|normal sms| QS[["Queue notifications.sms"]]
+  QC --> WC[Critical worker pool]
+  QE --> WE[Email worker pool]
+  QS --> WS[SMS worker pool]
+  WC --> PL[Plugins]
+  WE --> PL
+  WS --> PL
+  PL --> OK[Status + ACK]
+  PL --> DLQ[["DLQ / retry delay"]]
+```
+
+این همان دردی بود که گفتیم: بدون این شکستن، OTP می‌رفت ته صف خبرنامه.
+
+---
+
 ## اولش مشکل چی بود؟
 
 تقریباً همه‌ی تیم‌ها این مسیر رو می‌رن:
