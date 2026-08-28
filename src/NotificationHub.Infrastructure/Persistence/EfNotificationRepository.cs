@@ -20,10 +20,11 @@ public sealed class EfNotificationRepository(NotificationDbContext db) : INotifi
         return e is null ? null : MapToDomain(e);
     }
 
-    public async Task AddAsync(Notification notification, CancellationToken ct = default)
+    public Task AddAsync(Notification notification, CancellationToken ct = default)
     {
         db.NotificationStatuses.Add(MapToEntity(notification));
-        await db.SaveChangesAsync(ct);
+        // Commit via IUnitOfWork so status + outbox share one transaction.
+        return Task.CompletedTask;
     }
 
     public async Task UpdateAsync(Notification notification, CancellationToken ct = default)
@@ -31,7 +32,8 @@ public sealed class EfNotificationRepository(NotificationDbContext db) : INotifi
         var e = await db.NotificationStatuses.FirstOrDefaultAsync(x => x.Id == notification.Id.Value, ct)
                 ?? throw new InvalidOperationException($"Notification {notification.Id} not found.");
         Apply(notification, e);
-        await db.SaveChangesAsync(ct);
+        // Caller decides SaveChanges via IUnitOfWork for multi-aggregate transactions.
+        await Task.CompletedTask;
     }
 
     internal static Notification MapToDomain(NotificationStatusEntity e)

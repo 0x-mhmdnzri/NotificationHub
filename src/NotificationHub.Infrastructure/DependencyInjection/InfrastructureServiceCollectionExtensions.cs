@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using NotificationHub.Application.DependencyInjection;
+using NotificationHub.Domain.Common;
 using NotificationHub.Domain.Broadcast;
 using NotificationHub.Domain.Delivery;
 using NotificationHub.Domain.Events;
@@ -20,6 +21,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IUserPreferenceRepository, EfUserPreferenceRepository>();
         services.AddScoped<INotificationTemplateRepository, EfNotificationTemplateRepository>();
         services.AddScoped<IDomainEventDispatcher, OutboxDomainEventDispatcher>();
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         return services;
     }
 }

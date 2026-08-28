@@ -206,9 +206,51 @@ public sealed class NotificationBackgroundWorker : BackgroundService
     {
         var orchestrator = scope.ServiceProvider.GetRequiredService<NotificationOrchestrator>();
         var statusStore = scope.ServiceProvider.GetRequiredService<INotificationStatusStore>();
+        var repo = scope.ServiceProvider.GetService<NotificationHub.Domain.Delivery.INotificationRepository>();
+        var uow = scope.ServiceProvider.GetService<NotificationHub.Domain.Common.IUnitOfWork>();
 
-        await statusStore.UpdateStatusAsync(request.Id, DeliveryStatus.Processing, ct: ct);
+        var now = DateTimeOffset.UtcNow;
+        if (repo is not null)
+        {
+            var n = await repo.GetAsync(NotificationHub.Domain.Delivery.ValueObjects.NotificationId.From(request.Id), ct);
+            if (n is not null)
+            {
+                n.MarkProcessing(now);
+                await repo.UpdateAsync(n, ct);
+                if (uow is not null) await uow.SaveChangesAsync(ct);
+                else await statusStore.UpdateStatusAsync(request.Id, DeliveryStatus.Processing, attemptCount: n.AttemptCount, ct: ct);
+            }
+            else
+                await statusStore.UpdateStatusAsync(request.Id, DeliveryStatus.Processing, ct: ct);
+        }
+        else
+            await statusStore.UpdateStatusAsync(request.Id, DeliveryStatus.Processing, ct: ct);
+
         var result = await orchestrator.ProcessAsync(request, ct);
+
+        if (repo is not null)
+        {
+            var n = await repo.GetAsync(NotificationHub.Domain.Delivery.ValueObjects.NotificationId.From(request.Id), ct);
+            if (n is not null)
+            {
+                if (result.Success)
+                    n.MarkSent(result.ProviderId ?? "unknown", result.ProviderMessageId, DateTimeOffset.UtcNow);
+                else
+                    n.MarkFailed(result.ErrorCode, result.ErrorMessage, maxAttempts: 3, DateTimeOffset.UtcNow);
+                await repo.UpdateAsync(n, ct);
+                if (uow is not null) await uow.SaveChangesAsync(ct);
+                else
+                {
+                    await statusStore.UpdateStatusAsync(request.Id, (DeliveryStatus)(int)n.Status,
+                        providerMessageId: result.ProviderMessageId,
+                        errorCode: result.ErrorCode, errorMessage: result.ErrorMessage,
+                        attemptCount: n.AttemptCount, ct: ct);
+                }
+                if (!result.Success)
+                    throw new InvalidOperationException($"Provider delivery failed: {result.ErrorCode} {result.ErrorMessage}");
+                return;
+            }
+        }
 
         if (result.Success)
         {

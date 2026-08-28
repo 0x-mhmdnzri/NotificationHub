@@ -10,18 +10,21 @@ public sealed class PostgresNotificationStatusStore : INotificationStatusStore
     private readonly NotificationDbContext _db;
     public PostgresNotificationStatusStore(NotificationDbContext db) => _db = db;
 
-    public async Task SaveAsync(NotificationStatus status, CancellationToken ct = default)
+    public Task SaveAsync(NotificationStatus status, CancellationToken ct = default)
     {
         _db.NotificationStatuses.Add(new NotificationStatusEntity
         {
             Id = status.NotificationId, Channel = status.Channel, Recipient = status.Recipient,
             Status = status.Status, ProviderId = status.ProviderId, ProviderMessageId = status.ProviderMessageId,
             ErrorCode = status.ErrorCode, ErrorMessage = status.ErrorMessage, AttemptCount = status.AttemptCount,
-            CreatedAt = status.CreatedAt, UpdatedAt = status.UpdatedAt, ScheduledAt = status.ScheduledAt,
+            CreatedAt = status.CreatedAt == default ? DateTimeOffset.UtcNow : status.CreatedAt,
+            UpdatedAt = status.UpdatedAt == default ? DateTimeOffset.UtcNow : status.UpdatedAt,
+            ScheduledAt = status.ScheduledAt,
             TenantId = status.TenantId, IdempotencyKey = status.IdempotencyKey, CollapseKey = status.CollapseKey,
             CorrelationId = status.CorrelationId, Category = status.Category
         });
-        await _db.SaveChangesAsync(ct);
+        // Staged only — caller commits with outbox via shared DbContext / IUnitOfWork (transactional outbox).
+        return Task.CompletedTask;
     }
 
     public async Task<NotificationStatus?> GetAsync(Guid notificationId, CancellationToken ct = default)

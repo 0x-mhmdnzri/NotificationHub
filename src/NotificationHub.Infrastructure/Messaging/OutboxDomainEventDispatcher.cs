@@ -6,8 +6,7 @@ using NotificationHub.Domain.Events;
 namespace NotificationHub.Infrastructure.Messaging;
 
 /// <summary>
-/// Persists domain events as durable outbox rows (same transaction boundary as caller SaveChanges when shared DbContext).
-/// OutboxRelay publishes integration payload to RabbitMQ without Domain knowing about the broker.
+/// Stages domain events as durable outbox rows. Commit with IUnitOfWork / shared DbContext.
 /// </summary>
 public sealed class OutboxDomainEventDispatcher(NotificationDbContext db) : IDomainEventDispatcher
 {
@@ -17,7 +16,7 @@ public sealed class OutboxDomainEventDispatcher(NotificationDbContext db) : IDom
         WriteIndented = false
     };
 
-    public async Task DispatchAsync(IEnumerable<IDomainEvent> events, CancellationToken ct = default)
+    public Task DispatchAsync(IEnumerable<IDomainEvent> events, CancellationToken ct = default)
     {
         foreach (var e in events)
         {
@@ -33,7 +32,6 @@ public sealed class OutboxDomainEventDispatcher(NotificationDbContext db) : IDom
             db.OutboxMessages.Add(new OutboxMessageEntity
             {
                 Id = Guid.NewGuid(),
-                // Domain/integration events are not delivery notifications; use EventId as correlation key.
                 NotificationId = e.EventId,
                 PayloadJson = JsonSerializer.Serialize(envelope, JsonOpts),
                 Status = "pending",
@@ -41,6 +39,6 @@ public sealed class OutboxDomainEventDispatcher(NotificationDbContext db) : IDom
             });
         }
 
-        await db.SaveChangesAsync(ct);
+        return Task.CompletedTask;
     }
 }

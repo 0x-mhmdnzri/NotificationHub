@@ -14,6 +14,7 @@ using NotificationHub.Core.Store;
 using NotificationHub.Core.Templates;
 using NotificationHub.Core.Webhooks;
 using NotificationHub.Core.Observability;
+using NotificationHub.Core.Persistence;
 
 namespace NotificationHub.Core.Orchestration;
 
@@ -31,6 +32,7 @@ public sealed class NotificationOrchestrator
     private readonly IProviderHealthTracker _health;
     private readonly ILogger<NotificationOrchestrator> _logger;
     private readonly IMetricsService? _metrics;
+    private readonly NotificationDbContext _db;
     private const int MaxRetries = 3;
 
     public NotificationOrchestrator(
@@ -45,6 +47,7 @@ public sealed class NotificationOrchestrator
         IProviderRouter router,
         IProviderHealthTracker health,
         ILogger<NotificationOrchestrator> logger,
+        NotificationDbContext db,
         IMetricsService? metrics = null)
     {
         _pluginLoader = pluginLoader;
@@ -59,6 +62,7 @@ public sealed class NotificationOrchestrator
         _health = health;
         _logger = logger;
         _metrics = metrics;
+        _db = db;
     }
 
     public async Task<(bool Accepted, NotificationStatus Status)> AcceptAsync(NotificationRequest request, CancellationToken ct = default)
@@ -110,11 +114,44 @@ public sealed class NotificationOrchestrator
             return (true, suppressed);
         }
 
-        var isScheduled = request.ScheduledAt.HasValue && request.ScheduledAt > DateTimeOffset.UtcNow;
-        var status = MakeStatus(request, channel, isScheduled ? DeliveryStatus.Scheduled : DeliveryStatus.Queued, null);
-        await _statusStore.SaveAsync(status, ct).ConfigureAwait(false);
-        if (!isScheduled)
-            await _outbox.AddAsync(request, ct).ConfigureAwait(false);
+        var now = DateTimeOffset.UtcNow;
+        // Rich domain model owns delivery lifecycle invariants (Queued vs Scheduled).
+        var domain = NotificationHub.Domain.Delivery.Notification.Accept(
+            NotificationHub.Domain.Delivery.ValueObjects.NotificationId.From(request.Id),
+            NotificationHub.Domain.Delivery.ValueObjects.RecipientAddress.Create(request.Recipient),
+            NotificationHub.Domain.Delivery.ValueObjects.ChannelCode.Create(channel),
+            NotificationHub.Domain.Delivery.ValueObjects.TemplateKey.Create(request.TemplateKey),
+            (NotificationHub.Domain.Delivery.NotificationPriority)(int)request.Priority,
+            NotificationHub.Domain.Delivery.ValueObjects.IdempotencyKey.From(request.IdempotencyKey),
+            NotificationHub.Domain.Delivery.ValueObjects.CollapseKey.From(request.CollapseKey),
+            NotificationHub.Domain.Common.TenantId.From(request.TenantId),
+            request.Locale,
+            request.Category,
+            request.CorrelationId,
+            request.PreferredProvider,
+            request.AllowFallback,
+            request.ScheduledAt,
+            request.Data,
+            now);
+
+        var status = MakeStatus(request, channel, (DeliveryStatus)(int)domain.Status, null);
+        status = status with { CreatedAt = domain.CreatedAtUtc, UpdatedAt = domain.CreatedAtUtc };
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(
+            state: 0,
+            operation: async (dbCtx, _, token) =>
+            {
+                await using var tx = await dbCtx.Database.BeginTransactionAsync(token).ConfigureAwait(false);
+                await _statusStore.SaveAsync(status, token).ConfigureAwait(false);
+                if (domain.Status == NotificationHub.Domain.Delivery.DeliveryStatus.Queued)
+                    await _outbox.AddAsync(request, token).ConfigureAwait(false);
+                await dbCtx.SaveChangesAsync(token).ConfigureAwait(false);
+                await tx.CommitAsync(token).ConfigureAwait(false);
+                return true;
+            },
+            verifySucceeded: null,
+            cancellationToken: ct).ConfigureAwait(false);
 
         await FireAudit("accepted", request.Id, request.TenantId, channel);
         return (true, status);
@@ -132,7 +169,9 @@ public sealed class NotificationOrchestrator
         CollapseKey = request.CollapseKey,
         CorrelationId = request.CorrelationId,
         Category = request.Category,
-        ErrorMessage = error
+        ErrorMessage = error,
+        CreatedAt = DateTimeOffset.UtcNow,
+        UpdatedAt = DateTimeOffset.UtcNow
     };
 
     private Task FireAudit(string action, Guid notificationId, string? tenantId, string? details)
