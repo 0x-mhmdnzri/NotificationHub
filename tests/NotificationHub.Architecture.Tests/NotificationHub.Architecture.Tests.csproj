@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NotificationHub.Domain\NotificationHub.Domain.csproj" />
+    <ProjectReference Include="..\..\src\NotificationHub.Application\NotificationHub.Application.csproj" />
+    <ProjectReference Include="..\..\src\NotificationHub.Infrastructure\NotificationHub.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\NotificationHub.Core\NotificationHub.Core.csproj" />
+  </ItemGroup>
+</Project>

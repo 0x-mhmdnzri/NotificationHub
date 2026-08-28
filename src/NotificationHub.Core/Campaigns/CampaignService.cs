@@ -1,3 +1,7 @@
+using NotificationHub.Domain.Broadcast.ValueObjects;
+using NotificationHub.Domain.Delivery.ValueObjects;
+using NotificationHub.Domain.Common;
+using DomainBroadcast = NotificationHub.Domain.Broadcast;
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.DependencyInjection;
@@ -115,42 +119,43 @@ public sealed class CampaignService(
 
     public async Task StartAsync(Guid campaignId, string? tenantId, CancellationToken ct = default)
     {
-        var campaign = await GetEntityAsync(campaignId, tenantId, ct)
+        var entity = await GetEntityAsync(campaignId, tenantId, ct)
             ?? throw new InvalidOperationException("Campaign not found.");
 
-        var from = (CampaignStatus)campaign.Status;
-        if (BroadcastStateMachine.IsTerminal(from) && from != CampaignStatus.Failed)
-            throw new InvalidOperationException("Campaign cannot be started from current state.");
+        var domain = BroadcastCampaignMapper.ToDomain(entity);
+        var now = DateTimeOffset.UtcNow;
 
-        if (campaign.ScheduledAtUtc is { } sched && sched > DateTimeOffset.UtcNow)
+        if (entity.ScheduledAtUtc is { } sched && sched > now)
         {
-            campaign.Status = (int)BroadcastStateMachine.Transition(from, CampaignStatus.Scheduled, campaignId);
+            if (domain.Status != DomainBroadcast.CampaignStatus.Scheduled)
+                domain.Schedule(sched, now);
+            BroadcastCampaignMapper.Apply(domain, entity);
             await db.SaveChangesAsync(ct);
             logger.LogInformation("Campaign {CampaignId} scheduled for {ScheduledAt}", campaignId, sched);
             return;
         }
 
-        campaign.Status = (int)BroadcastStateMachine.Transition(from, CampaignStatus.Preparing, campaignId);
-        campaign.Status = (int)BroadcastStateMachine.Transition(CampaignStatus.Preparing, CampaignStatus.Processing, campaignId);
-        campaign.StartedAtUtc = DateTimeOffset.UtcNow;
+        domain.Start(now);
+        BroadcastCampaignMapper.Apply(domain, entity);
         await db.SaveChangesAsync(ct);
-        logger.LogInformation("Campaign {CampaignId} started processing", campaignId);
+        logger.LogInformation("Campaign {CampaignId} started processing via domain aggregate", campaignId);
     }
 
     public async Task CancelAsync(Guid campaignId, string? tenantId, CancellationToken ct = default)
     {
-        var campaign = await GetEntityAsync(campaignId, tenantId, ct)
+        var entity = await GetEntityAsync(campaignId, tenantId, ct)
             ?? throw new InvalidOperationException("Campaign not found.");
 
-        var from = (CampaignStatus)campaign.Status;
-        if (BroadcastStateMachine.IsTerminal(from))
+        var domain = BroadcastCampaignMapper.ToDomain(entity);
+        if (DomainBroadcast.CampaignLifecycle.IsTerminal(domain.Status))
         {
-            logger.LogWarning("Campaign {CampaignId} already terminal ({Status}); cancel ignored", campaignId, from);
+            logger.LogWarning("Campaign {CampaignId} already terminal ({Status}); cancel ignored", campaignId, domain.Status);
             return;
         }
 
-        campaign.Status = (int)BroadcastStateMachine.Transition(from, CampaignStatus.Cancelled, campaignId);
-        campaign.CompletedAtUtc = DateTimeOffset.UtcNow;
+        var from = domain.Status;
+        domain.Cancel(DateTimeOffset.UtcNow);
+        BroadcastCampaignMapper.Apply(domain, entity);
 
         await db.BroadcastRecipients
             .Where(x => x.CampaignId == campaignId &&
@@ -161,7 +166,7 @@ public sealed class CampaignService(
                 .SetProperty(x => x.ProcessedAtUtc, DateTimeOffset.UtcNow), ct);
 
         await db.SaveChangesAsync(ct);
-        logger.LogInformation("Campaign {CampaignId} cancelled from {FromStatus}", campaignId, from);
+        logger.LogInformation("Campaign {CampaignId} cancelled from {FromStatus} via domain aggregate", campaignId, from);
     }
 
     public async Task<BroadcastCampaign?> GetAsync(Guid campaignId, string? tenantId, CancellationToken ct = default)
@@ -212,10 +217,9 @@ public sealed class CampaignService(
             .ToListAsync(ct);
         foreach (var c in due)
         {
-            var from = (CampaignStatus)c.Status;
-            c.Status = (int)BroadcastStateMachine.Transition(from, CampaignStatus.Preparing, c.Id);
-            c.Status = (int)BroadcastStateMachine.Transition(CampaignStatus.Preparing, CampaignStatus.Processing, c.Id);
-            c.StartedAtUtc = DateTimeOffset.UtcNow;
+            var domain = BroadcastCampaignMapper.ToDomain(c);
+            domain.Start(DateTimeOffset.UtcNow);
+            BroadcastCampaignMapper.Apply(domain, c);
         }
         if (due.Count > 0)
             await db.SaveChangesAsync(ct);
@@ -255,9 +259,10 @@ public sealed class CampaignService(
                     var failed = await db.BroadcastRecipients.CountAsync(x => x.CampaignId == cid && (x.Status == (int)BroadcastRecipientStatus.Failed || x.Status == (int)BroadcastRecipientStatus.DeadLettered), ct);
                     var cancelled = await db.BroadcastRecipients.CountAsync(x => x.CampaignId == cid && x.Status == (int)BroadcastRecipientStatus.Cancelled, ct);
                     var skipped = await db.BroadcastRecipients.CountAsync(x => x.CampaignId == cid && x.Status == (int)BroadcastRecipientStatus.Skipped, ct);
-                    var next = BroadcastStateMachine.ResolveCompletion(total, sent, failed, cancelled, skipped);
-                    camp.Status = (int)BroadcastStateMachine.Transition((CampaignStatus)camp.Status, next, cid);
-                    camp.CompletedAtUtc = DateTimeOffset.UtcNow;
+                    var domain = BroadcastCampaignMapper.ToDomain(camp);
+                    domain.CompleteWithCounts(total, sent, failed, cancelled, skipped, DateTimeOffset.UtcNow);
+                    BroadcastCampaignMapper.Apply(domain, camp);
+                    var next = domain.Status;
                     logger.LogInformation(
                         "Campaign {CampaignId} completed status={Status} total={Total} sent={Sent} failed={Failed}",
                         cid, next, total, sent, failed);

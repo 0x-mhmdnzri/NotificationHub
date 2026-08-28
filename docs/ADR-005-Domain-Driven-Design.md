@@ -45,3 +45,11 @@ Domain raises `IDomainEvent`. Application/Infrastructure maps to integration eve
 3. Replace CampaignService mutations with BroadcastCampaign aggregate
 4. Preferences / Templates aggregates
 5. Architecture tests enforcing Domain ↛ Infrastructure
+
+## Increment 2 (completed)
+
+- EF repositories: Notification, BroadcastCampaign, UserPreference, NotificationTemplate
+- CampaignService Create/Start/Cancel/Complete route through `BroadcastCampaign` aggregate + `BroadcastCampaignMapper`
+- `IDomainEventDispatcher` → `OutboxDomainEventDispatcher` (durable integration events)
+- Architecture tests: Domain ↛ Infrastructure / EF / RabbitMQ
+- Aggregates: UserPreference, NotificationTemplate

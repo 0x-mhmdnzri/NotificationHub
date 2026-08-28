@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NotificationHub.Abstractions\NotificationHub.Abstractions.csproj" />
+    <ProjectReference Include="..\NotificationHub.Domain\NotificationHub.Domain.csproj" />
   </ItemGroup>
 
   <ItemGroup>

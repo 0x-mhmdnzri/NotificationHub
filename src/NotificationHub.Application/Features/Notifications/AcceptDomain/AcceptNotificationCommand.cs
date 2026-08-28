@@ -1,6 +1,7 @@
 using MediatR;
 using NotificationHub.Domain.Delivery;
 using NotificationHub.Domain.Delivery.ValueObjects;
+using NotificationHub.Domain.Events;
 
 namespace NotificationHub.Application.Features.Notifications.AcceptDomain;
 
@@ -28,7 +29,8 @@ public sealed record AcceptNotificationCommand(
 public sealed record AcceptNotificationResult(Guid NotificationId, DeliveryStatus Status);
 
 public sealed class AcceptNotificationHandler(
-    INotificationRepository repository) : IRequestHandler<AcceptNotificationCommand, AcceptNotificationResult>
+    INotificationRepository repository,
+    IDomainEventDispatcher eventDispatcher) : IRequestHandler<AcceptNotificationCommand, AcceptNotificationResult>
 {
     public async Task<AcceptNotificationResult> Handle(AcceptNotificationCommand cmd, CancellationToken ct)
     {
@@ -55,7 +57,8 @@ public sealed class AcceptNotificationHandler(
             DateTimeOffset.UtcNow);
 
         await repository.AddAsync(notification, ct);
-        // Unit of Work / outbox dispatch of DomainEvents is infrastructure responsibility
+        await eventDispatcher.DispatchAsync(notification.DomainEvents, ct);
+        notification.ClearDomainEvents();
         return new AcceptNotificationResult(notification.Id.Value, notification.Status);
     }
 }

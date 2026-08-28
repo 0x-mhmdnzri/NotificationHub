@@ -249,6 +249,8 @@ Core business rules live in `src/NotificationHub.Domain` (pure .NET, no EF/Rabbi
 
 See [ADR 0005](docs/ADR-005-Domain-Driven-Design.md).
 
+EF adapters + domain event outbox + architecture tests enforce Domain independence.
+
 Domain unit tests (no database):
 
 ```bash
