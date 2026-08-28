@@ -1,3 +1,4 @@
+using NotificationHub.Host.Hangfire;
 using NotificationHub.Infrastructure.HangfireJobs;
 using Hangfire.PostgreSql;
 using Hangfire;
@@ -193,7 +194,7 @@ if (hangfireEnabled && !string.IsNullOrWhiteSpace(hangfireCs))
         .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(hangfireCs)));
     builder.Services.AddHangfireServer(options =>
     {
-        options.Queues = new[] { "outbox", "default" };
+        options.Queues = new[] { MessagingQueues.Critical, MessagingQueues.Notifications, MessagingQueues.Outbox, MessagingQueues.Default };
         options.WorkerCount = Math.Max(2, Environment.ProcessorCount);
     });
     builder.Services.AddScoped<IOutboxDispatchJob, OutboxDispatchJob>();
@@ -340,8 +341,9 @@ if (hangfireEnabled && !string.IsNullOrWhiteSpace(hangfireCs))
 {
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
-        // Protect in production via auth filter; open in dev for ops.
-        Authorization = Array.Empty<Hangfire.Dashboard.IDashboardAuthorizationFilter>()
+        // API key auth (same keys as REST). Header X-Api-Key or ?api_key= — requires Admin by default.
+        Authorization = [new HangfireApiKeyAuthorizationFilter()],
+        DashboardTitle = "NotificationHub Jobs"
     });
     var reconMinutes = app.Configuration.GetValue("HangfireMessaging:ReconciliationIntervalMinutes", 2);
     RecurringJob.AddOrUpdate<OutboxReconciliationJob>(

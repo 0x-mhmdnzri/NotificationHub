@@ -173,7 +173,7 @@ public sealed class NotificationOrchestrator
 
         // After COMMIT only — Hangfire durable dispatch by outbox id (not full payload).
         if (outboxId is { } oid)
-            _outboxScheduler.ScheduleDispatch(oid);
+            _outboxScheduler.ScheduleDispatch(oid, MessagingQueues.ForPriority(request.Priority));
 
         // Domain → Integration event outbox (separate payloads, kind=integration).
         if (_domainEvents is not null)

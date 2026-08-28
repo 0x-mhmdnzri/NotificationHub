@@ -61,6 +61,12 @@ public sealed class RabbitMqOptions
     public int TenantPartitionCount { get; set; } = 8;
 
     /// <summary>
+    /// When true, Critical priority messages route to dedicated queues (*.critical)
+    /// so they are not starved by bulk notification traffic.
+    /// </summary>
+    public bool PriorityRouting { get; set; } = true;
+
+    /// <summary>
     /// Bounded hand-off buffer between consumer callback and worker pool. Default = PrefetchCount * 2.
     /// Prevents moving the queue into process memory (anti-pattern).
     /// </summary>
@@ -124,21 +130,28 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         return channel.Trim().ToLowerInvariant();
     }
 
-    public static string WorkQueueName(RabbitMqOptions o, string channel, int? tenantPartition = null)
+    public static string WorkQueueName(RabbitMqOptions o, string channel, int? tenantPartition = null, bool critical = false)
     {
         var baseName = o.ChannelRouting ? $"{o.QueueName}.{NormalizeChannel(channel)}" : o.QueueName;
+        if (critical && o.PriorityRouting)
+            baseName = $"{baseName}.critical";
         if (o.PartitionByTenant && tenantPartition is int p)
             return $"{baseName}.t{p}";
         return baseName;
     }
 
-    public static string WorkRoutingKey(RabbitMqOptions o, string channel, int? tenantPartition = null)
+    public static string WorkRoutingKey(RabbitMqOptions o, string channel, int? tenantPartition = null, bool critical = false)
     {
         var baseKey = o.ChannelRouting ? $"{o.RoutingKey}.{NormalizeChannel(channel)}" : o.RoutingKey;
+        if (critical && o.PriorityRouting)
+            baseKey = $"{baseKey}.critical";
         if (o.PartitionByTenant && tenantPartition is int p)
             return $"{baseKey}.t{p}";
         return baseKey;
     }
+
+    public static bool IsCriticalPriority(NotificationRequest request)
+        => request.Priority == NotificationPriority.Critical;
 
     public static int TenantPartitionIndex(RabbitMqOptions o, string? tenantId)
     {
@@ -166,17 +179,28 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
             ? Enumerable.Range(0, Math.Max(1, _options.TenantPartitionCount)).Cast<int?>().ToArray()
             : new int?[] { null };
 
+        var criticalFlags = _options.PriorityRouting ? new[] { false, true } : new[] { false };
+
         foreach (var ch in channels)
         {
+          foreach (var critical in criticalFlags)
+          {
             foreach (var part in partitions)
             {
                 var channelKey = string.IsNullOrEmpty(ch) ? null : NormalizeChannel(ch);
-                var qName = channelKey is null
-                    ? (part is null ? _options.QueueName : $"{_options.QueueName}.t{part}")
-                    : WorkQueueName(_options, channelKey, part);
-                var rk = channelKey is null
-                    ? (part is null ? _options.RoutingKey : $"{_options.RoutingKey}.t{part}")
-                    : WorkRoutingKey(_options, channelKey, part);
+                string qName, rk;
+                if (channelKey is null)
+                {
+                    qName = _options.QueueName;
+                    rk = _options.RoutingKey;
+                    if (critical) { qName += ".critical"; rk += ".critical"; }
+                    if (part is int tp) { qName += $".t{tp}"; rk += $".t{tp}"; }
+                }
+                else
+                {
+                    qName = WorkQueueName(_options, channelKey, part, critical);
+                    rk = WorkRoutingKey(_options, channelKey, part, critical);
+                }
 
                 var workArgs = new Dictionary<string, object?>
                 {
@@ -202,6 +226,7 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
                     _channel.QueueBindAsync(rq, _options.RetryExchangeName, rrk).GetAwaiter().GetResult();
                 }
             }
+          }
         }
 
         _channel.BasicQosAsync(0, _options.PrefetchCount, false).GetAwaiter().GetResult();
@@ -234,9 +259,14 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         int? part = _options.PartitionByTenant
             ? TenantPartitionIndex(_options, request.TenantId)
             : null;
-        var rk = WorkRoutingKey(_options, channel, part);
-        if (!_options.ChannelRouting && part is int tp)
-            rk = $"{_options.RoutingKey}.t{tp}";
+        var critical = _options.PriorityRouting && IsCriticalPriority(request);
+        var rk = WorkRoutingKey(_options, channel, part, critical);
+        if (!_options.ChannelRouting)
+        {
+            rk = _options.RoutingKey;
+            if (critical) rk += ".critical";
+            if (part is int tp) rk += $".t{tp}";
+        }
         await PublishWithConfirmAsync(_options.ExchangeName, rk, props, body, ct);
         _logger.LogDebug("Published+confirmed notification {Id} channel={Channel} redelivery={Count}",
             request.Id, channel, redeliveryCount);
@@ -304,17 +334,28 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         }
     }
 
-    private string ConsumeQueueName()
+    private IReadOnlyList<string> ResolveConsumeQueues()
     {
+        var queues = new List<string>();
         if (!string.IsNullOrWhiteSpace(_options.ConsumeChannel))
-            return WorkQueueName(_options, _options.ConsumeChannel);
-        return _options.QueueName;
+        {
+            queues.Add(WorkQueueName(_options, _options.ConsumeChannel, critical: false));
+            if (_options.PriorityRouting)
+                queues.Add(WorkQueueName(_options, _options.ConsumeChannel, critical: true));
+        }
+        else
+        {
+            queues.Add(_options.QueueName);
+            if (_options.PriorityRouting)
+                queues.Add($"{_options.QueueName}.critical");
+        }
+        return queues;
     }
 
     public async IAsyncEnumerable<(NotificationRequest Request, ulong DeliveryTag, int RedeliveryCount)> DequeueWithAckAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
-        var queueName = ConsumeQueueName();
+        var queueNames = ResolveConsumeQueues();
         var consumer = new AsyncEventingBasicConsumer(_channel);
         // Bounded buffer: backpressure when workers are saturated (does not drain RabbitMQ into RAM).
         var bufferCap = _options.ConsumerBufferCapacity > 0
@@ -361,10 +402,13 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
             }
         };
 
-        await _channel.BasicConsumeAsync(queueName, autoAck: false, consumer, ct);
-        _logger.LogInformation(
-            "Consuming RabbitMQ queue {Queue} prefetch={Prefetch} buffer={Buffer} maxConcurrency={Concurrency}",
-            queueName, _options.PrefetchCount, bufferCap, _options.WorkerMaxConcurrency);
+        foreach (var queueName in queueNames)
+        {
+            await _channel.BasicConsumeAsync(queueName, autoAck: false, consumer, ct);
+            _logger.LogInformation(
+                "Consuming RabbitMQ queue {Queue} prefetch={Prefetch} buffer={Buffer} maxConcurrency={Concurrency}",
+                queueName, _options.PrefetchCount, bufferCap, _options.WorkerMaxConcurrency);
+        }
 
         await foreach (var item in channel.Reader.ReadAllAsync(ct))
             yield return item;

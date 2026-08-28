@@ -6,6 +6,6 @@ namespace NotificationHub.Core.Messaging;
 /// </summary>
 public interface IOutboxDispatchScheduler
 {
-    void ScheduleDispatch(Guid outboxMessageId);
-    void ScheduleDispatchBatch(IReadOnlyList<Guid> outboxMessageIds);
+    void ScheduleDispatch(Guid outboxMessageId, string? queue = null);
+    void ScheduleDispatchBatch(IReadOnlyList<Guid> outboxMessageIds, string? queue = null);
 }

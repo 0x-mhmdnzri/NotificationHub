@@ -1,22 +1,26 @@
 using Hangfire;
+using Hangfire.States;
 using NotificationHub.Core.Messaging;
 
 namespace NotificationHub.Infrastructure.HangfireJobs;
 
 /// <summary>
-/// Enqueues Hangfire jobs that reference OutboxMessage.Id only (skill: prefer ID over huge DTO).
+/// Enqueues Hangfire jobs by OutboxMessage.Id onto isolated queues (critical / notifications / outbox).
 /// </summary>
 public sealed class HangfireOutboxDispatchScheduler : IOutboxDispatchScheduler
 {
-    public void ScheduleDispatch(Guid outboxMessageId)
+    public void ScheduleDispatch(Guid outboxMessageId, string? queue = null)
     {
-        BackgroundJob.Enqueue<IOutboxDispatchJob>(
-            j => j.DispatchAsync(outboxMessageId, CancellationToken.None));
+        var q = string.IsNullOrWhiteSpace(queue) ? MessagingQueues.Notifications : queue.Trim().ToLowerInvariant();
+        var client = new BackgroundJobClient();
+        client.Create<IOutboxDispatchJob>(
+            j => j.DispatchAsync(outboxMessageId, CancellationToken.None),
+            new EnqueuedState(q));
     }
 
-    public void ScheduleDispatchBatch(IReadOnlyList<Guid> outboxMessageIds)
+    public void ScheduleDispatchBatch(IReadOnlyList<Guid> outboxMessageIds, string? queue = null)
     {
         foreach (var id in outboxMessageIds)
-            ScheduleDispatch(id);
+            ScheduleDispatch(id, queue);
     }
 }

@@ -17,6 +17,10 @@ public sealed class HangfireMessagingOptions
     /// <summary>Only re-dispatch pending rows older than this (seconds).</summary>
     public int StuckPendingSeconds { get; set; } = 30;
     public int ReconciliationBatchSize { get; set; } = 100;
+    /// <summary>Require Admin role on /hangfire (in addition to valid API key).</summary>
+    public bool DashboardRequireAdmin { get; set; } = true;
+    /// <summary>Dev-only: allow dashboard without API key when true.</summary>
+    public bool DashboardAllowAnonymousInDevelopment { get; set; } = false;
 }
 
 /// <summary>
@@ -47,6 +51,6 @@ public sealed class OutboxReconciliationJob(
             return;
 
         logger.LogInformation("Outbox reconciliation enqueueing {Count} stuck messages", stuck.Count);
-        scheduler.ScheduleDispatchBatch(stuck);
+        scheduler.ScheduleDispatchBatch(stuck, MessagingQueues.Outbox);
     }
 }

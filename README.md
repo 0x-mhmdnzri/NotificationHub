@@ -232,7 +232,12 @@ Accept TX (status + outbox) → COMMIT → Hangfire job(outboxId) → RabbitMQ �
 - RabbitMQ = delivery backbone
 - At-least-once + inbox idempotency
 - Recurring reconciliation for stuck outbox rows
-- Dashboard: `/hangfire`
+- Dashboard: `/hangfire` (API key required, Admin by default — header `X-Api-Key`)
+
+### Queue isolation
+- Hangfire: `critical` > `notifications` > `outbox` > `default`
+- RabbitMQ: `PriorityRouting` → `*.critical` queues for Critical priority
+
 - See [ADR-009](docs/ADR-009-Hangfire-Messaging-Reliability.md)
 
 ## Latency & concurrency
