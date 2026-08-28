@@ -186,6 +186,7 @@ var runScheduled = builder.Configuration.GetValue("Workers:RunScheduled", true);
 var runWorkflow = builder.Configuration.GetValue("Workers:RunWorkflow", true);
 
 if (runOutbox)
+    builder.Services.Configure<OutboxRelayOptions>(builder.Configuration.GetSection(OutboxRelayOptions.SectionName));
     builder.Services.AddHostedService<OutboxRelayWorker>();
 builder.Services.Configure<MessagingHealthOptions>(builder.Configuration.GetSection(MessagingHealthOptions.SectionName));
 builder.Services.AddScoped<IMessagingHealthService, MessagingHealthService>();

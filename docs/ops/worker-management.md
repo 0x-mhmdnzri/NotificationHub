@@ -44,3 +44,23 @@ In-flight tasks drain before exit. Unfinished work is redelivered by RabbitMQ if
 
 ## Horizontal scaling
 Run multiple API/worker Host replicas on the same queue. Autoscale on **queue age** and processing rate, not queue depth alone.
+
+
+## Outbox relay (enqueue latency)
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `OutboxRelay:IdlePollIntervalMs` | 250 | Empty queue back-off |
+| `OutboxRelay:BusyPollIntervalMs` | 0 | Keep draining under load |
+| `OutboxRelay:BatchSize` | 100 | SKIP LOCKED claim size |
+| `OutboxRelay:PublishConcurrency` | 16 | Parallel prepare; publish serialized on channel |
+
+## Campaign accept concurrency
+
+| Key | Default |
+|-----|---------|
+| `Campaigns:AcceptConcurrency` | 16 |
+| `Campaigns:BatchSize` | 250 |
+| `Campaigns:BusyPollIntervalMs` | 0 |
+
+Each parallel Accept uses its own DI scope (EF DbContext is not thread-safe).

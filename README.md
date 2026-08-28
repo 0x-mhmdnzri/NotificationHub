@@ -213,6 +213,19 @@ Ideas, bug reports, and contributions of any size are appreciated.
 
 
 
+
+## Latency & concurrency
+
+Hot paths use **bounded parallel work** (not unbounded fan-out):
+
+| Stage | Knobs |
+|-------|--------|
+| Outbox → RabbitMQ | `OutboxRelay:BatchSize`, `IdlePollIntervalMs`, `BusyPollIntervalMs`, `PublishConcurrency` |
+| Delivery workers | `RabbitMQ:PrefetchCount`, `WorkerMaxConcurrency` |
+| Campaign Accept | `Campaigns:BatchSize`, `AcceptConcurrency`, adaptive poll |
+
+See [ADR-007](docs/ADR-007-Latency-and-Concurrency.md).
+
 ## Worker management (RabbitMQ)
 
 Delivery workers use **competing consumers + fair dispatch (prefetch) + application concurrency**:

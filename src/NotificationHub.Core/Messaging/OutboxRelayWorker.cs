@@ -3,49 +3,88 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Queue;
 
 namespace NotificationHub.Core.Messaging;
 
-/// <summary>Polls outbox and publishes to RabbitMQ (transactional outbox relay).</summary>
+public sealed class OutboxRelayOptions
+{
+    public const string SectionName = "OutboxRelay";
+    /// <summary>Max rows claimed per tick (SKIP LOCKED).</summary>
+    public int BatchSize { get; set; } = 100;
+    /// <summary>Delay when the last claim was empty (back-off).</summary>
+    public int IdlePollIntervalMs { get; set; } = 250;
+    /// <summary>Delay when work was found (keep draining under load).</summary>
+    public int BusyPollIntervalMs { get; set; } = 0;
+    /// <summary>Max concurrent prepare+publish tasks. Channel publish is serialized internally.</summary>
+    public int PublishConcurrency { get; set; } = 16;
+}
+
+/// <summary>
+/// Polls transactional outbox and publishes to RabbitMQ with adaptive polling + parallel prepare.
+/// Latency path: Accept → Outbox row → this worker → RabbitMQ → delivery worker.
+/// Fixed 2s sleep was the dominant enqueue→queue latency; adaptive busy poll removes it under load.
+/// </summary>
 public sealed class OutboxRelayWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IOptions<OutboxRelayOptions> _options;
     private readonly ILogger<OutboxRelayWorker> _logger;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
-    public OutboxRelayWorker(IServiceScopeFactory scopeFactory, ILogger<OutboxRelayWorker> logger)
+    public OutboxRelayWorker(
+        IServiceScopeFactory scopeFactory,
+        IOptions<OutboxRelayOptions> options,
+        ILogger<OutboxRelayWorker> logger)
     {
         _scopeFactory = scopeFactory;
+        _options = options;
         _logger = logger;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Outbox relay started");
+        var opt = _options.Value;
+        _logger.LogInformation(
+            "Outbox relay started batch={Batch} idlePoll={Idle}ms busyPoll={Busy}ms publishConcurrency={Pub}",
+            opt.BatchSize, opt.IdlePollIntervalMs, opt.BusyPollIntervalMs, opt.PublishConcurrency);
+
         while (!stoppingToken.IsCancellationRequested)
         {
+            var hadWork = false;
             try
             {
-                await PublishBatchAsync(stoppingToken);
+                hadWork = await PublishBatchAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Outbox relay tick failed");
+                hadWork = false;
             }
-            await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+
+            var delay = hadWork
+                ? Math.Max(0, opt.BusyPollIntervalMs)
+                : Math.Max(50, opt.IdlePollIntervalMs);
+            if (delay > 0)
+                await Task.Delay(TimeSpan.FromMilliseconds(delay), stoppingToken);
         }
     }
 
-    private async Task PublishBatchAsync(CancellationToken ct)
+    /// <returns>true if at least one message was claimed.</returns>
+    private async Task<bool> PublishBatchAsync(CancellationToken ct)
     {
+        var opt = _options.Value;
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
         var queue = scope.ServiceProvider.GetService<RabbitMqNotificationQueue>();
 
-        // NpgsqlRetryingExecutionStrategy requires user transactions to run inside CreateExecutionStrategy.
         var strategy = db.Database.CreateExecutionStrategy();
         List<OutboxMessageEntity> claimed = [];
 
@@ -53,6 +92,7 @@ public sealed class OutboxRelayWorker : BackgroundService
         {
             await using var tx = await db.Database.BeginTransactionAsync(ct);
 
+            var limit = Math.Clamp(opt.BatchSize, 1, 2000);
             claimed = await db.OutboxMessages
                 .FromSqlRaw("""
                     SELECT * FROM outbox_messages
@@ -60,8 +100,8 @@ public sealed class OutboxRelayWorker : BackgroundService
                       AND ("NextAttemptAt" IS NULL OR "NextAttemptAt" <= NOW())
                     ORDER BY "CreatedAt"
                     FOR UPDATE SKIP LOCKED
-                    LIMIT 50
-                    """)
+                    LIMIT {0}
+                    """, limit)
                 .ToListAsync(ct);
 
             if (claimed.Count == 0)
@@ -78,11 +118,10 @@ public sealed class OutboxRelayWorker : BackgroundService
         });
 
         if (claimed.Count == 0)
-            return;
+            return false;
 
         if (queue is null)
         {
-            // In-memory mode: drain into in-memory queue
             var inMemory = scope.ServiceProvider.GetRequiredService<INotificationQueue>();
             foreach (var msg in claimed)
             {
@@ -109,30 +148,36 @@ public sealed class OutboxRelayWorker : BackgroundService
                 }
             }
             await db.SaveChangesAsync(ct);
-            return;
+            return true;
         }
 
-        foreach (var msg in claimed)
-        {
-            try
+        // Parallel prepare + publish. RabbitMQ publish is serialized via _publishGate on the queue.
+        var concurrency = Math.Max(1, opt.PublishConcurrency);
+        await Parallel.ForEachAsync(
+            claimed,
+            new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = ct },
+            async (msg, token) =>
             {
-                var request = JsonSerializer.Deserialize<NotificationRequest>(msg.PayloadJson, JsonOptions)
-                              ?? throw new InvalidOperationException("null payload");
-                await queue.PublishAsync(request, redeliveryCount: 0, ct);
-                msg.Status = "published";
-                msg.PublishedAt = DateTimeOffset.UtcNow;
-                msg.Attempts++;
-            }
-            catch (Exception ex)
-            {
-                msg.Attempts++;
-                msg.LastError = ex.Message;
-                msg.NextAttemptAt = DateTimeOffset.UtcNow.AddSeconds(Math.Min(60, Math.Pow(2, msg.Attempts)));
-                msg.Status = msg.Attempts >= 10 ? "failed" : "pending";
-                _logger.LogWarning(ex, "Outbox publish failed for {NotificationId}", msg.NotificationId);
-            }
-        }
+                try
+                {
+                    var request = JsonSerializer.Deserialize<NotificationRequest>(msg.PayloadJson, JsonOptions)
+                                  ?? throw new InvalidOperationException("null payload");
+                    await queue.PublishAsync(request, redeliveryCount: 0, token);
+                    msg.Status = "published";
+                    msg.PublishedAt = DateTimeOffset.UtcNow;
+                    msg.Attempts++;
+                }
+                catch (Exception ex)
+                {
+                    msg.Attempts++;
+                    msg.LastError = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
+                    msg.NextAttemptAt = DateTimeOffset.UtcNow.AddSeconds(Math.Min(60, Math.Pow(2, msg.Attempts)));
+                    msg.Status = msg.Attempts >= 10 ? "failed" : "pending";
+                    _logger.LogWarning(ex, "Outbox publish failed for {NotificationId}", msg.NotificationId);
+                }
+            });
 
         await db.SaveChangesAsync(ct);
+        return true;
     }
 }

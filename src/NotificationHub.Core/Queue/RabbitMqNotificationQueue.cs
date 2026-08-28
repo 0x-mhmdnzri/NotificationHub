@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
@@ -43,13 +44,13 @@ public sealed class RabbitMqOptions
     public string? ConsumeChannel { get; set; }
 
     public int[] RetryDelaySeconds { get; set; } = [5, 15, 30, 60, 120];
-    public ushort PrefetchCount { get; set; } = 10;
+    public ushort PrefetchCount { get; set; } = 32;
 
     /// <summary>
     /// Application-level concurrent processors (SemaphoreSlim). Distinct from PrefetchCount (RabbitMQ QoS).
     /// I/O-bound notification delivery: default 8. Keep ≤ PrefetchCount so in-flight work stays in RabbitMQ when saturated.
     /// </summary>
-    public int WorkerMaxConcurrency { get; set; } = 8;
+    public int WorkerMaxConcurrency { get; set; } = 16;
 
     /// <summary>
     /// Bounded hand-off buffer between consumer callback and worker pool. Default = PrefetchCount * 2.
@@ -70,6 +71,7 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
     private readonly ILogger<RabbitMqNotificationQueue> _logger;
     private readonly IConnection _connection;
     private readonly IChannel _channel;
+    private readonly SemaphoreSlim _publishGate = new(1, 1);
     private readonly int[] _retryDelays;
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -230,23 +232,32 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
 
     private async Task PublishWithConfirmAsync(string exchange, string routingKey, BasicProperties props, byte[] body, CancellationToken ct)
     {
-        using var confirmCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        if (_options.PublisherConfirms)
-            confirmCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _options.PublisherConfirmTimeoutSeconds)));
-
+        // IChannel is not multi-thread safe — serialize concurrent publishers (outbox parallel path).
+        await _publishGate.WaitAsync(ct);
         try
         {
-            await _channel.BasicPublishAsync(
-                exchange: exchange,
-                routingKey: routingKey,
-                mandatory: true,
-                basicProperties: props,
-                body: body,
-                cancellationToken: confirmCts.Token);
+            using var confirmCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            if (_options.PublisherConfirms)
+                confirmCts.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, _options.PublisherConfirmTimeoutSeconds)));
+
+            try
+            {
+                await _channel.BasicPublishAsync(
+                    exchange: exchange,
+                    routingKey: routingKey,
+                    mandatory: true,
+                    basicProperties: props,
+                    body: body,
+                    cancellationToken: confirmCts.Token);
+            }
+            catch (OperationCanceledException) when (_options.PublisherConfirms && !ct.IsCancellationRequested)
+            {
+                throw new TimeoutException($"Publisher confirm timeout after {_options.PublisherConfirmTimeoutSeconds}s");
+            }
         }
-        catch (OperationCanceledException) when (_options.PublisherConfirms && !ct.IsCancellationRequested)
+        finally
         {
-            throw new TimeoutException($"Publisher confirm timeout after {_options.PublisherConfirmTimeoutSeconds}s");
+            _publishGate.Release();
         }
     }
 

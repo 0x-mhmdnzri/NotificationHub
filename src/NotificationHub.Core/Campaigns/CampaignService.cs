@@ -1,3 +1,6 @@
+using System.Collections.Concurrent;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.DependencyInjection;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -12,7 +15,8 @@ namespace NotificationHub.Core.Campaigns;
 
 public sealed class CampaignService(
     NotificationDbContext db,
-    NotificationOrchestrator orchestrator,
+    IServiceScopeFactory scopeFactory,
+    IOptions<CampaignDispatchOptions> dispatchOptions,
     ILogger<CampaignService> logger) : ICampaignService
 {
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
@@ -271,74 +275,93 @@ public sealed class CampaignService(
             .Where(x => processingIds.Contains(x.Id))
             .ToDictionaryAsync(x => x.Id, ct);
 
+        var concurrency = Math.Max(1, dispatchOptions.Value.AcceptConcurrency);
+        var results = new ConcurrentDictionary<Guid, (int Status, Guid? NotificationId, string? ErrorCode, string? ErrorMessage, int Attempts)>();
+
+        await Parallel.ForEachAsync(
+            batch,
+            new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = ct },
+            async (row, token) =>
+            {
+                if (!campaigns.TryGetValue(row.CampaignId, out var camp))
+                    return;
+
+                if (camp.Status == (int)CampaignStatus.Cancelled)
+                {
+                    results[row.Id] = ((int)BroadcastRecipientStatus.Cancelled, null, null, null, row.Attempts);
+                    return;
+                }
+
+                Dictionary<string, object?> data = new();
+                if (camp.DataJson is not null)
+                {
+                    var raw = JsonSerializer.Deserialize<Dictionary<string, string>>(camp.DataJson);
+                    if (raw is not null)
+                        foreach (var kv in raw)
+                            data[kv.Key] = kv.Value;
+                }
+
+                var nreq = new NotificationRequest
+                {
+                    Recipient = row.Address,
+                    Channel = row.Channel,
+                    TemplateKey = camp.TemplateKey,
+                    Data = data,
+                    TenantId = camp.TenantId,
+                    IdempotencyKey = row.ContentHash,
+                    CorrelationId = camp.Id.ToString("N")
+                };
+
+                try
+                {
+                    // Own scope per parallel Accept — DbContext is not thread-safe.
+                    await using var scope = scopeFactory.CreateAsyncScope();
+                    var orch = scope.ServiceProvider.GetRequiredService<NotificationOrchestrator>();
+                    var (ok, status) = await orch.AcceptAsync(nreq, token);
+                    var attempts = row.Attempts + 1;
+                    int st;
+                    string? errCode = null, errMsg = null;
+                    if (ok && status.Status is DeliveryStatus.Queued or DeliveryStatus.Sent or DeliveryStatus.Delivered)
+                        st = (int)BroadcastRecipientStatus.Queued;
+                    else if (status.Status == DeliveryStatus.Suppressed)
+                    {
+                        st = (int)BroadcastRecipientStatus.Skipped;
+                        errMsg = status.ErrorMessage;
+                    }
+                    else
+                    {
+                        st = attempts >= 5
+                            ? (int)BroadcastRecipientStatus.DeadLettered
+                            : (int)BroadcastRecipientStatus.Pending;
+                        errCode = status.ErrorCode;
+                        errMsg = status.ErrorMessage;
+                    }
+                    results[row.Id] = (st, status.NotificationId, errCode, errMsg, attempts);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Broadcast recipient {RecipientId} campaign={CampaignId} failed", row.Id, row.CampaignId);
+                    var attempts = row.Attempts + 1;
+                    var st = attempts >= 5
+                        ? (int)BroadcastRecipientStatus.DeadLettered
+                        : (int)BroadcastRecipientStatus.Pending;
+                    var msg = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
+                    results[row.Id] = (st, null, null, msg, attempts);
+                }
+            });
+
         var processed = 0;
         foreach (var row in batch)
         {
-            if (!campaigns.TryGetValue(row.CampaignId, out var camp))
+            if (!results.TryGetValue(row.Id, out var r))
                 continue;
-
-            if (camp.Status == (int)CampaignStatus.Cancelled)
-            {
-                row.Status = (int)BroadcastRecipientStatus.Cancelled;
-                row.ProcessedAtUtc = DateTimeOffset.UtcNow;
-                continue;
-            }
-
-            Dictionary<string, object?> data = new();
-            if (camp.DataJson is not null)
-            {
-                var raw = JsonSerializer.Deserialize<Dictionary<string, string>>(camp.DataJson);
-                if (raw is not null)
-                    foreach (var kv in raw)
-                        data[kv.Key] = kv.Value;
-            }
-
-            var nreq = new NotificationRequest
-            {
-                Recipient = row.Address,
-                Channel = row.Channel,
-                TemplateKey = camp.TemplateKey,
-                Data = data,
-                TenantId = camp.TenantId,
-                IdempotencyKey = row.ContentHash,
-                CorrelationId = camp.Id.ToString("N")
-            };
-
-            try
-            {
-                var (ok, status) = await orchestrator.AcceptAsync(nreq, ct);
-                row.Attempts++;
-                row.ProcessedAtUtc = DateTimeOffset.UtcNow;
-                row.NotificationId = status.NotificationId;
-
-                if (ok && status.Status is DeliveryStatus.Queued or DeliveryStatus.Sent or DeliveryStatus.Delivered)
-                    row.Status = (int)BroadcastRecipientStatus.Queued;
-                else if (status.Status == DeliveryStatus.Suppressed)
-                {
-                    row.Status = (int)BroadcastRecipientStatus.Skipped;
-                    row.ErrorMessage = status.ErrorMessage;
-                }
-                else
-                {
-                    row.Status = row.Attempts >= 5
-                        ? (int)BroadcastRecipientStatus.DeadLettered
-                        : (int)BroadcastRecipientStatus.Failed;
-                    row.ErrorCode = status.ErrorCode;
-                    row.ErrorMessage = status.ErrorMessage;
-                    if (row.Status == (int)BroadcastRecipientStatus.Failed)
-                        row.Status = (int)BroadcastRecipientStatus.Pending;
-                }
-                processed++;
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Broadcast recipient {RecipientId} campaign={CampaignId} failed", row.Id, row.CampaignId);
-                row.Attempts++;
-                row.ErrorMessage = ex.Message.Length > 500 ? ex.Message[..500] : ex.Message;
-                row.Status = row.Attempts >= 5
-                    ? (int)BroadcastRecipientStatus.DeadLettered
-                    : (int)BroadcastRecipientStatus.Pending;
-            }
+            row.Status = r.Status;
+            row.NotificationId = r.NotificationId;
+            row.ErrorCode = r.ErrorCode;
+            row.ErrorMessage = r.ErrorMessage;
+            row.Attempts = r.Attempts;
+            row.ProcessedAtUtc = DateTimeOffset.UtcNow;
+            processed++;
         }
 
         await db.SaveChangesAsync(ct);
