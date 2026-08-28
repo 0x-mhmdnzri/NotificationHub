@@ -41,7 +41,7 @@ WORKDIR /src/src/Host/NotificationHub.Host
 RUN dotnet publish -c Release -o /app/publish --no-restore /p:UseAppHost=false
 
 # Runtime stage (SEC-18)
-FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS final
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
 RUN groupadd -r appuser && useradd -r -g appuser -d /app -s /sbin/nologin appuser \
