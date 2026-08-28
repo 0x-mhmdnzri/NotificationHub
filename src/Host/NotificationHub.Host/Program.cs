@@ -1,3 +1,4 @@
+using NotificationHub.Host.Configuration;
 using NotificationHub.Core.DependencyInjection;
 using NotificationHub.Host.Composition;
 using NotificationHub.Infrastructure.DependencyInjection;
@@ -121,6 +122,23 @@ using NotificationHub.Plugins.Chat.Telegram;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Ensure appsettings*.json are loaded from the Host project (and output) directory.
+// After solution restructure, wrong ContentRoot can miss ConnectionStrings in Development JSON.
+var configDir = builder.Environment.ContentRootPath;
+builder.Configuration
+    .AddJsonFile(Path.Combine(configDir, "appsettings.json"), optional: true, reloadOnChange: true)
+    .AddJsonFile(Path.Combine(configDir, $"appsettings.{builder.Environment.EnvironmentName}.json"), optional: true, reloadOnChange: true);
+var baseDir = AppContext.BaseDirectory;
+if (!string.Equals(baseDir.TrimEnd(Path.DirectorySeparatorChar), configDir.TrimEnd(Path.DirectorySeparatorChar), StringComparison.OrdinalIgnoreCase))
+{
+    builder.Configuration
+        .AddJsonFile(Path.Combine(baseDir, "appsettings.json"), optional: true, reloadOnChange: true)
+        .AddJsonFile(Path.Combine(baseDir, $"appsettings.{builder.Environment.EnvironmentName}.json"), optional: true, reloadOnChange: true);
+}
+// Environment variables always win over JSON (Aspire injects ConnectionStrings__notificationdb)
+builder.Configuration.AddEnvironmentVariables();
+
+
 // Serilog + OTEL (Jaeger via OTLP) + health checks + service discovery
 builder.AddNotificationHubDefaults();
 
@@ -170,21 +188,23 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     // Operators MUST set ForwardedHeaders:KnownProxies in production behind a load balancer.
 });
 
-// Resolve connection string: appsettings → env ConnectionStrings__Default → DATABASE_URL
-var cs = builder.Configuration.GetConnectionString("Default");
-if (string.IsNullOrWhiteSpace(cs))
-    cs = builder.Configuration["DATABASE_URL"]
-         ?? Environment.GetEnvironmentVariable("DATABASE_URL")
-         ?? Environment.GetEnvironmentVariable("ConnectionStrings__Default");
-
+// ConnectionStrings from appsettings.{Environment}.json, Aspire (notificationdb), or env.
+// Base appsettings.json may have empty Default — must not block Development / Aspire keys.
+var cs = ConnectionStringResolver.ResolvePostgres(builder.Configuration);
 if (string.IsNullOrWhiteSpace(cs))
 {
+    var envName = builder.Environment.EnvironmentName;
     throw new InvalidOperationException(
-        "PostgreSQL connection string is missing or empty. " +
-        "Set ConnectionStrings:Default (appsettings.{Environment}.json) or environment variable " +
-        "ConnectionStrings__Default / DATABASE_URL. " +
-        "Example: Host=localhost;Port=5432;Database=notificationhub;Username=postgres;Password=***;Pooling=true");
+        $"PostgreSQL connection string is missing for environment '{envName}'. " +
+        "Checked keys: ConnectionStrings:Default | notificationdb | postgres (appsettings + Aspire). " +
+        "For local run set ASPNETCORE_ENVIRONMENT=Development (loads appsettings.Development.json) " +
+        "or set ConnectionStrings__Default / DATABASE_URL. " +
+        "ContentRoot: " + builder.Environment.ContentRootPath);
 }
+
+Console.WriteLine(
+    $"[Startup] PostgreSQL from {ConnectionStringResolver.PostgresSourceKey(builder.Configuration)} " +
+    $"(Environment={builder.Environment.EnvironmentName}, ContentRoot={builder.Environment.ContentRootPath})");
 
 builder.Services.AddDbContextPool<NotificationDbContext>(opt =>
     opt.UseNpgsql(cs, n => { n.EnableRetryOnFailure(3); n.CommandTimeout(15); }));
@@ -197,8 +217,7 @@ builder.Services.Configure<CircuitBreakerOptions>(builder.Configuration.GetSecti
 // --- Hangfire: durable outbox dispatch ---
 builder.Services.Configure<HangfireMessagingOptions>(builder.Configuration.GetSection(HangfireMessagingOptions.SectionName));
 var hangfireEnabled = builder.Configuration.GetValue("HangfireMessaging:Enabled", true);
-var hangfireCs = builder.Configuration.GetConnectionString("Default")
-    ?? builder.Configuration["ConnectionStrings:Default"];
+var hangfireCs = cs; // same resolved Postgres connection
 if (hangfireEnabled && !string.IsNullOrWhiteSpace(hangfireCs))
 {
     builder.Services.AddHangfire(cfg => cfg
@@ -268,7 +287,7 @@ builder.Services.Configure<MessagingHealthOptions>(builder.Configuration.GetSect
 if (runMessagingHealth)
     builder.Services.AddHostedService<MessagingHealthMonitorWorker>();
 
-var redisCs = builder.Configuration.GetConnectionString("Redis");
+var redisCs = ConnectionStringResolver.ResolveRedis(builder.Configuration);
 
 // --- Scrutor: Core platform (services, workflow, security, templates, providers) ---
 builder.Services.AddCorePlatform();

@@ -147,9 +147,13 @@ public static class Extensions
         var checks = builder.Services.AddHealthChecks()
             .AddCheck("self", () => HealthCheckResult.Healthy(), tags: [LiveTag, ReadyTag]);
 
-        var pg = builder.Configuration.GetConnectionString("Default")
-            ?? builder.Configuration.GetConnectionString("notificationdb")
-            ?? builder.Configuration.GetConnectionString("postgres");
+        // Prefer first non-empty key (empty Default in appsettings.json must not win)
+        string? pg = null;
+        foreach (var key in new[] { "Default", "notificationdb", "postgres" })
+        {
+            var v = builder.Configuration.GetConnectionString(key);
+            if (!string.IsNullOrWhiteSpace(v)) { pg = v; break; }
+        }
         if (!string.IsNullOrWhiteSpace(pg))
         {
             checks.AddNpgSql(pg, name: "postgres", tags: [ReadyTag], timeout: TimeSpan.FromSeconds(3));
