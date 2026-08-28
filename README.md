@@ -215,6 +215,13 @@ Ideas, bug reports, and contributions of any size are appreciated.
 
 
 
+## Domain vs Integration events
+
+- **Domain events** stay in-process (`NotificationHub.Domain`)
+- **Integration events** (`NotificationHub.Abstractions.IntegrationEvents`) are versioned contracts (`notification.accepted` v1, …)
+- Mapper flattens VOs → primitives; outbox payload `kind: integration`
+- Preference/consent suppress uses `Notification.Accept` → `Suppress(reason)`
+
 ## Messaging reliability (Hangfire + Outbox + RabbitMQ)
 
 ```text

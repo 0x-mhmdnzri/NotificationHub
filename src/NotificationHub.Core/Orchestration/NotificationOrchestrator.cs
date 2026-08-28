@@ -15,6 +15,7 @@ using NotificationHub.Core.Store;
 using NotificationHub.Core.Templates;
 using NotificationHub.Core.Webhooks;
 using NotificationHub.Core.Observability;
+using NotificationHub.Domain.Events;
 using NotificationHub.Core.Persistence;
 
 namespace NotificationHub.Core.Orchestration;
@@ -28,6 +29,7 @@ public sealed class NotificationOrchestrator
     private readonly IConsentService _consents;
     private readonly IOutbox _outbox;
     private readonly IOutboxDispatchScheduler _outboxScheduler;
+    private readonly IDomainEventDispatcher? _domainEvents;
     private readonly IAuditService _audit;
     private readonly IWebhookDispatcher _webhooks;
     private readonly IProviderRouter _router;
@@ -51,7 +53,8 @@ public sealed class NotificationOrchestrator
         IProviderHealthTracker health,
         ILogger<NotificationOrchestrator> logger,
         NotificationDbContext db,
-        IMetricsService? metrics = null)
+        IMetricsService? metrics = null,
+        IDomainEventDispatcher? domainEvents = null)
     {
         _pluginLoader = pluginLoader;
         _templateEngine = templateEngine;
@@ -67,6 +70,7 @@ public sealed class NotificationOrchestrator
         _logger = logger;
         _metrics = metrics;
         _db = db;
+        _domainEvents = domainEvents;
     }
 
     public async Task<(bool Accepted, NotificationStatus Status)> AcceptAsync(NotificationRequest request, CancellationToken ct = default)
@@ -102,8 +106,7 @@ public sealed class NotificationOrchestrator
         var (allowed, reason) = await _preferences.CanSendAsync(request.Recipient, channel, request.Category, request.TenantId, isCritical, ct).ConfigureAwait(false);
         if (!allowed)
         {
-            var suppressed = MakeStatus(request, channel, DeliveryStatus.Suppressed, reason);
-            await _statusStore.SaveAsync(suppressed, ct).ConfigureAwait(false);
+            var (suppressed, _) = await PersistSuppressedDomainAsync(request, channel, reason ?? "preference_denied", ct).ConfigureAwait(false);
             await FireAudit("suppressed", request.Id, request.TenantId, reason);
             _metrics?.Increment("notifications.suppressed", 1, ("reason", "preference"));
             return (true, suppressed);
@@ -112,9 +115,9 @@ public sealed class NotificationOrchestrator
         var consent = await _consents.EvaluateAsync(request.Recipient, purpose, channel, request.TenantId, ct).ConfigureAwait(false);
         if (!consent.Allowed)
         {
-            var suppressed = MakeStatus(request, channel, DeliveryStatus.Suppressed, consent.Reason);
-            await _statusStore.SaveAsync(suppressed, ct).ConfigureAwait(false);
+            var (suppressed, _) = await PersistSuppressedDomainAsync(request, channel, consent.Reason ?? "consent_denied", ct).ConfigureAwait(false);
             await FireAudit("suppressed", request.Id, request.TenantId, consent.Reason);
+            _metrics?.Increment("notifications.suppressed", 1, ("reason", "consent"));
             return (true, suppressed);
         }
 
@@ -162,8 +165,70 @@ public sealed class NotificationOrchestrator
         if (outboxId is { } oid)
             _outboxScheduler.ScheduleDispatch(oid);
 
+        // Domain → Integration event outbox (separate payloads, kind=integration).
+        if (_domainEvents is not null)
+        {
+            await _domainEvents.DispatchAsync(domain.DomainEvents, ct).ConfigureAwait(false);
+            domain.ClearDomainEvents();
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+            // Schedule any new integration outbox rows
+            // (Hangfire reconciliation will pick pending if we don't track ids here)
+        }
+
         await FireAudit("accepted", request.Id, request.TenantId, channel);
         return (true, status);
+    }
+
+
+    /// <summary>
+    /// Preference/consent deny: Aggregate Accept → Suppress, persist status + integration events (no delivery outbox).
+    /// </summary>
+    private async Task<(NotificationStatus Status, NotificationHub.Domain.Delivery.Notification Domain)> PersistSuppressedDomainAsync(
+        NotificationRequest request, string channel, string reason, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var domain = NotificationHub.Domain.Delivery.Notification.Accept(
+            NotificationHub.Domain.Delivery.ValueObjects.NotificationId.From(request.Id),
+            NotificationHub.Domain.Delivery.ValueObjects.RecipientAddress.Create(request.Recipient),
+            NotificationHub.Domain.Delivery.ValueObjects.ChannelCode.Create(channel),
+            NotificationHub.Domain.Delivery.ValueObjects.TemplateKey.Create(
+                string.IsNullOrWhiteSpace(request.TemplateKey) ? "suppressed" : request.TemplateKey),
+            (NotificationHub.Domain.Delivery.NotificationPriority)(int)request.Priority,
+            NotificationHub.Domain.Delivery.ValueObjects.IdempotencyKey.From(request.IdempotencyKey),
+            NotificationHub.Domain.Delivery.ValueObjects.CollapseKey.From(request.CollapseKey),
+            NotificationHub.Domain.Common.TenantId.From(request.TenantId),
+            request.Locale,
+            request.Category,
+            request.CorrelationId,
+            request.PreferredProvider,
+            request.AllowFallback,
+            request.ScheduledAt,
+            request.Data,
+            now);
+
+        domain.Suppress(reason, now);
+
+        var status = MakeStatus(request, channel, DeliveryStatus.Suppressed, reason);
+        status = status with { CreatedAt = domain.CreatedAtUtc, UpdatedAt = now };
+
+        var strategy = _db.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(
+            state: 0,
+            operation: async (dbCtx, _, token) =>
+            {
+                await using var tx = await dbCtx.Database.BeginTransactionAsync(token).ConfigureAwait(false);
+                await _statusStore.SaveAsync(status, token).ConfigureAwait(false);
+                if (_domainEvents is not null)
+                    await _domainEvents.DispatchAsync(domain.DomainEvents, token).ConfigureAwait(false);
+                await dbCtx.SaveChangesAsync(token).ConfigureAwait(false);
+                await tx.CommitAsync(token).ConfigureAwait(false);
+                return true;
+            },
+            verifySucceeded: null,
+            cancellationToken: ct).ConfigureAwait(false);
+
+        domain.ClearDomainEvents();
+        return (status, domain);
     }
 
     private static NotificationStatus MakeStatus(NotificationRequest request, string channel, DeliveryStatus st, string? error) => new()

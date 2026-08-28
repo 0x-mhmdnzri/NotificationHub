@@ -231,7 +231,7 @@ public sealed class Notification : AggregateRoot<NotificationId>
         Status = DeliveryStatus.Suppressed;
         LastErrorMessage = reason;
         ProcessedAtUtc = nowUtc;
-        Raise(new NotificationSuppressed(Id, reason, nowUtc));
+        Raise(new NotificationSuppressed(Id, Recipient, Channel, reason, TenantId?.Value, nowUtc));
     }
 
     public void Collapse(DateTimeOffset nowUtc)

@@ -57,7 +57,10 @@ public sealed record NotificationCancelled(
 
 public sealed record NotificationSuppressed(
     NotificationId NotificationId,
+    RecipientAddress Recipient,
+    ChannelCode Channel,
     string Reason,
+    string? TenantId,
     DateTimeOffset OccurredAtUtc) : IDomainEvent
 {
     public Guid EventId { get; } = Guid.NewGuid();

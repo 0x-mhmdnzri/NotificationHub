@@ -44,6 +44,24 @@ public sealed class OutboxDispatchJob(
                 return;
             }
 
+            using var doc = JsonDocument.Parse(msg.PayloadJson);
+            if (doc.RootElement.TryGetProperty("kind", out var kindEl) &&
+                kindEl.GetString() == "integration")
+            {
+                // Integration event: durable mark as published.
+                // Optional: publish to events exchange later; consumers must stay idempotent on MessageId.
+                logger.LogInformation(
+                    "Integration outbox {OutboxId} eventType={EventType} published (logical)",
+                    outboxMessageId,
+                    doc.RootElement.TryGetProperty("eventType", out var et) ? et.GetString() : "?");
+                msg.Status = "published";
+                msg.PublishedAt = DateTimeOffset.UtcNow;
+                msg.Attempts++;
+                msg.LastError = null;
+                await db.SaveChangesAsync(cancellationToken);
+                return;
+            }
+
             var request = JsonSerializer.Deserialize<NotificationRequest>(msg.PayloadJson, JsonOpts)
                           ?? throw new InvalidOperationException("null outbox payload");
 
