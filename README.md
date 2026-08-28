@@ -1,5 +1,23 @@
 # NotificationHub
 
+## Solution structure (Microkernel)
+
+```text
+src/
+├── Host/                 # Composition root (API / Aspire)
+├── Kernel/               # Extension contracts (Abstractions)
+├── BuildingBlocks/       # Domain · Application · Infrastructure · Core
+└── Clients/              # Public SDK
+Plugins/
+├── Email/ Sms/ Chat/ Push/ InApp/
+tests/
+├── Architecture/ Unit/ Benchmarks/
+```
+
+See [ADR-012](docs/ADR-012-Solution-Structure-Microkernel.md).
+
+
+
 **One place to send notifications** — email, SMS, push, chat, and in-app — with a clean API, reliable queues, and plugins you can swap without rewriting the core.
 
 Built with **.NET 9**. Open source under **MIT**.

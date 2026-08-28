@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+<IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Moq" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\BuildingBlocks\NotificationHub.Core\NotificationHub.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Kernel\NotificationHub.Abstractions\NotificationHub.Abstractions.csproj" />
+    <ProjectReference Include="..\..\..\src\Clients\NotificationHub.Sdk\NotificationHub.Sdk.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Plugins\Chat\NotificationHub.Plugins.Chat.Slack\NotificationHub.Plugins.Chat.Slack.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Plugins\Chat\NotificationHub.Plugins.Chat.Telegram\NotificationHub.Plugins.Chat.Telegram.csproj" />
+    <ProjectReference Include="..\..\..\Plugins\Chat\NotificationHub.Plugins.Chat.Discord\NotificationHub.Plugins.Chat.Discord.csproj" />
+    <ProjectReference Include="..\..\..\Plugins\Push\NotificationHub.Plugins.Push.Expo\NotificationHub.Plugins.Push.Expo.csproj" />
+    <ProjectReference Include="..\..\..\Plugins\Email\NotificationHub.Plugins.Email.Ses\NotificationHub.Plugins.Email.Ses.csproj" />
+  </ItemGroup>
+</Project>
+

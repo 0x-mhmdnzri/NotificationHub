@@ -28,7 +28,7 @@ jobs:
 
       - name: Test
         run: >
-          dotnet test tests/NotificationHub.Core.Tests/NotificationHub.Core.Tests.csproj
+          dotnet test tests/Unit/NotificationHub.Core.Tests/NotificationHub.Core.Tests.csproj
           --no-build
           --configuration Release
           --verbosity normal

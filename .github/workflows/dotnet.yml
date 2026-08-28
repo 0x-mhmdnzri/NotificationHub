@@ -38,7 +38,7 @@ jobs:
       - name: Publish (Host)
         # Build Host graph explicitly so plugin projects referenced only by Host are produced
         run: >
-          dotnet publish src/NotificationHub.Host/NotificationHub.Host.csproj
+          dotnet publish src/Host/NotificationHub.Host/NotificationHub.Host.csproj
           -c Release
           -o ./publish
           --no-restore
