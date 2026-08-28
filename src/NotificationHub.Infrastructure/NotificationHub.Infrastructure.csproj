@@ -5,6 +5,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\NotificationHub.Application\NotificationHub.Application.csproj" />
+    <ProjectReference Include="..\NotificationHub.Domain\NotificationHub.Domain.csproj" />
     <ProjectReference Include="..\NotificationHub.Core\NotificationHub.Core.csproj" />
     <ProjectReference Include="..\NotificationHub.Abstractions\NotificationHub.Abstractions.csproj" />
   </ItemGroup>

@@ -211,6 +211,24 @@ Ideas, bug reports, and contributions of any size are appreciated.
 
 ---
 
+
+## Domain-Driven Design
+
+Core business rules live in `src/NotificationHub.Domain` (pure .NET, no EF/RabbitMQ).
+
+| Aggregate | Boundary |
+|-----------|----------|
+| `Notification` | Single delivery lifecycle |
+| `BroadcastCampaign` | Campaign lifecycle (recipients coordinated outside) |
+
+See [ADR 0005](docs/ADR-005-Domain-Driven-Design.md).
+
+Domain unit tests (no database):
+
+```bash
+dotnet test tests/NotificationHub.Domain.Tests
+```
+
 ## License
 
 [MIT](LICENSE) — use it, fork it, ship it.

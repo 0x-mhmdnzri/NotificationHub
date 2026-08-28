@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>NotificationHub.Domain</RootNamespace>
+    <!-- Domain must stay free of infrastructure packages -->
+  </PropertyGroup>
+</Project>
