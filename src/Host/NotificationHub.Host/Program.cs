@@ -170,8 +170,21 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
     // Operators MUST set ForwardedHeaders:KnownProxies in production behind a load balancer.
 });
 
-var cs = builder.Configuration.GetConnectionString("Default")
-    ?? throw new InvalidOperationException("Connection string 'Default' missing");
+// Resolve connection string: appsettings → env ConnectionStrings__Default → DATABASE_URL
+var cs = builder.Configuration.GetConnectionString("Default");
+if (string.IsNullOrWhiteSpace(cs))
+    cs = builder.Configuration["DATABASE_URL"]
+         ?? Environment.GetEnvironmentVariable("DATABASE_URL")
+         ?? Environment.GetEnvironmentVariable("ConnectionStrings__Default");
+
+if (string.IsNullOrWhiteSpace(cs))
+{
+    throw new InvalidOperationException(
+        "PostgreSQL connection string is missing or empty. " +
+        "Set ConnectionStrings:Default (appsettings.{Environment}.json) or environment variable " +
+        "ConnectionStrings__Default / DATABASE_URL. " +
+        "Example: Host=localhost;Port=5432;Database=notificationhub;Username=postgres;Password=***;Pooling=true");
+}
 
 builder.Services.AddDbContextPool<NotificationDbContext>(opt =>
     opt.UseNpgsql(cs, n => { n.EnableRetryOnFailure(3); n.CommandTimeout(15); }));
@@ -330,18 +343,43 @@ if (hangfireEnabled && !string.IsNullOrWhiteSpace(hangfireCs))
 
 app.UseSerilogRequestLogging();
 
-using (var scope = app.Services.CreateScope())
+// Schema bootstrap — skip only when explicitly disabled (tests / external migrator)
+var autoMigrate = app.Configuration.GetValue("Database:AutoMigrate", true);
+if (autoMigrate)
 {
+    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
-    await db.Database.MigrateAsync();
-    await Phase1Schema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Phase1Schema"));
-    await Phase2Schema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Phase2Schema"));
-    await BroadcastSchema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("BroadcastSchema"));
-    await Phase4Schema.EnsureAsync(db, scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Phase4Schema"));
-    var seeder = scope.ServiceProvider.GetRequiredService<TemplateSeeder>();
-    await seeder.SeedDefaultsAsync();
-    var keyBootstrap = scope.ServiceProvider.GetRequiredService<ApiKeyBootstrapper>();
-    await keyBootstrap.EnsureBootstrapKeyAsync();
+    var startupLog = scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger("Startup");
+    try
+    {
+        // Fail fast with a clear message if Postgres is unreachable / CS invalid
+        if (!await db.Database.CanConnectAsync())
+        {
+            throw new InvalidOperationException(
+                "Cannot connect to PostgreSQL with the configured ConnectionStrings:Default. " +
+                "Verify the server is running and credentials are correct.");
+        }
+
+        await db.Database.MigrateAsync();
+        await Phase1Schema.EnsureAsync(db, startupLog);
+        await Phase2Schema.EnsureAsync(db, startupLog);
+        await BroadcastSchema.EnsureAsync(db, startupLog);
+        await Phase4Schema.EnsureAsync(db, startupLog);
+        var seeder = scope.ServiceProvider.GetRequiredService<TemplateSeeder>();
+        await seeder.SeedDefaultsAsync();
+        var keyBootstrap = scope.ServiceProvider.GetRequiredService<ApiKeyBootstrapper>();
+        await keyBootstrap.EnsureBootstrapKeyAsync();
+    }
+    catch (Exception ex) when (ex is not InvalidOperationException)
+    {
+        startupLog?.LogCritical(ex,
+            "Database startup failed. ConnectionStrings:Default must point to a reachable PostgreSQL instance.");
+        throw;
+    }
+}
+else
+{
+    app.Logger.LogWarning("Database:AutoMigrate is false — skipping MigrateAsync and seeders.");
 }
 
 // ---------------------------------------------------------------------------
