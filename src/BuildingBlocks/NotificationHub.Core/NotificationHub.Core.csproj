@@ -17,6 +17,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="RabbitMQ.Client" />
+    <PackageReference Include="Scrutor" />
     <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 

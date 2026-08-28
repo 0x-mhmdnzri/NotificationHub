@@ -1,3 +1,6 @@
+using NotificationHub.Core.DependencyInjection;
+using NotificationHub.Host.Composition;
+using NotificationHub.Infrastructure.DependencyInjection;
 using NotificationHub.Infrastructure.Messaging.Integration;
 using NotificationHub.Core.Messaging;
 using NotificationHub.Host.Hangfire;
@@ -177,12 +180,8 @@ builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(Rab
 builder.Services.Configure<ProviderOptions>(builder.Configuration.GetSection("Providers"));
 builder.Services.Configure<ProviderHealthOptions>(builder.Configuration.GetSection(ProviderHealthOptions.SectionName));
 builder.Services.Configure<CircuitBreakerOptions>(builder.Configuration.GetSection(CircuitBreakerOptions.SectionName));
-builder.Services.AddSingleton<IProviderHealthTracker, CircuitBreakerProviderHealthTracker>();
-builder.Services.AddSingleton<IProviderRouter, HealthAwareProviderRouter>();
-builder.Services.AddScoped<IOutbox, EfOutbox>();
-builder.Services.AddScoped<IInbox, EfInbox>();
 
-// --- Hangfire: durable outbox dispatch (at-least-once job engine, not a broker) ---
+// --- Hangfire: durable outbox dispatch ---
 builder.Services.Configure<HangfireMessagingOptions>(builder.Configuration.GetSection(HangfireMessagingOptions.SectionName));
 var hangfireEnabled = builder.Configuration.GetValue("HangfireMessaging:Enabled", true);
 var hangfireCs = builder.Configuration.GetConnectionString("Default")
@@ -194,7 +193,6 @@ if (hangfireEnabled && !string.IsNullOrWhiteSpace(hangfireCs))
         .UseSimpleAssemblyNameTypeSerializer()
         .UseRecommendedSerializerSettings()
         .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(hangfireCs)));
-    // Dedicated critical server: only queue "critical", higher WorkerCount — bulk cannot starve OTP.
     var hfOpts = builder.Configuration.GetSection(HangfireMessagingOptions.SectionName).Get<HangfireMessagingOptions>()
                  ?? new HangfireMessagingOptions();
     var criticalWorkers = hfOpts.CriticalWorkerCount > 0
@@ -228,8 +226,7 @@ if (hangfireEnabled && !string.IsNullOrWhiteSpace(hangfireCs))
             options.WorkerCount = Math.Max(criticalWorkers, standardWorkers);
         });
     }
-    builder.Services.AddScoped<IOutboxDispatchJob, OutboxDispatchJob>();
-    builder.Services.AddScoped<OutboxReconciliationJob>();
+    builder.Services.AddHangfireJobs();
     builder.Services.AddSingleton<IOutboxDispatchScheduler, HangfireOutboxDispatchScheduler>();
 }
 else
@@ -249,22 +246,21 @@ var runWorkflow = builder.Configuration.GetValue("Workers:RunWorkflow", true);
 
 if (runOutbox)
     builder.Services.Configure<OutboxRelayOptions>(builder.Configuration.GetSection(OutboxRelayOptions.SectionName));
-    // Hangfire is primary dispatcher; keep relay as safety net when configured.
 if (builder.Configuration.GetValue("HangfireMessaging:KeepRelayWorker", true) ||
     !builder.Configuration.GetValue("HangfireMessaging:Enabled", true))
 {
     builder.Services.AddHostedService<OutboxRelayWorker>();
 }
 builder.Services.Configure<MessagingHealthOptions>(builder.Configuration.GetSection(MessagingHealthOptions.SectionName));
-builder.Services.AddScoped<IMessagingHealthService, MessagingHealthService>();
 if (runMessagingHealth)
     builder.Services.AddHostedService<MessagingHealthMonitorWorker>();
-builder.Services.AddScoped<IApiKeyStore, PostgresApiKeyStore>();
-builder.Services.AddScoped<IApiKeyValidator, ApiKeyValidator>();
-builder.Services.AddScoped<ApiKeyBootstrapper>();
-builder.Services.Configure<CostOptions>(builder.Configuration.GetSection(CostOptions.SectionName));
 
-// Transport consumer/publisher (singleton connection)
+var redisCs = builder.Configuration.GetConnectionString("Redis");
+
+// --- Scrutor: Core platform (services, workflow, security, templates, providers) ---
+builder.Services.AddCorePlatform();
+
+// RabbitMQ + integration publisher (explicit conditional wiring)
 builder.Services.AddSingleton<RabbitMqNotificationQueue>();
 builder.Services.AddSingleton<IIntegrationEventPublisher>(sp =>
 {
@@ -273,16 +269,8 @@ builder.Services.AddSingleton<IIntegrationEventPublisher>(sp =>
         ? new NullIntegrationEventPublisher()
         : new RabbitMqIntegrationEventPublisher(q);
 });
-builder.Services.AddScoped<IntegrationEventWebhookBridge>();
-// API enqueue path = transactional outbox (scoped with DbContext)
-builder.Services.AddScoped<INotificationQueue, OutboxNotificationQueue>();
-builder.Services.AddSingleton<PluginLoader>();
-builder.Services.AddScoped<ITemplateStore, PostgresTemplateStore>();
-builder.Services.AddSingleton<ITemplateRenderer, PlaceholderTemplateRenderer>();
-builder.Services.AddScoped<ITemplateEngine, TemplateEngine>();
-builder.Services.AddScoped<TemplateSeeder>();
-// SEC-24: Redis rate limiter when ConnectionStrings:Redis is set; otherwise in-memory
-var redisCs = builder.Configuration.GetConnectionString("Redis");
+builder.Services.AddIntegrationMessaging();
+
 if (!string.IsNullOrWhiteSpace(redisCs))
 {
     builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ =>
@@ -296,60 +284,21 @@ else
     builder.Services.AddSingleton<IInboxEventBus, InMemoryInboxEventBus>();
 }
 
-builder.Services.AddScoped<INotificationStatusStore, PostgresNotificationStatusStore>();
-builder.Services.AddScoped<PreferenceService>();
-builder.Services.AddScoped<IPreferenceService>(sp =>
-    new CachingPreferenceService(
-        sp.GetRequiredService<PreferenceService>(),
-        sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>()));
-builder.Services.AddScoped<IAuditService, AuditService>();
-builder.Services.AddScoped<IWebhookDispatcher, WebhookDispatcher>();
-builder.Services.AddScoped<IWorkflowRunRepository, WorkflowRunRepository>();
-builder.Services.AddScoped<IWorkflowTimeline, WorkflowTimeline>();
-builder.Services.AddSingleton<IExpressionEvaluator, SimpleExpressionEvaluator>();
-builder.Services.AddScoped<IWorkflowStepHandler, DelayStepHandler>();
-builder.Services.AddScoped<IWorkflowStepHandler, ConditionStepHandler>();
-builder.Services.AddScoped<IWorkflowStepHandler, BranchStepHandler>();
-builder.Services.AddScoped<IWorkflowStepHandler, SendStepHandler>();
-builder.Services.AddScoped<IWorkflowEngine, WorkflowEngine>();
-builder.Services.AddScoped<ICampaignService, CampaignService>();
-builder.Services.AddScoped<IBroadcastService, BroadcastService>();
 builder.Services.Configure<CampaignDispatchOptions>(builder.Configuration.GetSection(CampaignDispatchOptions.SectionName));
 if (runCampaign)
     builder.Services.AddHostedService<CampaignDispatchWorker>();
-builder.Services.AddScoped<ISegmentService, SegmentService>();
-builder.Services.AddScoped<IEngagementService, EngagementService>();
-builder.Services.AddScoped<IInboxFeedService, InboxFeedService>();
-builder.Services.AddScoped<IDigestService, DigestService>();
 if (runDigest)
     builder.Services.AddHostedService<DigestFlushWorker>();
-builder.Services.AddScoped<IThrottleService, ThrottleService>();
-builder.Services.AddScoped<ITopicService, TopicService>();
-builder.Services.AddScoped<IDeviceService, DeviceService>();
-builder.Services.AddScoped<IActivityService, ActivityService>();
-builder.Services.AddSingleton<IEnvironmentContext, EnvironmentContext>();
-builder.Services.AddScoped<ICdpService, CdpService>();
-builder.Services.AddScoped<IBroadcastService, BroadcastService>();
-builder.Services.AddScoped<ILocalizationCatalog, LocalizationCatalog>();
-builder.Services.AddSingleton<IMetricsService, InMemoryMetricsService>();
 builder.Services.Configure<OidcOptions>(builder.Configuration.GetSection(OidcOptions.SectionName));
-builder.Services.AddScoped<ILayoutService, LayoutService>();
-builder.Services.AddScoped<ICrossChannelReadSync, CrossChannelReadSync>();
-builder.Services.AddScoped<IWorkflowStepHandler, HttpStepHandler>();
 builder.Services.AddHttpClient("workflow-http", c => c.Timeout = TimeSpan.FromSeconds(10));
-builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
-builder.Services.AddScoped<IConsentService, ConsentService>();
-builder.Services.AddScoped<IComplianceService, ComplianceService>();
-builder.Services.AddScoped<IRetentionService, RetentionService>();
 builder.Services.Configure<RetentionOptions>(builder.Configuration.GetSection(RetentionOptions.SectionName));
 if (runRetention)
     builder.Services.AddHostedService<RetentionBackgroundWorker>();
-// CQRS Application + pipeline (write/read separated)
+
+// CQRS Application + pipeline (MediatR owns handlers; Scrutor owns domain ports)
 builder.Services.AddInfrastructureCqrs();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IRequestContext, HttpRequestContext>();
-
-builder.Services.AddScoped<NotificationOrchestrator>();
 
 if (runDelivery)
     builder.Services.AddHostedService<NotificationBackgroundWorker>();
@@ -358,21 +307,8 @@ if (runScheduled)
 if (runWorkflow)
     builder.Services.AddHostedService<WorkflowBackgroundWorker>();
 
-builder.Services.AddSingleton<IPlugin, SendGridEmailPlugin>();
-builder.Services.AddSingleton<IPlugin, SmtpEmailPlugin>();
-builder.Services.AddSingleton<IPlugin, ResendEmailPlugin>();
-builder.Services.AddSingleton<IPlugin, SesEmailPlugin>();
-builder.Services.AddSingleton<IPlugin, KavenegarSmsPlugin>();
-builder.Services.AddSingleton<IPlugin, SmsIrPlugin>();
-builder.Services.AddSingleton<IPlugin, TwilioSmsPlugin>();
-builder.Services.AddSingleton<IPlugin, InAppPlugin>();
-builder.Services.AddSingleton<IPlugin, SlackPlugin>();
-builder.Services.AddSingleton<IPlugin, WhatsAppPlugin>();
-builder.Services.AddSingleton<IPlugin, TelegramPlugin>();
-builder.Services.AddSingleton<IPlugin, DiscordPlugin>();
-builder.Services.AddSingleton<IPlugin, TeamsPlugin>();
-builder.Services.AddSingleton<IPlugin, FcmPushPlugin>();
-builder.Services.AddSingleton<IPlugin, ExpoPushPlugin>();
+// Channel plugins via Scrutor (IPlugin, Singleton, multi-registration)
+builder.Services.AddChannelPlugins();
 
 var app = builder.Build();
 
