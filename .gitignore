@@ -535,4 +535,6 @@ Temporary Items
 # iCloud generated files
 *.icloud
 
-# End of https://www.toptal.com/developers/gitignore/api/jetbrains+all,macos,csharp,dotnetcore
+# End of https://www.toptal.com/developers/gitignore/api/jetbrains+all,macos,csharp,dotnetcoreapps/admin/node_modules/
+apps/admin/.next/
+apps/admin/.env.local

@@ -310,3 +310,13 @@ dotnet test tests/NotificationHub.Domain.Tests
 ## License
 
 [MIT](LICENSE) — use it, fork it, ship it.
+
+## Admin console (Next.js)
+
+```bash
+cd apps/admin
+cp .env.local.example .env.local
+npm install && npm run dev
+```
+
+Open http://localhost:3000 — set API base `http://localhost:5245` and your Host API key under **Settings**.
