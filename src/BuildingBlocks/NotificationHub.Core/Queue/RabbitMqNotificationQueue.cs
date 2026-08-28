@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Linq;
 using System.Threading;
 using System.Threading.Channels;
@@ -6,6 +7,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NotificationHub.Abstractions.Models;
+using NotificationHub.Core.Performance;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
@@ -274,7 +276,7 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
     public async Task PublishAsync(NotificationRequest request, int redeliveryCount, CancellationToken ct = default)
     {
         var channel = ResolveChannel(request);
-        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, JsonOptions));
+        var body = JsonSerializer.SerializeToUtf8Bytes(request, JsonOptions);
         var props = BuildProps(request, redeliveryCount, channel);
         int? part = _options.PartitionByTenant
             ? TenantPartitionIndex(_options, request.TenantId)
@@ -300,7 +302,7 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
 
         var channel = ResolveChannel(request);
         var delay = _retryDelays[Math.Min(next - 1, _retryDelays.Length - 1)];
-        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(request, JsonOptions));
+        var body = JsonSerializer.SerializeToUtf8Bytes(request, JsonOptions);
         var props = BuildProps(request, next, channel);
         var rk = RetryRoutingKey(_options.ChannelRouting ? channel : null, delay);
 
@@ -417,8 +419,8 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         {
             try
             {
-                var json = Encoding.UTF8.GetString(ea.Body.Span);
-                var request = JsonSerializer.Deserialize<NotificationRequest>(json, JsonOptions);
+                // Zero intermediate string — deserialize UTF-8 body span (lower alloc on hot path)
+                var request = JsonSerializer.Deserialize<NotificationRequest>(ea.Body.Span, JsonOptions);
                 if (request is null)
                 {
                     await _channel.BasicNackAsync(ea.DeliveryTag, false, false, ct);

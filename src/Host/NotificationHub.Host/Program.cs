@@ -1,4 +1,5 @@
 using NotificationHub.Host.Configuration;
+using NotificationHub.Host.Performance;
 using NotificationHub.Core.DependencyInjection;
 using NotificationHub.Host.Composition;
 using NotificationHub.Infrastructure.DependencyInjection;
@@ -19,13 +20,11 @@ using NotificationHub.Core.Analytics;
 using NotificationHub.Core.Audit;
 using NotificationHub.Core.Compliance;
 using NotificationHub.Core.Engagement;
-using NotificationHub.Core.Messaging;
 using NotificationHub.Core.Common;
 using NotificationHub.Core.Orchestration;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.PluginHost;
 using NotificationHub.Core.Preferences;
-using NotificationHub.Infrastructure.DependencyInjection;
 using NotificationHub.Application.Features.Notifications.Accept;
 using NotificationHub.Application.Features.Notifications.SendSync;
 using NotificationHub.Application.Features.Notifications.GetStatus;
@@ -73,7 +72,6 @@ using NotificationHub.Application.Features.Topics.ListSubscribers;
 using NotificationHub.Application.Abstractions;
 using NotificationHub.Host.Http;
 using NotificationHub.Host.Security;
-using NotificationHub.Application.Abstractions;
 using MediatR;
 using FluentValidation;
 using NotificationHub.Core.Queue;
@@ -93,7 +91,6 @@ using NotificationHub.Core.Activity;
 using NotificationHub.Core.Auth;
 using NotificationHub.Core.Observability;
 using NotificationHub.Core.I18n;
-using NotificationHub.Core.Campaigns;
 using NotificationHub.Core.Cdp;
 using NotificationHub.Core.Environments;
 using NotificationHub.Core.Sync;
@@ -137,6 +134,8 @@ if (!string.Equals(baseDir.TrimEnd(Path.DirectorySeparatorChar), configDir.TrimE
 }
 // Environment variables always win over JSON (Aspire injects ConnectionStrings__notificationdb)
 builder.Configuration.AddEnvironmentVariables();
+
+builder.AddHighLoadRuntimeTuning();
 
 
 // Serilog + OTEL (Jaeger via OTLP) + health checks + service discovery

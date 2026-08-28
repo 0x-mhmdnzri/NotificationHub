@@ -60,5 +60,9 @@ ENV DOTNET_EnableDiagnostics=0
 ENV DOTNET_TieredPGO=1
 ENV DOTNET_TC_QuickJitForLoops=1
 ENV DOTNET_GCDynamicAdaptationMode=1
+ENV DOTNET_gcServer=1
+ENV DOTNET_gcConcurrent=1
+# Cap heap in containers when memory limit is set (skill: avoid OOM from unbounded Server GC)
+# ENV DOTNET_GCHeapHardLimitPercent=75
 
 ENTRYPOINT ["dotnet", "NotificationHub.Host.dll"]

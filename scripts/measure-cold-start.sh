@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# High-load skill Step 0: cold-start only. For GC/allocation use:
+#   dotnet-counters monitor --process-id <pid> System.Runtime
+#   (alloc-rate, time-in-gc, gen-0-size, gen-2-size, exception-count)
+
 # Measure Host cold-start: process start → first successful HTTP response.
 # Usage: ./scripts/measure-cold-start.sh [iterations]
 # Requires: published Host, Postgres reachable, ASPNETCORE_ENVIRONMENT set.
