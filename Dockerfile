@@ -13,7 +13,7 @@ COPY src/Clients/NotificationHub.Sdk/NotificationHub.Sdk.csproj src/Clients/Noti
 COPY src/BuildingBlocks/NotificationHub.Application/NotificationHub.Application.csproj src/BuildingBlocks/NotificationHub.Application/
 COPY src/BuildingBlocks/NotificationHub.Infrastructure/NotificationHub.Infrastructure.csproj src/BuildingBlocks/NotificationHub.Infrastructure/
 COPY src/Host/NotificationHub.ServiceDefaults/NotificationHub.ServiceDefaults.csproj src/Host/NotificationHub.ServiceDefaults/
-COPY tests/NotificationHub.Core.Tests/NotificationHub.Core.Tests.csproj tests/NotificationHub.Core.Tests/
+COPY tests/Unit/NotificationHub.Core.Tests/NotificationHub.Core.Tests.csproj tests/Unit/NotificationHub.Core.Tests/
 COPY tools/loadtest/NotificationHub.LoadTest.csproj tools/loadtest/
 
 COPY Plugins/Email/NotificationHub.Plugins.Email.SendGrid/NotificationHub.Plugins.Email.SendGrid.csproj Plugins/Email/NotificationHub.Plugins.Email.SendGrid/
