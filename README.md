@@ -24,6 +24,14 @@ Built with **.NET 9**. Open source under **MIT**.
 
 ---
 
+## داستان پروژه (فارسی)
+
+یک روایت کامل و ساده از اینکه **چه ساختیم، چرا، و کدام مفاهیم نرم‌افزاری پیاده شده‌اند**:
+
+→ [docs/BLOG-پروژه-NotificationHub.md](docs/BLOG-پروژه-NotificationHub.md)
+
+---
+
 ## What is this?
 
 Imagine your product needs to:
