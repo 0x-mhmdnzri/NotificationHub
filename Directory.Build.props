@@ -35,4 +35,9 @@
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
     <TieredCompilation>true</TieredCompilation>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Force safe STJ across all projects (nuget-audit) -->
+    <PackageReference Include="System.Text.Json" />
+  </ItemGroup>
 </Project>
+

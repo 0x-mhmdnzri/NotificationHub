@@ -38,8 +38,10 @@ public class AcceptNotificationCommandTests
     {
         await using var db = TestFixtures.CreateDbContext();
         var sender = BuildSp(db).GetRequiredService<ISender>();
-        var act = async () => await sender.Send(new AcceptNotificationCommand(
+        // ValidationBehavior returns Result.Failure for Result handlers (not ValidationException)
+        var result = await sender.Send(new AcceptNotificationCommand(
             new NotificationRequest { Recipient = "", Channel = "email", TemplateKey = "welcome" }, null));
-        await act.Should().ThrowAsync<ValidationException>();
+        result.IsFailure.Should().BeTrue();
+        result.Error!.Type.Should().Be(NotificationHub.Application.Abstractions.ErrorType.Validation);
     }
 }

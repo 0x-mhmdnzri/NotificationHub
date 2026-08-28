@@ -10,6 +10,7 @@ COPY src/Kernel/NotificationHub.Abstractions/NotificationHub.Abstractions.csproj
 COPY src/BuildingBlocks/NotificationHub.Core/NotificationHub.Core.csproj src/BuildingBlocks/NotificationHub.Core/
 COPY src/Host/NotificationHub.Host/NotificationHub.Host.csproj src/Host/NotificationHub.Host/
 COPY src/Clients/NotificationHub.Sdk/NotificationHub.Sdk.csproj src/Clients/NotificationHub.Sdk/
+COPY src/BuildingBlocks/NotificationHub.Domain/NotificationHub.Domain.csproj src/BuildingBlocks/NotificationHub.Domain/
 COPY src/BuildingBlocks/NotificationHub.Application/NotificationHub.Application.csproj src/BuildingBlocks/NotificationHub.Application/
 COPY src/BuildingBlocks/NotificationHub.Infrastructure/NotificationHub.Infrastructure.csproj src/BuildingBlocks/NotificationHub.Infrastructure/
 COPY src/Host/NotificationHub.ServiceDefaults/NotificationHub.ServiceDefaults.csproj src/Host/NotificationHub.ServiceDefaults/

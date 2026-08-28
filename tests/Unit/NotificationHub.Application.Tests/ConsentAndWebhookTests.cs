@@ -1,5 +1,4 @@
 using FluentAssertions;
-using FluentValidation;
 using MediatR;
 using Microsoft.Extensions.DependencyInjection;
 using NotificationHub.Abstractions.Models;
@@ -45,8 +44,10 @@ public class ConsentAndWebhookTests
         services.AddSingleton(TestFixtures.CreateOrchestrator(db));
         var sender = services.BuildServiceProvider().GetRequiredService<ISender>();
 
-        var act = async () => await sender.Send(new CreateWebhookCommand(
+        var result = await sender.Send(new CreateWebhookCommand(
             new WebhookSubscription { Url = "http://127.0.0.1/hook", Events = ["sent"] }, null));
-        await act.Should().ThrowAsync<ValidationException>();
+        result.IsFailure.Should().BeTrue();
+        result.Error!.Type.Should().Be(NotificationHub.Application.Abstractions.ErrorType.Validation);
     }
 }
+
