@@ -1,2 +1,0 @@
-Grok push test successful at 2026-08-26.
-This file can be safely deleted.
