@@ -1,8 +1,74 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { PageHeader, Card, Button, ResultBox } from "@/components/Shell";
-import { endpoints, ApiResult } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { PageHeader } from "@/components/page-header";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { DataTable } from "@/components/data-table";
+import { endpoints, asArray, ApiResult } from "@/lib/api";
+import { ColumnDef } from "@tanstack/react-table";
+import { Activity, RefreshCw, Server, Wifi, Puzzle } from "lucide-react";
+import { toast } from "sonner";
+import Link from "next/link";
+
+type PluginRow = { name?: string; channel?: string; id?: string; [k: string]: unknown };
+
+const pluginColumns: ColumnDef<PluginRow>[] = [
+  {
+    accessorKey: "name",
+    header: "Name",
+    cell: ({ row }) => (
+      <span className="font-medium">
+        {String(row.original.name ?? row.original.id ?? row.original.channel ?? "—")}
+      </span>
+    ),
+  },
+  {
+    id: "channel",
+    header: "Channel",
+    accessorFn: (r) => String(r.channel ?? r.Channel ?? "—"),
+  },
+  {
+    id: "details",
+    header: "Raw",
+    cell: ({ row }) => (
+      <span className="text-xs text-muted-foreground font-mono truncate max-w-[240px] block">
+        {JSON.stringify(row.original).slice(0, 80)}
+      </span>
+    ),
+  },
+];
+
+function StatusCard({
+  title,
+  result,
+  icon: Icon,
+}: {
+  title: string;
+  result: ApiResult | null;
+  icon: React.ComponentType<{ className?: string }>;
+}) {
+  const ok = result?.ok;
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+        <CardTitle className="text-sm font-medium">{title}</CardTitle>
+        <Icon className="h-4 w-4 text-muted-foreground" />
+      </CardHeader>
+      <CardContent>
+        <div className="text-2xl font-bold">
+          {!result ? "…" : ok ? "Healthy" : "Issue"}
+        </div>
+        <div className="mt-1">
+          <Badge variant={!result ? "secondary" : ok ? "success" : "destructive"}>
+            {!result ? "checking" : ok ? `HTTP ${result.status}` : result.error?.slice(0, 40) || "fail"}
+          </Badge>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function DashboardPage() {
   const [live, setLive] = useState<ApiResult | null>(null);
@@ -11,7 +77,7 @@ export default function DashboardPage() {
   const [plugins, setPlugins] = useState<ApiResult | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     setLoading(true);
     const [l, r, m, p] = await Promise.all([
       endpoints.healthLive(),
@@ -24,50 +90,82 @@ export default function DashboardPage() {
     setMsg(m);
     setPlugins(p);
     setLoading(false);
-  }
+    if (!l.ok && l.status === 0) toast.error("Cannot reach API — check Settings & Host");
+    else toast.success("Dashboard refreshed");
+  }, []);
 
   useEffect(() => {
     refresh();
-  }, []);
+  }, [refresh]);
 
-  const chip = (r: ApiResult | null, label: string) => (
-    <div
-      className={`rounded-lg border px-4 py-3 ${
-        !r ? "border-slate-700" : r.ok ? "border-emerald-700/50 bg-emerald-950/20" : "border-amber-700/50 bg-amber-950/20"
-      }`}
-    >
-      <div className="text-xs text-slate-400">{label}</div>
-      <div className="text-lg font-semibold mt-1">
-        {!r ? "…" : r.ok ? "OK" : `Fail (${r.status || "net"})`}
-      </div>
-    </div>
-  );
+  const pluginRows = asArray<PluginRow>(plugins?.data);
 
   return (
     <>
       <PageHeader
         title="Dashboard"
-        subtitle="Health of Host API, messaging stack, and loaded channel plugins"
+        description="Live health of the NotificationHub Host: process liveness, dependency readiness, messaging stack, and loaded channel plugins."
+        actions={
+          <Button onClick={refresh} disabled={loading} variant="outline">
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        }
       />
-      <div className="flex gap-3 mb-6">
-        <Button onClick={refresh} disabled={loading}>
-          {loading ? "Refreshing…" : "Refresh"}
-        </Button>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+        <StatusCard title="Liveness" result={live} icon={Activity} />
+        <StatusCard title="Readiness" result={ready} icon={Server} />
+        <StatusCard title="Messaging" result={msg} icon={Wifi} />
+        <StatusCard title="Plugins API" result={plugins} icon={Puzzle} />
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        {chip(live, "Live")}
-        {chip(ready, "Ready")}
-        {chip(msg, "Messaging")}
-        {chip(plugins, "Plugins")}
-      </div>
-      <div className="grid md:grid-cols-2 gap-4">
-        <Card>
-          <h2 className="text-sm font-medium text-slate-300 mb-2">Messaging health</h2>
-          <ResultBox result={msg} />
+
+      <div className="grid gap-6 lg:grid-cols-5">
+        <Card className="lg:col-span-3">
+          <CardHeader>
+            <CardTitle>Channel plugins</CardTitle>
+            <CardDescription>
+              Microkernel extensions currently registered in the Host. Empty list usually means plugins failed to load or API key lacks permission.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DataTable
+              columns={pluginColumns}
+              data={pluginRows}
+              searchKey="name"
+              searchPlaceholder="Filter plugins…"
+              emptyMessage="No plugins returned. Open Plugins page or verify Host startup logs."
+            />
+          </CardContent>
         </Card>
-        <Card>
-          <h2 className="text-sm font-medium text-slate-300 mb-2">Plugins</h2>
-          <ResultBox result={plugins} />
+
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Quick actions</CardTitle>
+            <CardDescription>Common demo flows for stakeholders.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-2">
+            <Button asChild variant="secondary" className="justify-start">
+              <Link href="/notifications">Send a notification</Link>
+            </Button>
+            <Button asChild variant="secondary" className="justify-start">
+              <Link href="/templates">Manage templates</Link>
+            </Button>
+            <Button asChild variant="secondary" className="justify-start">
+              <Link href="/campaigns">Run a campaign</Link>
+            </Button>
+            <Button asChild variant="outline" className="justify-start">
+              <Link href="/settings">Configure API key</Link>
+            </Button>
+          </CardContent>
+          <CardContent>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Messaging payload (raw):
+            </p>
+            <pre className="mt-2 max-h-40 overflow-auto rounded-md bg-muted/50 p-2 text-[10px] font-mono">
+              {msg?.data ? JSON.stringify(msg.data, null, 2) : "—"}
+            </pre>
+          </CardContent>
         </Card>
       </div>
     </>

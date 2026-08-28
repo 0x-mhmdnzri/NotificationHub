@@ -1,35 +1,37 @@
-# NotificationHub Admin (Next.js)
+# NotificationHub Admin
 
-Admin console for [NotificationHub](../../) API at `http://localhost:5245`.
+Production-style **demo console** for the NotificationHub API (`http://localhost:5245`).
 
-## Quick start
+Stack: **Next.js 15 · Tailwind CSS · shadcn/ui · TanStack Table · Sonner**
+
+## Run
 
 ```bash
-# Terminal 1 — Host API
-cd ../../
+# Host API (from repo root)
 dotnet run --project src/Host/NotificationHub.Host
-# copy bootstrap API key from logs
 
-# Terminal 2 — Admin UI
+# Admin UI
 cd apps/admin
 cp .env.local.example .env.local
 npm install
 npm run dev
 ```
 
-Open http://localhost:3000 → **Settings** → paste API base + key.
+Open http://localhost:3000 → **Settings** → paste API base + bootstrap key → **Test connection**.
 
-## Features (mapped from OpenAPI)
+## What each page is for
 
-| Panel | API |
-|-------|-----|
-| Dashboard | `/health/*`, `/api/v1/admin/messaging/health`, `/api/v1/plugins` |
-| Notifications | `POST /api/v1/notifications`, `/sync`, `GET /{id}` |
-| Templates | CRUD + preview |
-| Campaigns | create → recipients → send → progress |
-| Workflows | save, start, timeline, cancel |
-| Segments / Topics / Devices | manage |
-| Preferences / Consents / Webhooks | compliance & integrations |
-| Engagement | track + stats |
+| Page | User need |
+|------|-----------|
+| Dashboard | See if the platform is healthy and which plugins loaded |
+| Notifications | Send and track the core product action |
+| Templates | Maintain message copy with preview |
+| Campaigns | Guided batch send for marketers |
+| Workflows | Multi-step journeys |
+| Segments / Topics / Devices | Audience building blocks |
+| Preferences / Consents | Compliance controls |
+| Webhooks / Engagement | Integrations & analytics |
+| Plugins | Extension surface |
+| Settings | Connect to Host securely |
 
-Auth header: `X-Api-Key` (stored in `localStorage`).
+Lists use **DataTable** (sort, filter, pagination). Actions show live **API responses** with toasts.
