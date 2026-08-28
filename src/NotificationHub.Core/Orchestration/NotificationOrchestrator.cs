@@ -6,6 +6,7 @@ using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Audit;
 using NotificationHub.Core.Compliance;
 using NotificationHub.Core.Messaging;
+// Hangfire schedule after COMMIT via IOutboxDispatchScheduler
 using NotificationHub.Core.Common;
 using NotificationHub.Core.PluginHost;
 using NotificationHub.Core.Preferences;
@@ -26,6 +27,7 @@ public sealed class NotificationOrchestrator
     private readonly IPreferenceService _preferences;
     private readonly IConsentService _consents;
     private readonly IOutbox _outbox;
+    private readonly IOutboxDispatchScheduler _outboxScheduler;
     private readonly IAuditService _audit;
     private readonly IWebhookDispatcher _webhooks;
     private readonly IProviderRouter _router;
@@ -42,6 +44,7 @@ public sealed class NotificationOrchestrator
         IPreferenceService preferences,
         IConsentService consents,
         IOutbox outbox,
+        IOutboxDispatchScheduler outboxScheduler,
         IAuditService audit,
         IWebhookDispatcher webhooks,
         IProviderRouter router,
@@ -56,6 +59,7 @@ public sealed class NotificationOrchestrator
         _preferences = preferences;
         _consents = consents;
         _outbox = outbox;
+        _outboxScheduler = outboxScheduler;
         _audit = audit;
         _webhooks = webhooks;
         _router = router;
@@ -138,6 +142,7 @@ public sealed class NotificationOrchestrator
         status = status with { CreatedAt = domain.CreatedAtUtc, UpdatedAt = domain.CreatedAtUtc };
 
         var strategy = _db.Database.CreateExecutionStrategy();
+        Guid? outboxId = null;
         await strategy.ExecuteAsync(
             state: 0,
             operation: async (dbCtx, _, token) =>
@@ -145,13 +150,17 @@ public sealed class NotificationOrchestrator
                 await using var tx = await dbCtx.Database.BeginTransactionAsync(token).ConfigureAwait(false);
                 await _statusStore.SaveAsync(status, token).ConfigureAwait(false);
                 if (domain.Status == NotificationHub.Domain.Delivery.DeliveryStatus.Queued)
-                    await _outbox.AddAsync(request, token).ConfigureAwait(false);
+                    outboxId = await _outbox.AddAsync(request, token).ConfigureAwait(false);
                 await dbCtx.SaveChangesAsync(token).ConfigureAwait(false);
                 await tx.CommitAsync(token).ConfigureAwait(false);
                 return true;
             },
             verifySucceeded: null,
             cancellationToken: ct).ConfigureAwait(false);
+
+        // After COMMIT only — Hangfire durable dispatch by outbox id (not full payload).
+        if (outboxId is { } oid)
+            _outboxScheduler.ScheduleDispatch(oid);
 
         await FireAudit("accepted", request.Id, request.TenantId, channel);
         return (true, status);

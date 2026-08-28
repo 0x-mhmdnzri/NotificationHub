@@ -4,20 +4,28 @@ using NotificationHub.Core.Queue;
 namespace NotificationHub.Core.Messaging;
 
 /// <summary>
-/// API-facing queue: writes to outbox only. Relay publishes to RabbitMQ.
+/// API-facing queue: writes to outbox only. Relay / Hangfire publishes to RabbitMQ.
 /// </summary>
 public sealed class OutboxNotificationQueue : INotificationQueue
 {
     private readonly IOutbox _outbox;
-    public OutboxNotificationQueue(IOutbox outbox) => _outbox = outbox;
+    private readonly IOutboxDispatchScheduler _scheduler;
+    public OutboxNotificationQueue(IOutbox outbox, IOutboxDispatchScheduler scheduler)
+    {
+        _outbox = outbox;
+        _scheduler = scheduler;
+    }
 
-    public ValueTask EnqueueAsync(NotificationRequest request, CancellationToken ct = default)
-        => new(_outbox.AddAsync(request, ct));
+    public async ValueTask EnqueueAsync(NotificationRequest request, CancellationToken ct = default)
+    {
+        var id = await _outbox.AddAsync(request, ct);
+        // Note: caller must SaveChanges before this is reliable; Prefer orchestrator path.
+        _scheduler.ScheduleDispatch(id);
+    }
 
     public async IAsyncEnumerable<NotificationRequest> DequeueAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
     {
-        // Consumption is handled by NotificationBackgroundWorker via RabbitMqNotificationQueue
         await Task.Yield();
         yield break;
     }

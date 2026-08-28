@@ -1,3 +1,6 @@
+using NotificationHub.Infrastructure.HangfireJobs;
+using Hangfire.PostgreSql;
+using Hangfire;
 using Serilog;
 using NotificationHub.ServiceDefaults;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -175,6 +178,33 @@ builder.Services.AddSingleton<IProviderHealthTracker, CircuitBreakerProviderHeal
 builder.Services.AddSingleton<IProviderRouter, HealthAwareProviderRouter>();
 builder.Services.AddScoped<IOutbox, EfOutbox>();
 builder.Services.AddScoped<IInbox, EfInbox>();
+
+// --- Hangfire: durable outbox dispatch (at-least-once job engine, not a broker) ---
+builder.Services.Configure<HangfireMessagingOptions>(builder.Configuration.GetSection(HangfireMessagingOptions.SectionName));
+var hangfireEnabled = builder.Configuration.GetValue("HangfireMessaging:Enabled", true);
+var hangfireCs = builder.Configuration.GetConnectionString("Default")
+    ?? builder.Configuration["ConnectionStrings:Default"];
+if (hangfireEnabled && !string.IsNullOrWhiteSpace(hangfireCs))
+{
+    builder.Services.AddHangfire(cfg => cfg
+        .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+        .UseSimpleAssemblyNameTypeSerializer()
+        .UseRecommendedSerializerSettings()
+        .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(hangfireCs)));
+    builder.Services.AddHangfireServer(options =>
+    {
+        options.Queues = new[] { "outbox", "default" };
+        options.WorkerCount = Math.Max(2, Environment.ProcessorCount);
+    });
+    builder.Services.AddScoped<IOutboxDispatchJob, OutboxDispatchJob>();
+    builder.Services.AddScoped<OutboxReconciliationJob>();
+    builder.Services.AddSingleton<IOutboxDispatchScheduler, HangfireOutboxDispatchScheduler>();
+}
+else
+{
+    builder.Services.AddSingleton<IOutboxDispatchScheduler, NullOutboxDispatchScheduler>();
+}
+
 // Aspire role flags (default true for monolithic Host)
 var runOutbox = builder.Configuration.GetValue("Workers:RunOutboxRelay", true);
 var runMessagingHealth = builder.Configuration.GetValue("Workers:RunMessagingHealthMonitor", true);
@@ -187,7 +217,12 @@ var runWorkflow = builder.Configuration.GetValue("Workers:RunWorkflow", true);
 
 if (runOutbox)
     builder.Services.Configure<OutboxRelayOptions>(builder.Configuration.GetSection(OutboxRelayOptions.SectionName));
+    // Hangfire is primary dispatcher; keep relay as safety net when configured.
+if (builder.Configuration.GetValue("HangfireMessaging:KeepRelayWorker", true) ||
+    !builder.Configuration.GetValue("HangfireMessaging:Enabled", true))
+{
     builder.Services.AddHostedService<OutboxRelayWorker>();
+}
 builder.Services.Configure<MessagingHealthOptions>(builder.Configuration.GetSection(MessagingHealthOptions.SectionName));
 builder.Services.AddScoped<IMessagingHealthService, MessagingHealthService>();
 if (runMessagingHealth)
@@ -300,6 +335,21 @@ builder.Services.AddSingleton<IPlugin, FcmPushPlugin>();
 builder.Services.AddSingleton<IPlugin, ExpoPushPlugin>();
 
 var app = builder.Build();
+
+if (hangfireEnabled && !string.IsNullOrWhiteSpace(hangfireCs))
+{
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        // Protect in production via auth filter; open in dev for ops.
+        Authorization = Array.Empty<Hangfire.Dashboard.IDashboardAuthorizationFilter>()
+    });
+    var reconMinutes = app.Configuration.GetValue("HangfireMessaging:ReconciliationIntervalMinutes", 2);
+    RecurringJob.AddOrUpdate<OutboxReconciliationJob>(
+        "outbox-reconciliation",
+        j => j.ReconcileAsync(CancellationToken.None),
+        "*/" + Math.Clamp(reconMinutes, 1, 60) + " * * * *");
+}
+
 app.UseSerilogRequestLogging();
 
 using (var scope = app.Services.CreateScope())

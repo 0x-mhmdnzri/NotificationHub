@@ -16,18 +16,19 @@ public sealed class EfOutbox : IOutbox
     /// Stages an outbox row on the shared DbContext. Does not call SaveChanges so the
     /// caller can commit status + outbox in a single transaction (avoids dual-write).
     /// </summary>
-    public Task AddAsync(NotificationRequest request, CancellationToken ct = default)
+    public Task<Guid> AddAsync(NotificationRequest request, CancellationToken ct = default)
     {
+        var id = Guid.NewGuid();
         _db.OutboxMessages.Add(new OutboxMessageEntity
         {
+            Id = id,
             NotificationId = request.Id,
             PayloadJson = JsonSerializer.Serialize(request, JsonOptions),
             Status = "pending",
             NextAttemptAt = DateTimeOffset.UtcNow,
             CreatedAt = DateTimeOffset.UtcNow
         });
-        // Save is deferred to the ambient unit-of-work / explicit transaction.
-        return Task.CompletedTask;
+        return Task.FromResult(id);
     }
 }
 
@@ -36,7 +37,6 @@ public sealed class EfInbox : IInbox
     private readonly NotificationDbContext _db;
     public EfInbox(NotificationDbContext db) => _db = db;
 
-    /// <summary>Returns false if already processed (duplicate).</summary>
     public Task<bool> ExistsAsync(string messageId, CancellationToken ct = default)
         => _db.InboxMessages.AnyAsync(x => x.MessageId == messageId, ct);
 
@@ -52,7 +52,6 @@ public sealed class EfInbox : IInbox
         }
         catch
         {
-            // unique violation => already processed
             return false;
         }
     }

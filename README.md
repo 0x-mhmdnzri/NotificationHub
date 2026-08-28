@@ -214,6 +214,20 @@ Ideas, bug reports, and contributions of any size are appreciated.
 
 
 
+
+## Messaging reliability (Hangfire + Outbox + RabbitMQ)
+
+```text
+Accept TX (status + outbox) → COMMIT → Hangfire job(outboxId) → RabbitMQ → Worker + Inbox
+```
+
+- Hangfire = durable **job** execution (not a broker)
+- RabbitMQ = delivery backbone
+- At-least-once + inbox idempotency
+- Recurring reconciliation for stuck outbox rows
+- Dashboard: `/hangfire`
+- See [ADR-009](docs/ADR-009-Hangfire-Messaging-Reliability.md)
+
 ## Latency & concurrency
 
 Hot paths use **bounded parallel work** (not unbounded fan-out):
