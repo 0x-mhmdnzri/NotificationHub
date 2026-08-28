@@ -362,13 +362,29 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
 
         if (!string.IsNullOrWhiteSpace(_options.ConsumeChannel))
         {
+            // Single-channel worker (Aspire email/sms/push process)
             if (wantNormal)
                 queues.Add(WorkQueueName(_options, _options.ConsumeChannel, critical: false));
             if (wantCritical)
                 queues.Add(WorkQueueName(_options, _options.ConsumeChannel, critical: true));
         }
+        else if (_options.ChannelRouting)
+        {
+            // Monolithic Host: consume every channel queue declared by topology
+            var channels = _options.Channels is { Length: > 0 }
+                ? _options.Channels
+                : new[] { "email", "sms", "push", "inapp", "chat" };
+            foreach (var ch in channels)
+            {
+                if (wantNormal)
+                    queues.Add(WorkQueueName(_options, ch, critical: false));
+                if (wantCritical)
+                    queues.Add(WorkQueueName(_options, ch, critical: true));
+            }
+        }
         else
         {
+            // Legacy single-queue mode
             if (wantNormal)
                 queues.Add(_options.QueueName);
             if (wantCritical)
@@ -376,8 +392,8 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         }
 
         if (queues.Count == 0)
-            queues.Add(_options.QueueName); // safety net
-        return queues;
+            queues.Add(_options.QueueName);
+        return queues.Distinct(StringComparer.Ordinal).ToList();
     }
 
     public async IAsyncEnumerable<(NotificationRequest Request, ulong DeliveryTag, int RedeliveryCount)> DequeueWithAckAsync(
@@ -432,6 +448,13 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
 
         foreach (var queueName in queueNames)
         {
+            // Idempotent declare so consume never hits 404 if topology lagged or broker was reset
+            var workArgs = new Dictionary<string, object?>
+            {
+                ["x-dead-letter-exchange"] = _options.DeadLetterExchange,
+                ["x-dead-letter-routing-key"] = _options.DeadLetterRoutingKey
+            };
+            await _channel.QueueDeclareAsync(queueName, durable: true, exclusive: false, autoDelete: false, arguments: workArgs, cancellationToken: ct);
             await _channel.BasicConsumeAsync(queueName, autoAck: false, consumer, ct);
             _logger.LogInformation(
                 "Consuming RabbitMQ queue {Queue} prefetch={Prefetch} buffer={Buffer} maxConcurrency={Concurrency}",

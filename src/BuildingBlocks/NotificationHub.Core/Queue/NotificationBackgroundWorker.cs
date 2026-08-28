@@ -41,7 +41,29 @@ public sealed class NotificationBackgroundWorker : BackgroundService
         var rabbit = _root.GetService<RabbitMqNotificationQueue>();
         if (rabbit is not null)
         {
-            await RunRabbitWorkerPoolAsync(rabbit, stoppingToken);
+            // Retry on AMQP topology/connection faults — do not stop the host (StopHost policy).
+            var delay = TimeSpan.FromSeconds(2);
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await RunRabbitWorkerPoolAsync(rabbit, stoppingToken);
+                    break; // normal exit (cancellation / end of stream)
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex,
+                        "RabbitMQ worker pool failed; retrying in {Delay}s (host stays up)",
+                        delay.TotalSeconds);
+                    try { await Task.Delay(delay, stoppingToken); }
+                    catch (OperationCanceledException) { break; }
+                    delay = TimeSpan.FromSeconds(Math.Min(60, delay.TotalSeconds * 2));
+                }
+            }
             return;
         }
 
