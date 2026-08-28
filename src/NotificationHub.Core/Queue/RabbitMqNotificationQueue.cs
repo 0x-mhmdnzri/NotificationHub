@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -43,6 +44,18 @@ public sealed class RabbitMqOptions
 
     public int[] RetryDelaySeconds { get; set; } = [5, 15, 30, 60, 120];
     public ushort PrefetchCount { get; set; } = 10;
+
+    /// <summary>
+    /// Application-level concurrent processors (SemaphoreSlim). Distinct from PrefetchCount (RabbitMQ QoS).
+    /// I/O-bound notification delivery: default 8. Keep ≤ PrefetchCount so in-flight work stays in RabbitMQ when saturated.
+    /// </summary>
+    public int WorkerMaxConcurrency { get; set; } = 8;
+
+    /// <summary>
+    /// Bounded hand-off buffer between consumer callback and worker pool. Default = PrefetchCount * 2.
+    /// Prevents moving the queue into process memory (anti-pattern).
+    /// </summary>
+    public int ConsumerBufferCapacity { get; set; } = 0;
     public int MaxRedeliveryCount { get; set; } = 5;
     public bool PublisherConfirms { get; set; } = true;
     public int PublisherConfirmTimeoutSeconds { get; set; } = 10;
@@ -249,7 +262,17 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
     {
         var queueName = ConsumeQueueName();
         var consumer = new AsyncEventingBasicConsumer(_channel);
-        var channel = System.Threading.Channels.Channel.CreateUnbounded<(NotificationRequest, ulong, int)>();
+        // Bounded buffer: backpressure when workers are saturated (does not drain RabbitMQ into RAM).
+        var bufferCap = _options.ConsumerBufferCapacity > 0
+            ? _options.ConsumerBufferCapacity
+            : Math.Max(2, _options.PrefetchCount * 2);
+        var channel = System.Threading.Channels.Channel.CreateBounded<(NotificationRequest, ulong, int)>(
+            new BoundedChannelOptions(bufferCap)
+            {
+                FullMode = BoundedChannelFullMode.Wait,
+                SingleReader = true,
+                SingleWriter = false
+            });
 
         consumer.ReceivedAsync += async (_, ea) =>
         {
@@ -285,7 +308,9 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         };
 
         await _channel.BasicConsumeAsync(queueName, autoAck: false, consumer, ct);
-        _logger.LogInformation("Consuming RabbitMQ queue {Queue}", queueName);
+        _logger.LogInformation(
+            "Consuming RabbitMQ queue {Queue} prefetch={Prefetch} buffer={Buffer} maxConcurrency={Concurrency}",
+            queueName, _options.PrefetchCount, bufferCap, _options.WorkerMaxConcurrency);
 
         await foreach (var item in channel.Reader.ReadAllAsync(ct))
             yield return item;

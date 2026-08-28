@@ -212,6 +212,19 @@ Ideas, bug reports, and contributions of any size are appreciated.
 ---
 
 
+
+## Worker management (RabbitMQ)
+
+Delivery workers use **competing consumers + fair dispatch (prefetch) + application concurrency**:
+
+| Setting | Default | Controls |
+|---------|---------|----------|
+| `RabbitMQ:PrefetchCount` | 16 | Broker delivery (QoS) |
+| `RabbitMQ:WorkerMaxConcurrency` | 8 | Parallel process tasks |
+| `RabbitMQ:ConsumerBufferCapacity` | 32 | Bounded hand-off buffer |
+
+ACK only after successful processing + inbox mark; delayed retry then DLQ. See [ADR-006](docs/ADR-006-RabbitMQ-Worker-Management.md) and [ops/worker-management](docs/ops/worker-management.md).
+
 ## Domain-Driven Design
 
 Core business rules live in `src/NotificationHub.Domain` (pure .NET, no EF/RabbitMQ).
