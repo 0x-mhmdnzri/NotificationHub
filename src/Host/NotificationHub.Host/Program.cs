@@ -1,3 +1,5 @@
+using NotificationHub.Infrastructure.Messaging.Integration;
+using NotificationHub.Core.Messaging;
 using NotificationHub.Host.Hangfire;
 using NotificationHub.Infrastructure.HangfireJobs;
 using Hangfire.PostgreSql;
@@ -235,6 +237,14 @@ builder.Services.Configure<CostOptions>(builder.Configuration.GetSection(CostOpt
 
 // Transport consumer/publisher (singleton connection)
 builder.Services.AddSingleton<RabbitMqNotificationQueue>();
+builder.Services.AddSingleton<IIntegrationEventPublisher>(sp =>
+{
+    var q = sp.GetService<RabbitMqNotificationQueue>();
+    return q is null
+        ? new NullIntegrationEventPublisher()
+        : new RabbitMqIntegrationEventPublisher(q);
+});
+builder.Services.AddScoped<IntegrationEventWebhookBridge>();
 // API enqueue path = transactional outbox (scoped with DbContext)
 builder.Services.AddScoped<INotificationQueue, OutboxNotificationQueue>();
 builder.Services.AddSingleton<PluginLoader>();

@@ -66,6 +66,11 @@ public sealed class RabbitMqOptions
     /// </summary>
     public bool PriorityRouting { get; set; } = true;
 
+    /// <summary>Topic exchange for integration events (downstream analytics, webhooks bridge, other services).</summary>
+    public string EventsExchangeName { get; set; } = "notification.events";
+    /// <summary>When true, declare events exchange and publish integration payloads.</summary>
+    public bool PublishIntegrationEvents { get; set; } = true;
+
     /// <summary>
     /// Bounded hand-off buffer between consumer callback and worker pool. Default = PrefetchCount * 2.
     /// Prevents moving the queue into process memory (anti-pattern).
@@ -169,6 +174,10 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         _channel.QueueBindAsync(_options.DeadLetterQueue, _options.DeadLetterExchange, _options.DeadLetterRoutingKey).GetAwaiter().GetResult();
 
         _channel.ExchangeDeclareAsync(_options.ExchangeName, ExchangeType.Direct, durable: true).GetAwaiter().GetResult();
+        if (_options.PublishIntegrationEvents)
+        {
+            _channel.ExchangeDeclareAsync(_options.EventsExchangeName, ExchangeType.Topic, durable: true).GetAwaiter().GetResult();
+        }
         _channel.ExchangeDeclareAsync(_options.RetryExchangeName, ExchangeType.Direct, durable: true).GetAwaiter().GetResult();
 
         var channels = _options.ChannelRouting
@@ -462,6 +471,47 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
 
     public Task NackAsync(ulong deliveryTag, bool requeue, CancellationToken ct = default)
         => _channel.BasicNackAsync(deliveryTag, false, requeue, ct).AsTask();
+
+    
+    /// <summary>
+    /// Publish integration event to topic exchange. Routing key = eventType (e.g. notification.accepted).
+    /// Consumers bind with patterns like notification.# or notification.suppressed.
+    /// </summary>
+    public async Task PublishIntegrationEventAsync(
+        string eventType,
+        int version,
+        Guid messageId,
+        string payloadJson,
+        string? tenantId,
+        string? correlationId,
+        CancellationToken ct = default)
+    {
+        if (!_options.PublishIntegrationEvents)
+            return;
+
+        var body = Encoding.UTF8.GetBytes(payloadJson);
+        var props = new BasicProperties
+        {
+            Persistent = true,
+            ContentType = "application/json",
+            MessageId = messageId.ToString("N"),
+            CorrelationId = correlationId,
+            Type = eventType,
+            Headers = new Dictionary<string, object?>
+            {
+                ["event-type"] = eventType,
+                ["event-version"] = version,
+                ["message-id"] = messageId.ToString("N")
+            }
+        };
+        if (!string.IsNullOrEmpty(tenantId))
+            props.Headers["tenant-id"] = tenantId;
+
+        // routing key: notification.accepted → consumers can bind notification.* or notification.accepted
+        var rk = eventType;
+        await PublishWithConfirmAsync(_options.EventsExchangeName, rk, props, body, ct);
+        _logger.LogDebug("Published integration event {EventType} v{Version} id={MessageId}", eventType, version, messageId);
+    }
 
     public async ValueTask DisposeAsync()
     {

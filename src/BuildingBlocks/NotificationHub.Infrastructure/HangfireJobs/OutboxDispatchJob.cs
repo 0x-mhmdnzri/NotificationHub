@@ -4,14 +4,18 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NotificationHub.Abstractions.Models;
+using NotificationHub.Core.Messaging;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Queue;
+using NotificationHub.Infrastructure.Messaging.Integration;
 
 namespace NotificationHub.Infrastructure.HangfireJobs;
 
 /// <summary>
-/// Durable Hangfire worker: load outbox by id → publish RabbitMQ → mark published.
-/// At-least-once: crash after publish before mark → retry may republish; inbox must be idempotent.
+/// Durable Hangfire worker:
+/// - delivery outbox → RabbitMQ work queues
+/// - integration outbox → events exchange + webhook bridge
+/// At-least-once; consumers/webhooks must be idempotent on messageId.
 /// </summary>
 public sealed class OutboxDispatchJob(
     NotificationDbContext db,
@@ -37,28 +41,19 @@ public sealed class OutboxDispatchJob(
         try
         {
             using var scope = scopeFactory.CreateScope();
+            using var doc = JsonDocument.Parse(msg.PayloadJson);
+
+            if (doc.RootElement.TryGetProperty("kind", out var kindEl) &&
+                kindEl.GetString() == "integration")
+            {
+                await DispatchIntegrationAsync(scope, msg, doc.RootElement, cancellationToken);
+                return;
+            }
+
             var rabbit = scope.ServiceProvider.GetService<RabbitMqNotificationQueue>();
             if (rabbit is null)
             {
                 logger.LogWarning("RabbitMQ not configured; outbox {OutboxId} stays pending", outboxMessageId);
-                return;
-            }
-
-            using var doc = JsonDocument.Parse(msg.PayloadJson);
-            if (doc.RootElement.TryGetProperty("kind", out var kindEl) &&
-                kindEl.GetString() == "integration")
-            {
-                // Integration event: durable mark as published.
-                // Optional: publish to events exchange later; consumers must stay idempotent on MessageId.
-                logger.LogInformation(
-                    "Integration outbox {OutboxId} eventType={EventType} published (logical)",
-                    outboxMessageId,
-                    doc.RootElement.TryGetProperty("eventType", out var et) ? et.GetString() : "?");
-                msg.Status = "published";
-                msg.PublishedAt = DateTimeOffset.UtcNow;
-                msg.Attempts++;
-                msg.LastError = null;
-                await db.SaveChangesAsync(cancellationToken);
                 return;
             }
 
@@ -85,5 +80,53 @@ public sealed class OutboxDispatchJob(
             logger.LogWarning(ex, "Outbox dispatch failed {OutboxId} attempt={Attempt}", outboxMessageId, msg.Attempts);
             throw;
         }
+    }
+
+    private async Task DispatchIntegrationAsync(
+        IServiceScope scope,
+        OutboxMessageEntity msg,
+        JsonElement root,
+        CancellationToken ct)
+    {
+        var eventType = root.TryGetProperty("eventType", out var et) ? et.GetString() ?? "unknown" : "unknown";
+        var version = root.TryGetProperty("version", out var ver) && ver.TryGetInt32(out var v) ? v : 1;
+        var messageId = root.TryGetProperty("messageId", out var mid) && mid.TryGetGuid(out var g)
+            ? g
+            : msg.Id;
+        var tenantId = root.TryGetProperty("tenantId", out var tid) ? tid.GetString() : null;
+        var correlationId = root.TryGetProperty("correlationId", out var cid) ? cid.GetString() : null;
+
+        // Full wire payload already staged in outbox
+        var payloadJson = msg.PayloadJson;
+
+        var publisher = scope.ServiceProvider.GetService<IIntegrationEventPublisher>();
+        if (publisher is not null)
+        {
+            await publisher.PublishAsync(eventType, version, messageId, payloadJson, tenantId, correlationId, ct);
+        }
+        else
+        {
+            logger.LogWarning("IIntegrationEventPublisher not registered; skipping broker publish for {EventType}", eventType);
+        }
+
+        var bridge = scope.ServiceProvider.GetService<IntegrationEventWebhookBridge>();
+        if (bridge is not null)
+        {
+            // Pass inner payload object if present for cleaner webhook body
+            var webhookBody = root.TryGetProperty("payload", out var pl)
+                ? pl.GetRawText()
+                : payloadJson;
+            await bridge.DispatchAsync(eventType, webhookBody, tenantId, ct);
+        }
+
+        msg.Status = "published";
+        msg.PublishedAt = DateTimeOffset.UtcNow;
+        msg.Attempts++;
+        msg.LastError = null;
+        await db.SaveChangesAsync(ct);
+
+        logger.LogInformation(
+            "Integration outbox {OutboxId} eventType={EventType} v{Version} published to events exchange + webhooks",
+            msg.Id, eventType, version);
     }
 }

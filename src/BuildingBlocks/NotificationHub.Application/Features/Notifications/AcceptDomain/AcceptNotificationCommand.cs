@@ -57,7 +57,7 @@ public sealed class AcceptNotificationHandler(
             DateTimeOffset.UtcNow);
 
         await repository.AddAsync(notification, ct);
-        await eventDispatcher.DispatchAsync(notification.DomainEvents, ct);
+        var _ = await eventDispatcher.DispatchAsync(notification.DomainEvents, ct);
         notification.ClearDomainEvents();
         return new AcceptNotificationResult(notification.Id.Value, notification.Status);
     }

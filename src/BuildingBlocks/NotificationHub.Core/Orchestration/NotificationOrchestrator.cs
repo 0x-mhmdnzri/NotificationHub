@@ -175,14 +175,14 @@ public sealed class NotificationOrchestrator
         if (outboxId is { } oid)
             _outboxScheduler.ScheduleDispatch(oid, MessagingQueues.ForPriority(request.Priority));
 
-        // Domain → Integration event outbox (separate payloads, kind=integration).
+        // Domain → Integration event outbox (kind=integration) then Hangfire on outbox queue.
         if (_domainEvents is not null)
         {
-            await _domainEvents.DispatchAsync(domain.DomainEvents, ct).ConfigureAwait(false);
+            var integrationIds = await _domainEvents.DispatchAsync(domain.DomainEvents, ct).ConfigureAwait(false);
             domain.ClearDomainEvents();
             await _db.SaveChangesAsync(ct).ConfigureAwait(false);
-            // Schedule any new integration outbox rows
-            // (Hangfire reconciliation will pick pending if we don't track ids here)
+            foreach (var iid in integrationIds)
+                _outboxScheduler.ScheduleDispatch(iid, MessagingQueues.Outbox);
         }
 
         await FireAudit("accepted", request.Id, request.TenantId, channel);

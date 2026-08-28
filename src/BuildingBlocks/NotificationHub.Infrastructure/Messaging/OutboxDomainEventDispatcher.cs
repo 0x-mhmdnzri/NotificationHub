@@ -6,11 +6,6 @@ using NotificationHub.Infrastructure.Messaging.Integration;
 
 namespace NotificationHub.Infrastructure.Messaging;
 
-/// <summary>
-/// Stages **integration** events (mapped from domain events) into the outbox.
-/// Domain events themselves never leave the process boundary.
-/// Payload kind = "integration" so Hangfire dispatch can route differently from delivery outbox.
-/// </summary>
 public sealed class OutboxDomainEventDispatcher(NotificationDbContext db) : IDomainEventDispatcher
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -19,14 +14,16 @@ public sealed class OutboxDomainEventDispatcher(NotificationDbContext db) : IDom
         WriteIndented = false
     };
 
-    public Task DispatchAsync(IEnumerable<IDomainEvent> events, CancellationToken ct = default)
+    public Task<IReadOnlyList<Guid>> DispatchAsync(IEnumerable<IDomainEvent> events, CancellationToken ct = default)
     {
+        var ids = new List<Guid>();
         foreach (var domainEvent in events)
         {
             var integration = DomainEventToIntegrationMapper.TryMap(domainEvent);
             if (integration is null)
                 continue;
 
+            var id = Guid.NewGuid();
             var wire = new
             {
                 kind = "integration",
@@ -41,14 +38,15 @@ public sealed class OutboxDomainEventDispatcher(NotificationDbContext db) : IDom
 
             db.OutboxMessages.Add(new OutboxMessageEntity
             {
-                Id = Guid.NewGuid(),
+                Id = id,
                 NotificationId = integration.MessageId,
                 PayloadJson = JsonSerializer.Serialize(wire, JsonOpts),
                 Status = "pending",
                 CreatedAt = DateTimeOffset.UtcNow
             });
+            ids.Add(id);
         }
 
-        return Task.CompletedTask;
+        return Task.FromResult<IReadOnlyList<Guid>>(ids);
     }
 }

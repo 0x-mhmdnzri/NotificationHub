@@ -235,6 +235,10 @@ Ideas, bug reports, and contributions of any size are appreciated.
 
 ## Domain vs Integration events
 
+Integration events publish to RabbitMQ topic exchange `notification.events` and trigger webhooks.
+See [versioning policy](docs/INTEGRATION-EVENT-VERSIONING.md).
+
+
 - **Domain events** stay in-process (`NotificationHub.Domain`)
 - **Integration events** (`NotificationHub.Abstractions.IntegrationEvents`) are versioned contracts (`notification.accepted` v1, …)
 - Mapper flattens VOs → primitives; outbox payload `kind: integration`
