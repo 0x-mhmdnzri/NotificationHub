@@ -224,7 +224,16 @@ if (hangfireEnabled && !string.IsNullOrWhiteSpace(hangfireCs))
         .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
         .UseSimpleAssemblyNameTypeSerializer()
         .UseRecommendedSerializerSettings()
-        .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(hangfireCs)));
+        .UsePostgreSqlStorage(options => options.UseNpgsqlConnection(hangfireCs), new PostgreSqlStorageOptions
+        {
+            // Explicit schema so tables appear under "hangfire" in PostgreSQL (pgAdmin / \dn)
+            SchemaName = "hangfire",
+            PrepareSchemaIfNecessary = true,
+            QueuePollInterval = TimeSpan.FromSeconds(2),
+            InvisibilityTimeout = TimeSpan.FromMinutes(30),
+            JobExpirationCheckInterval = TimeSpan.FromHours(1),
+            CountersAggregateInterval = TimeSpan.FromMinutes(5)
+        }));
     var hfOpts = builder.Configuration.GetSection(HangfireMessagingOptions.SectionName).Get<HangfireMessagingOptions>()
                  ?? new HangfireMessagingOptions();
     var criticalWorkers = hfOpts.CriticalWorkerCount > 0
@@ -380,6 +389,24 @@ if (autoMigrate)
         }
 
         await db.Database.MigrateAsync();
+
+        // Create Hangfire.PostgreSql tables under schema "hangfire" (job, jobqueue, state, server, ...)
+        if (hangfireEnabled && !string.IsNullOrWhiteSpace(hangfireCs))
+        {
+            try
+            {
+                await using var hfConn = new Npgsql.NpgsqlConnection(hangfireCs);
+                await hfConn.OpenAsync();
+                Hangfire.PostgreSql.PostgreSqlObjectsInstaller.Install(hfConn, "hangfire");
+                startupLog?.LogInformation("Hangfire PostgreSQL schema/tables ensured (schema=hangfire)");
+            }
+            catch (Exception ex)
+            {
+                startupLog?.LogError(ex, "Hangfire schema install failed — jobs may not persist until fixed");
+                throw;
+            }
+        }
+
         await Phase1Schema.EnsureAsync(db, startupLog);
         await Phase2Schema.EnsureAsync(db, startupLog);
         await BroadcastSchema.EnsureAsync(db, startupLog);
