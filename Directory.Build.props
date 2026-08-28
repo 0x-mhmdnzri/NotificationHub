@@ -9,10 +9,17 @@
     <Deterministic>true</Deterministic>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
 
-    <!-- Lightweight runtime characteristics -->
+    <!--
+      Cold-start / steady-state defaults (see docs/ADR-017-Runtime-Performance.md)
+      - ReadyToRun: pre-compile IL → native at publish (safe with plugins/EF/Hangfire)
+      - Native AOT deferred: plugins, EF Core, Hangfire, MediatR reflection not AOT-safe yet
+      - TieredPGO: Dynamic PGO for hot paths after warm-up
+    -->
     <PublishReadyToRun>true</PublishReadyToRun>
     <PublishSingleFile Condition="'$(PublishSingleFile)' == ''">false</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <TieredCompilation>true</TieredCompilation>
+    <TieredPGO>true</TieredPGO>
     <DebugType>portable</DebugType>
     <DebugSymbols>true</DebugSymbols>
     <!-- Avoid pulling satellite assemblies for every culture unless needed -->
@@ -27,17 +34,19 @@
     <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
 
-  <!-- Host publish defaults: framework-dependent = smaller deploy when runtime is present -->
+  <!-- Host: latency-sensitive API + workers -->
   <PropertyGroup Condition="$(MSBuildProjectName) == 'NotificationHub.Host'">
     <SelfContained Condition="'$(SelfContained)' == ''">false</SelfContained>
+    <!-- Trimming off: plugin load + EF + Hangfire need reflection; partial trim is a later phase -->
     <PublishTrimmed>false</PublishTrimmed>
+    <!-- Server GC + concurrent: throughput for multi-core; DATAS adapts heap in .NET 9 -->
     <ServerGarbageCollection>true</ServerGarbageCollection>
     <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
-    <TieredCompilation>true</TieredCompilation>
+    <RetainILAfterAOT>false</RetainILAfterAOT>
   </PropertyGroup>
+
   <ItemGroup>
     <!-- Force safe STJ across all projects (nuget-audit) -->
     <PackageReference Include="System.Text.Json" />
   </ItemGroup>
 </Project>
-

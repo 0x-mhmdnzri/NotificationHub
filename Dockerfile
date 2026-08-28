@@ -56,5 +56,9 @@ ENV ASPNETCORE_URLS=http://+:8080
 ENV ASPNETCORE_HTTP_PORTS=8080
 ENV ASPNETCORE_ENVIRONMENT=Production
 ENV DOTNET_EnableDiagnostics=0
+# JIT / GC — ADR-017
+ENV DOTNET_TieredPGO=1
+ENV DOTNET_TC_QuickJitForLoops=1
+ENV DOTNET_GCDynamicAdaptationMode=1
 
 ENTRYPOINT ["dotnet", "NotificationHub.Host.dll"]
