@@ -1,0 +1,25 @@
+name: License report
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+jobs:
+  nuget-licenses:
+    name: NuGet license listing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+      - run: dotnet restore
+      - name: List packages
+        run: |
+          dotnet list package --include-transitive > nuget-packages.txt
+          head -n 200 nuget-packages.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package-list
+          path: nuget-packages.txt

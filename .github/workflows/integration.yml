@@ -1,0 +1,101 @@
+name: Integration & Smoke
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+jobs:
+  integration:
+    name: Host smoke (Postgres + RabbitMQ)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: notificationhub
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      rabbitmq:
+        image: rabbitmq:3.13-management-alpine
+        ports:
+          - 5672:5672
+          - 15672:15672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: "Host=localhost;Port=5432;Database=notificationhub;Username=postgres;Password=postgres;Pooling=true"
+      ConnectionStrings__notificationdb: "Host=localhost;Port=5432;Database=notificationhub;Username=postgres;Password=postgres;Pooling=true"
+      RabbitMQ__HostName: localhost
+      RabbitMQ__Port: "5672"
+      RabbitMQ__UserName: guest
+      RabbitMQ__Password: guest
+      Hangfire__DashboardEnabled: "false"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Restore & build Host
+        run: |
+          dotnet restore src/Host/NotificationHub.Host/NotificationHub.Host.csproj
+          dotnet build src/Host/NotificationHub.Host/NotificationHub.Host.csproj -c Release --no-restore
+
+      - name: Start Host (background)
+        run: |
+          nohup dotnet run --project src/Host/NotificationHub.Host/NotificationHub.Host.csproj \
+            -c Release --no-build --urls http://127.0.0.1:5245 \
+            > /tmp/host.log 2>&1 &
+          echo $! > /tmp/host.pid
+          echo "Host PID $(cat /tmp/host.pid)"
+
+      - name: Wait for /health/live
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:5245/health/live >/dev/null 2>&1; then
+              echo "live OK after ${i}s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "==== Host log ===="
+          tail -n 200 /tmp/host.log || true
+          exit 1
+
+      - name: Smoke health endpoints
+        run: |
+          set -euo pipefail
+          curl -fsS http://127.0.0.1:5245/health/live | tee /tmp/live.json
+          curl -fsS http://127.0.0.1:5245/health/ready | tee /tmp/ready.json || true
+          # ready may be degraded without Redis — live must succeed
+          echo "Smoke completed"
+
+      - name: Upload Host log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-host-log
+          path: /tmp/host.log
+
+      - name: Stop Host
+        if: always()
+        run: |
+          if [ -f /tmp/host.pid ]; then kill "$(cat /tmp/host.pid)" || true; fi

@@ -1,0 +1,28 @@
+name: Code format
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+jobs:
+  format:
+    name: dotnet format verify
+    runs-on: ubuntu-latest
+    continue-on-error: true # soft gate until codebase is fully formatted
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+      - run: dotnet restore
+      - name: Verify formatting
+        run: |
+          set -euo pipefail
+          # Report-only style; does not rewrite. Soft-fail allowed above until baseline is clean.
+          dotnet format --verify-no-changes --severity error --verbosity diagnostic || {
+            echo "::warning::Format drift detected. Run 'dotnet format' locally to fix."
+            exit 1
+          }

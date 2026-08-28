@@ -1,0 +1,68 @@
+name: SBOM & Sign
+
+on:
+  workflow_run:
+    workflows: ["Publish Docker Container"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+  attestations: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  sbom-sign:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build local image for SBOM
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          tags: notificationhub:sbom
+          cache-from: type=gha
+
+      - name: Generate SBOM (Syft)
+        uses: anchore/sbom-action@v0
+        with:
+          image: notificationhub:sbom
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-sbom
+          path: sbom.spdx.json
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Push and sign (keyless OIDC)
+        run: |
+          set -euo pipefail
+          # Push a deterministic sbom-tagged image then keyless-sign
+          DIGEST_REF="${REGISTRY}/$(echo "${IMAGE_NAME}" | tr '[:upper:]' '[:lower:]'):sbom-${GITHUB_SHA}"
+          docker tag notificationhub:sbom "$DIGEST_REF"
+          docker push "$DIGEST_REF"
+          cosign sign --yes "$DIGEST_REF" || {
+            echo "::warning::Cosign keyless sign failed (permissions or registry). SBOM artifact still uploaded."
+            exit 0
+          }

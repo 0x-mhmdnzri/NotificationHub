@@ -2,42 +2,39 @@ name: Tests
 
 on:
   push:
-    branches: [ dev, main ]
+    branches: [dev, main]
   pull_request:
-    branches: [ dev, main ]
+    branches: [dev, main]
+  workflow_dispatch:
 
 jobs:
   unit-tests:
+    name: Unit tests (all)
     runs-on: ubuntu-latest
-    name: Unit & Core Tests
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '9.0.x'
-
-      - name: Restore
-        run: dotnet restore
-
-      - name: Build
-        run: dotnet build --no-restore --configuration Release
-
-      - name: Test
-        run: >
-          dotnet test tests/Unit/NotificationHub.Core.Tests/NotificationHub.Core.Tests.csproj
-          --no-build
-          --configuration Release
-          --verbosity normal
-          --logger "trx;LogFileName=test-results.trx"
-          --collect:"XPlat Code Coverage"
-
-      - name: Upload test results
-        if: always()
+          dotnet-version: "9.0.x"
+      - run: dotnet restore
+      - run: dotnet build -c Release --no-restore
+      - name: Test all unit projects
+        run: |
+          set -euo pipefail
+          for proj in \
+            tests/Unit/NotificationHub.Core.Tests/NotificationHub.Core.Tests.csproj \
+            tests/Unit/NotificationHub.Domain.Tests/NotificationHub.Domain.Tests.csproj \
+            tests/Unit/NotificationHub.Application.Tests/NotificationHub.Application.Tests.csproj
+          do
+            if [ -f "$proj" ]; then
+              echo "=== Testing $proj ==="
+              dotnet test "$proj" -c Release --no-build --verbosity normal \
+                --logger "trx;LogFileName=$(basename "$proj").trx" \
+                --collect:"XPlat Code Coverage"
+            fi
+          done
+      - if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
-          path: '**/TestResults/**'
+          name: unit-test-results
+          path: "**/TestResults/**"
