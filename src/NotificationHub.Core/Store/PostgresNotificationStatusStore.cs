@@ -10,22 +10,27 @@ public sealed class PostgresNotificationStatusStore : INotificationStatusStore
     private readonly NotificationDbContext _db;
     public PostgresNotificationStatusStore(NotificationDbContext db) => _db = db;
 
-    public Task SaveAsync(NotificationStatus status, CancellationToken ct = default)
+    public async Task SaveAsync(NotificationStatus status, CancellationToken ct = default)
     {
-        _db.NotificationStatuses.Add(new NotificationStatusEntity
-        {
-            Id = status.NotificationId, Channel = status.Channel, Recipient = status.Recipient,
-            Status = status.Status, ProviderId = status.ProviderId, ProviderMessageId = status.ProviderMessageId,
-            ErrorCode = status.ErrorCode, ErrorMessage = status.ErrorMessage, AttemptCount = status.AttemptCount,
-            CreatedAt = status.CreatedAt == default ? DateTimeOffset.UtcNow : status.CreatedAt,
-            UpdatedAt = status.UpdatedAt == default ? DateTimeOffset.UtcNow : status.UpdatedAt,
-            ScheduledAt = status.ScheduledAt,
-            TenantId = status.TenantId, IdempotencyKey = status.IdempotencyKey, CollapseKey = status.CollapseKey,
-            CorrelationId = status.CorrelationId, Category = status.Category
-        });
-        // Staged only — caller commits with outbox via shared DbContext / IUnitOfWork (transactional outbox).
-        return Task.CompletedTask;
+        _db.NotificationStatuses.Add(ToEntity(status));
+        await _db.SaveChangesAsync(ct);
     }
+
+    /// <summary>Stage entity without SaveChanges (for Accept TX + outbox dual-write).</summary>
+    public void Stage(NotificationStatus status)
+        => _db.NotificationStatuses.Add(ToEntity(status));
+
+    private static NotificationStatusEntity ToEntity(NotificationStatus status) => new()
+    {
+        Id = status.NotificationId, Channel = status.Channel, Recipient = status.Recipient,
+        Status = status.Status, ProviderId = status.ProviderId, ProviderMessageId = status.ProviderMessageId,
+        ErrorCode = status.ErrorCode, ErrorMessage = status.ErrorMessage, AttemptCount = status.AttemptCount,
+        CreatedAt = status.CreatedAt == default ? DateTimeOffset.UtcNow : status.CreatedAt,
+        UpdatedAt = status.UpdatedAt == default ? DateTimeOffset.UtcNow : status.UpdatedAt,
+        ScheduledAt = status.ScheduledAt,
+        TenantId = status.TenantId, IdempotencyKey = status.IdempotencyKey, CollapseKey = status.CollapseKey,
+        CorrelationId = status.CorrelationId, Category = status.Category
+    };
 
     public async Task<NotificationStatus?> GetAsync(Guid notificationId, CancellationToken ct = default)
     {

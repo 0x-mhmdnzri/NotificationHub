@@ -86,11 +86,13 @@ public static class TestFixtures
             new PreferenceService(db),
             new ConsentService(db),
             new EfOutbox(db),
+            new NullOutboxDispatchScheduler(),
             new AuditService(db),
             new NoopWebhookDispatcher(),
             router,
             health,
-            NullLogger<NotificationOrchestrator>.Instance);
+            NullLogger<NotificationOrchestrator>.Instance,
+            db);
     }
 }
 

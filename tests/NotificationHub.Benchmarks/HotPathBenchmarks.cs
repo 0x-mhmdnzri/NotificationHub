@@ -52,11 +52,13 @@ public class HotPathBenchmarks
             cachedPrefs,
             new ConsentService(db),
             new EfOutbox(db),
+            new NullOutboxDispatchScheduler(),
             new AuditService(db),
             new NoopWebhooks(),
             router,
             health,
-            NullLogger<NotificationOrchestrator>.Instance);
+            NullLogger<NotificationOrchestrator>.Instance,
+            db);
 
         _renderer = new PlaceholderTemplateRenderer();
         _base = new NotificationRequest

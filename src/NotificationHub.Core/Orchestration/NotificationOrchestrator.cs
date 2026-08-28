@@ -143,23 +143,33 @@ public sealed class NotificationOrchestrator
 
         var status = MakeStatus(request, channel, (DeliveryStatus)(int)domain.Status, null);
         status = status with { CreatedAt = domain.CreatedAtUtc, UpdatedAt = domain.CreatedAtUtc };
-
-        var strategy = _db.Database.CreateExecutionStrategy();
         Guid? outboxId = null;
-        await strategy.ExecuteAsync(
-            state: 0,
-            operation: async (dbCtx, _, token) =>
-            {
-                await using var tx = await dbCtx.Database.BeginTransactionAsync(token).ConfigureAwait(false);
-                await _statusStore.SaveAsync(status, token).ConfigureAwait(false);
-                if (domain.Status == NotificationHub.Domain.Delivery.DeliveryStatus.Queued)
-                    outboxId = await _outbox.AddAsync(request, token).ConfigureAwait(false);
-                await dbCtx.SaveChangesAsync(token).ConfigureAwait(false);
-                await tx.CommitAsync(token).ConfigureAwait(false);
-                return true;
-            },
-            verifySucceeded: null,
-            cancellationToken: ct).ConfigureAwait(false);
+        // Relational: single TX. InMemory (tests): stage + SaveChanges without explicit TX.
+        if (IsRelationalDatabase(_db))
+        {
+            var strategy = _db.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(
+                state: 0,
+                operation: async (dbCtx, _, token) =>
+                {
+                    await using var tx = await dbCtx.Database.BeginTransactionAsync(token).ConfigureAwait(false);
+                    _statusStore.Stage(status);
+                    if (domain.Status == NotificationHub.Domain.Delivery.DeliveryStatus.Queued)
+                        outboxId = await _outbox.AddAsync(request, token).ConfigureAwait(false);
+                    await dbCtx.SaveChangesAsync(token).ConfigureAwait(false);
+                    await tx.CommitAsync(token).ConfigureAwait(false);
+                    return true;
+                },
+                verifySucceeded: null,
+                cancellationToken: ct).ConfigureAwait(false);
+        }
+        else
+        {
+            _statusStore.Stage(status);
+            if (domain.Status == NotificationHub.Domain.Delivery.DeliveryStatus.Queued)
+                outboxId = await _outbox.AddAsync(request, ct).ConfigureAwait(false);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
 
         // After COMMIT only — Hangfire durable dispatch by outbox id (not full payload).
         if (outboxId is { } oid)
@@ -211,25 +221,40 @@ public sealed class NotificationOrchestrator
         var status = MakeStatus(request, channel, DeliveryStatus.Suppressed, reason);
         status = status with { CreatedAt = domain.CreatedAtUtc, UpdatedAt = now };
 
-        var strategy = _db.Database.CreateExecutionStrategy();
-        await strategy.ExecuteAsync(
-            state: 0,
-            operation: async (dbCtx, _, token) =>
-            {
-                await using var tx = await dbCtx.Database.BeginTransactionAsync(token).ConfigureAwait(false);
-                await _statusStore.SaveAsync(status, token).ConfigureAwait(false);
-                if (_domainEvents is not null)
-                    await _domainEvents.DispatchAsync(domain.DomainEvents, token).ConfigureAwait(false);
-                await dbCtx.SaveChangesAsync(token).ConfigureAwait(false);
-                await tx.CommitAsync(token).ConfigureAwait(false);
-                return true;
-            },
-            verifySucceeded: null,
-            cancellationToken: ct).ConfigureAwait(false);
+        if (IsRelationalDatabase(_db))
+        {
+            var strategy = _db.Database.CreateExecutionStrategy();
+            await strategy.ExecuteAsync(
+                state: 0,
+                operation: async (dbCtx, _, token) =>
+                {
+                    await using var tx = await dbCtx.Database.BeginTransactionAsync(token).ConfigureAwait(false);
+                    _statusStore.Stage(status);
+                    if (_domainEvents is not null)
+                        await _domainEvents.DispatchAsync(domain.DomainEvents, token).ConfigureAwait(false);
+                    await dbCtx.SaveChangesAsync(token).ConfigureAwait(false);
+                    await tx.CommitAsync(token).ConfigureAwait(false);
+                    return true;
+                },
+                verifySucceeded: null,
+                cancellationToken: ct).ConfigureAwait(false);
+        }
+        else
+        {
+            _statusStore.Stage(status);
+            if (_domainEvents is not null)
+                await _domainEvents.DispatchAsync(domain.DomainEvents, ct).ConfigureAwait(false);
+            await _db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
 
         domain.ClearDomainEvents();
         return (status, domain);
     }
+
+
+    private static bool IsRelationalDatabase(NotificationDbContext db)
+        => db.Database.ProviderName is { } name &&
+           !name.Contains("InMemory", StringComparison.OrdinalIgnoreCase);
 
     private static NotificationStatus MakeStatus(NotificationRequest request, string channel, DeliveryStatus st, string? error) => new()
     {
