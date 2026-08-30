@@ -210,7 +210,13 @@ Console.WriteLine(
     $"(Environment={builder.Environment.EnvironmentName}, ContentRoot={builder.Environment.ContentRootPath})");
 
 builder.Services.AddDbContextPool<NotificationDbContext>(opt =>
-    opt.UseNpgsql(cs, n => { n.EnableRetryOnFailure(3); n.CommandTimeout(15); }));
+{
+    opt.UseNpgsql(cs, n => { n.EnableRetryOnFailure(3); n.CommandTimeout(15); });
+    // Identity entities are mapped in OnModelCreating + ensured via IdentitySchema SQL;
+    // no EF migration snapshot yet for those tables (same pattern as Phase*Schema).
+    opt.ConfigureWarnings(w =>
+        w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+});
 
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
 builder.Services.Configure<ProviderOptions>(builder.Configuration.GetSection("Providers"));
