@@ -37,8 +37,39 @@ public sealed class AuthContext
     public string? TenantId { get; init; }
     public IReadOnlyList<string> Roles { get; init; } = [];
     public string KeyName { get; init; } = "";
+    /// <summary>True when authenticated via JWT (human) rather than API key (machine).</summary>
+    public bool IsJwt { get; init; }
 
-    public bool IsAdmin => Roles.Contains(AppRoles.Admin, StringComparer.OrdinalIgnoreCase);
+    /// <summary>
+    /// Admin for API-key role "admin" or platform/org identity roles (SuperAdmin, PlatformAdmin, Organization*).
+    /// </summary>
+    public bool IsAdmin =>
+        Roles.Contains(AppRoles.Admin, StringComparer.OrdinalIgnoreCase)
+        || Roles.Any(r => string.Equals(r, "SuperAdmin", StringComparison.OrdinalIgnoreCase)
+                          || string.Equals(r, "PlatformAdmin", StringComparison.OrdinalIgnoreCase)
+                          || string.Equals(r, "OrganizationOwner", StringComparison.OrdinalIgnoreCase)
+                          || string.Equals(r, "OrganizationAdmin", StringComparison.OrdinalIgnoreCase));
+
     public bool HasRole(string role) => IsAdmin || Roles.Contains(role, StringComparer.OrdinalIgnoreCase);
-    public bool HasAnyRole(params string[] roles) => IsAdmin || roles.Any(HasRole);
+
+    public bool HasAnyRole(params string[] roles)
+    {
+        if (IsAdmin) return true;
+        if (roles.Any(HasRole)) return true;
+        // Map identity roles → legacy AppRoles expected by endpoints
+        foreach (var r in Roles)
+        {
+            if (string.Equals(r, "NotificationOperator", StringComparison.OrdinalIgnoreCase)
+                && roles.Any(x => string.Equals(x, AppRoles.Sender, StringComparison.OrdinalIgnoreCase)
+                               || string.Equals(x, AppRoles.Reader, StringComparison.OrdinalIgnoreCase)))
+                return true;
+            if (string.Equals(r, "Viewer", StringComparison.OrdinalIgnoreCase)
+                && roles.Any(x => string.Equals(x, AppRoles.Reader, StringComparison.OrdinalIgnoreCase)))
+                return true;
+            if (string.Equals(r, "Auditor", StringComparison.OrdinalIgnoreCase)
+                && roles.Any(x => string.Equals(x, AppRoles.Reader, StringComparison.OrdinalIgnoreCase)))
+                return true;
+        }
+        return false;
+    }
 }
