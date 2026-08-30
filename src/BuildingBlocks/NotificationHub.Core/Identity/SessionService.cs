@@ -17,15 +17,31 @@ public sealed class SessionService(NotificationDbContext db, ILogger<SessionServ
             .ToListAsync(ct);
 
         return rows.Select(s => new SessionDto(
-            s.Id, s.OrganizationId, s.ClientId, s.Ip, s.UserAgent,
-            s.CreatedAt, s.LastSeenAt, s.ExpiresAt, s.IsActive, IsCurrent: false)).ToList();
+            s.Id,
+            s.OrganizationId,
+            s.ClientId,
+            s.Ip,
+            s.UserAgent,
+            s.CreatedAt,
+            s.LastSeenAt,
+            s.ExpiresAt,
+            s.IsActive,
+            IsCurrent: false)).ToList();
     }
 
     public async Task<bool> RevokeAsync(Guid userId, Guid sessionId, CancellationToken ct = default)
     {
         var s = await db.Set<UserSessionEntity>().FirstOrDefaultAsync(x => x.Id == sessionId && x.UserId == userId, ct);
-        if (s is null) return false;
-        if (!s.IsActive) return true;
+        if (s is null)
+        {
+            return false;
+        }
+
+        if (!s.IsActive)
+        {
+            return true;
+        }
+
         s.IsActive = false;
         s.RevokedAt = DateTimeOffset.UtcNow;
         s.RefreshTokenHash = null;
@@ -64,14 +80,24 @@ public sealed class SessionService(NotificationDbContext db, ILogger<SessionServ
         db.Set<UserSessionEntity>().Add(entity);
         await db.SaveChangesAsync(ct);
         return new SessionDto(
-            entity.Id, entity.OrganizationId, entity.ClientId, entity.Ip, entity.UserAgent,
-            entity.CreatedAt, entity.LastSeenAt, entity.ExpiresAt, true, true);
+            entity.Id,
+            entity.OrganizationId,
+            entity.ClientId,
+            entity.Ip,
+            entity.UserAgent,
+            entity.CreatedAt,
+            entity.LastSeenAt,
+            entity.ExpiresAt,
+            true,
+            true);
     }
 
     public async Task<RefreshResult> RotateRefreshTokenAsync(string rawRefreshToken, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(rawRefreshToken))
+        {
             return new RefreshResult(false, null, null, null, "invalid_token");
+        }
 
         var hash = HashToken(rawRefreshToken);
         var session = await db.Set<UserSessionEntity>()
@@ -84,7 +110,9 @@ public sealed class SessionService(NotificationDbContext db, ILogger<SessionServ
         }
 
         if (!session.IsActive || session.ExpiresAt < DateTimeOffset.UtcNow || session.RevokedAt is not null)
+        {
             return new RefreshResult(false, null, null, null, "session_expired");
+        }
 
         var newRaw = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         session.RefreshTokenHash = HashToken(newRaw);

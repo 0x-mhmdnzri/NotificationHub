@@ -9,7 +9,8 @@ public static class IdentitySchema
 {
     public static async Task EnsureAsync(NotificationDbContext db, ILogger? log = null, CancellationToken ct = default)
     {
-        await db.Database.ExecuteSqlRawAsync("""
+        await db.Database.ExecuteSqlRawAsync(
+            """
             CREATE TABLE IF NOT EXISTS identity_organizations (
                 "Id" uuid PRIMARY KEY,
                 "Name" varchar(256) NOT NULL,
@@ -102,7 +103,8 @@ public static class IdentitySchema
                 "IsActive" boolean NOT NULL DEFAULT true
             );
             CREATE INDEX IF NOT EXISTS ix_identity_sessions_user ON identity_sessions ("UserId") WHERE "IsActive" = true;
-            """, ct);
+            """,
+            ct);
 
         await SeedAsync(db, log, ct);
         log?.LogInformation("Identity schema ensured");
@@ -112,62 +114,110 @@ public static class IdentitySchema
     {
         foreach (var name in IdentityPermissions.All)
         {
-            if (await db.IdentityPermissions.AnyAsync(p => p.Name == name, ct))
+            if (await db.Set<IdentityPermissionEntity>().AnyAsync(p => p.Name == name, ct))
                 continue;
-            db.IdentityPermissions.Add(new IdentityPermissionEntity { Name = name });
+            db.Set<IdentityPermissionEntity>().Add(new IdentityPermissionEntity { Name = name });
         }
+
         await db.SaveChangesAsync(ct);
 
         await EnsureRoleAsync(db, IdentityRoles.PlatformAdmin, "Platform", true, IdentityPermissions.All, ct);
         await EnsureRoleAsync(db, IdentityRoles.OrganizationOwner, "Organization", true, IdentityPermissions.All, ct);
-        await EnsureRoleAsync(db, IdentityRoles.OrganizationAdmin, "Organization", true,
-        [
-            IdentityPermissions.NotificationRead, IdentityPermissions.NotificationSend,
-            IdentityPermissions.TemplateRead, IdentityPermissions.TemplateWrite, IdentityPermissions.TemplateDelete,
-            IdentityPermissions.CampaignRead, IdentityPermissions.CampaignCreate, IdentityPermissions.CampaignStart, IdentityPermissions.CampaignCancel,
-            IdentityPermissions.MemberInvite, IdentityPermissions.MemberRoleAssign, IdentityPermissions.MemberSuspend, IdentityPermissions.MemberRead,
-            IdentityPermissions.OrganizationRead, IdentityPermissions.OrganizationUpdate,
-            IdentityPermissions.AuditRead
-        ], ct);
-        await EnsureRoleAsync(db, IdentityRoles.NotificationOperator, "Organization", true,
-        [
-            IdentityPermissions.NotificationRead, IdentityPermissions.NotificationSend,
-            IdentityPermissions.TemplateRead, IdentityPermissions.TemplateWrite,
-            IdentityPermissions.CampaignRead, IdentityPermissions.CampaignCreate, IdentityPermissions.CampaignStart
-        ], ct);
-        await EnsureRoleAsync(db, IdentityRoles.Viewer, "Organization", true,
-        [
-            IdentityPermissions.NotificationRead, IdentityPermissions.TemplateRead,
-            IdentityPermissions.CampaignRead, IdentityPermissions.MemberRead, IdentityPermissions.OrganizationRead
-        ], ct);
-        await EnsureRoleAsync(db, IdentityRoles.Auditor, "Organization", true,
-        [
-            IdentityPermissions.NotificationRead, IdentityPermissions.TemplateRead,
-            IdentityPermissions.CampaignRead, IdentityPermissions.AuditRead, IdentityPermissions.OrganizationRead
-        ], ct);
+        await EnsureRoleAsync(
+            db,
+            IdentityRoles.OrganizationAdmin,
+            "Organization",
+            true,
+            [
+                IdentityPermissions.NotificationRead,
+                IdentityPermissions.NotificationSend,
+                IdentityPermissions.TemplateRead,
+                IdentityPermissions.TemplateWrite,
+                IdentityPermissions.TemplateDelete,
+                IdentityPermissions.CampaignRead,
+                IdentityPermissions.CampaignCreate,
+                IdentityPermissions.CampaignStart,
+                IdentityPermissions.CampaignCancel,
+                IdentityPermissions.MemberInvite,
+                IdentityPermissions.MemberRoleAssign,
+                IdentityPermissions.MemberSuspend,
+                IdentityPermissions.MemberRead,
+                IdentityPermissions.OrganizationRead,
+                IdentityPermissions.OrganizationUpdate,
+                IdentityPermissions.AuditRead
+            ],
+            ct);
+        await EnsureRoleAsync(
+            db,
+            IdentityRoles.NotificationOperator,
+            "Organization",
+            true,
+            [
+                IdentityPermissions.NotificationRead,
+                IdentityPermissions.NotificationSend,
+                IdentityPermissions.TemplateRead,
+                IdentityPermissions.TemplateWrite,
+                IdentityPermissions.CampaignRead,
+                IdentityPermissions.CampaignCreate,
+                IdentityPermissions.CampaignStart
+            ],
+            ct);
+        await EnsureRoleAsync(
+            db,
+            IdentityRoles.Viewer,
+            "Organization",
+            true,
+            [
+                IdentityPermissions.NotificationRead,
+                IdentityPermissions.TemplateRead,
+                IdentityPermissions.CampaignRead,
+                IdentityPermissions.MemberRead,
+                IdentityPermissions.OrganizationRead
+            ],
+            ct);
+        await EnsureRoleAsync(
+            db,
+            IdentityRoles.Auditor,
+            "Organization",
+            true,
+            [
+                IdentityPermissions.NotificationRead,
+                IdentityPermissions.TemplateRead,
+                IdentityPermissions.CampaignRead,
+                IdentityPermissions.AuditRead,
+                IdentityPermissions.OrganizationRead
+            ],
+            ct);
 
         log?.LogInformation("Identity roles/permissions seeded");
     }
 
     static async Task EnsureRoleAsync(
-        NotificationDbContext db, string name, string scope, bool system,
-        IReadOnlyList<string> permissionNames, CancellationToken ct)
+        NotificationDbContext db,
+        string name,
+        string scope,
+        bool system,
+        IReadOnlyList<string> permissionNames,
+        CancellationToken ct)
     {
-        var role = await db.IdentityRoles.FirstOrDefaultAsync(r => r.Name == name, ct);
+        var role = await db.Set<IdentityRoleEntity>().FirstOrDefaultAsync(r => r.Name == name, ct);
         if (role is null)
         {
             role = new IdentityRoleEntity { Name = name, Scope = scope, IsSystem = system };
-            db.IdentityRoles.Add(role);
+            db.Set<IdentityRoleEntity>().Add(role);
             await db.SaveChangesAsync(ct);
         }
 
-        var perms = await db.IdentityPermissions.Where(p => permissionNames.Contains(p.Name)).ToListAsync(ct);
+        var perms = await db.Set<IdentityPermissionEntity>()
+            .Where(p => permissionNames.Contains(p.Name))
+            .ToListAsync(ct);
         foreach (var p in perms)
         {
-            if (await db.RolePermissions.AnyAsync(rp => rp.RoleId == role.Id && rp.PermissionId == p.Id, ct))
+            if (await db.Set<RolePermissionEntity>().AnyAsync(rp => rp.RoleId == role.Id && rp.PermissionId == p.Id, ct))
                 continue;
-            db.RolePermissions.Add(new RolePermissionEntity { RoleId = role.Id, PermissionId = p.Id });
+            db.Set<RolePermissionEntity>().Add(new RolePermissionEntity { RoleId = role.Id, PermissionId = p.Id });
         }
+
         await db.SaveChangesAsync(ct);
     }
 }
