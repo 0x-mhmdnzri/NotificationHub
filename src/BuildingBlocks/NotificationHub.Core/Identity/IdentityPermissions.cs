@@ -21,6 +21,7 @@ public static class IdentityPermissions
     public const string MemberRead = "member.read";
 
     public const string OrganizationRead = "organization.read";
+    public const string OrganizationCreate = "organization.create";
     public const string OrganizationUpdate = "organization.update";
 
     public const string AuditRead = "audit.read";
@@ -31,7 +32,7 @@ public static class IdentityPermissions
         TemplateRead, TemplateWrite, TemplateDelete,
         CampaignRead, CampaignCreate, CampaignStart, CampaignCancel,
         MemberInvite, MemberRoleAssign, MemberSuspend, MemberRead,
-        OrganizationRead, OrganizationUpdate,
+        OrganizationRead, OrganizationCreate, OrganizationUpdate,
         AuditRead
     ];
 }

@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -17,7 +16,7 @@ public static class OrganizationAdminEndpoints
         {
             var o = await svc.GetAsync(organizationId, ct);
             return o is null ? Results.NotFound() : Results.Ok(o);
-        }).RequireAuthorization(Permissions.OrganizationRead);
+        }).RequireAuthorization(IdentityPermissions.OrganizationRead);
 
         g.MapPost("/", async (CreateOrgBody body, IOrganizationAdminService svc, CancellationToken ct) =>
         {
@@ -25,19 +24,19 @@ public static class OrganizationAdminEndpoints
                 return Results.BadRequest(new { error = "name_required" });
             var o = await svc.CreateAsync(body.Name, body.Slug, body.Type ?? "Merchant", ct);
             return Results.Created($"/api/v1/organizations/{o.Id}", o);
-        }).RequireAuthorization(Permissions.OrganizationCreate);
+        }).RequireAuthorization(IdentityPermissions.OrganizationCreate);
 
         g.MapPatch("/{organizationId:guid}", async (Guid organizationId, UpdateOrgBody body, IOrganizationAdminService svc, CancellationToken ct) =>
         {
             var o = await svc.UpdateAsync(organizationId, body.Name, body.Status, ct);
             return o is null ? Results.NotFound() : Results.Ok(o);
-        }).RequireAuthorization(Permissions.OrganizationUpdate);
+        }).RequireAuthorization(IdentityPermissions.OrganizationUpdate);
 
         g.MapGet("/{organizationId:guid}/members", async (Guid organizationId, IOrganizationAdminService svc, CancellationToken ct) =>
         {
             var list = await svc.ListMembersAsync(organizationId, ct);
             return Results.Ok(list);
-        }).RequireAuthorization(Permissions.MemberRead);
+        }).RequireAuthorization(IdentityPermissions.MemberRead);
 
         g.MapPost("/{organizationId:guid}/members/{membershipId:guid}/roles", async (
             Guid organizationId, Guid membershipId, RoleBody body, IOrganizationAdminService svc, CancellationToken ct) =>
@@ -46,14 +45,14 @@ public static class OrganizationAdminEndpoints
                 return Results.BadRequest(new { error = "role_required" });
             var ok = await svc.AssignRoleAsync(membershipId, body.RoleName, ct);
             return ok ? Results.NoContent() : Results.BadRequest(new { error = "assign_failed" });
-        }).RequireAuthorization(Permissions.MemberWrite);
+        }).RequireAuthorization(IdentityPermissions.MemberRoleAssign);
 
         g.MapDelete("/{organizationId:guid}/members/{membershipId:guid}/roles/{roleName}", async (
             Guid organizationId, Guid membershipId, string roleName, IOrganizationAdminService svc, CancellationToken ct) =>
         {
             var ok = await svc.RemoveRoleAsync(membershipId, roleName, ct);
             return ok ? Results.NoContent() : Results.NotFound();
-        }).RequireAuthorization(Permissions.MemberWrite);
+        }).RequireAuthorization(IdentityPermissions.MemberRoleAssign);
 
         g.MapPatch("/{organizationId:guid}/members/{membershipId:guid}/status", async (
             Guid organizationId, Guid membershipId, StatusBody body, IOrganizationAdminService svc, CancellationToken ct) =>
@@ -62,7 +61,7 @@ public static class OrganizationAdminEndpoints
                 return Results.BadRequest(new { error = "status_required" });
             var ok = await svc.SetMembershipStatusAsync(membershipId, body.Status, ct);
             return ok ? Results.NoContent() : Results.BadRequest(new { error = "status_failed" });
-        }).RequireAuthorization(Permissions.MemberSuspend);
+        }).RequireAuthorization(IdentityPermissions.MemberSuspend);
 
         g.MapPost("/{organizationId:guid}/invitations", async (
             Guid organizationId, InviteBody body, ClaimsPrincipal user, IMembershipService memberships, CancellationToken ct) =>
@@ -76,7 +75,7 @@ public static class OrganizationAdminEndpoints
             return result.Success
                 ? Results.Ok(new { invitationId = result.InvitationId })
                 : Results.BadRequest(new { error = result.Error });
-        }).RequireAuthorization(Permissions.MemberInvite);
+        }).RequireAuthorization(IdentityPermissions.MemberInvite);
 
         return app;
     }
