@@ -123,10 +123,36 @@ public sealed class OutboxRelayWorker : BackgroundService
         if (queue is null)
         {
             var inMemory = scope.ServiceProvider.GetRequiredService<INotificationQueue>();
+            var integrationPublisher = scope.ServiceProvider.GetService<IIntegrationEventPublisher>();
             foreach (var msg in claimed)
             {
                 try
                 {
+                    if (TryGetIntegrationKind(msg.PayloadJson, out var eventType, out var version, out var messageId, out var tenantId, out var correlationId))
+                    {
+                        if (integrationPublisher is not null)
+                        {
+                            if (messageId == Guid.Empty)
+                                messageId = msg.Id;
+                            await integrationPublisher.PublishAsync(eventType, version, messageId, msg.PayloadJson, tenantId, correlationId, ct);
+                        }
+                        else
+                            _logger.LogDebug("Integration outbox {Id} marked published without broker (no IIntegrationEventPublisher)", msg.Id);
+                        msg.Status = "published";
+                        msg.PublishedAt = DateTimeOffset.UtcNow;
+                        msg.Attempts++;
+                        msg.LastError = null;
+                        continue;
+                    }
+
+                    if (!LooksLikeNotificationRequest(msg.PayloadJson))
+                    {
+                        msg.Status = "failed";
+                        msg.LastError = "unrecognized outbox payload (not notification or integration)";
+                        _logger.LogWarning("Outbox {Id} unrecognized payload shape", msg.Id);
+                        continue;
+                    }
+
                     var request = JsonSerializer.Deserialize<NotificationRequest>(msg.PayloadJson, JsonOptions);
                     if (request is null)
                     {
@@ -153,6 +179,7 @@ public sealed class OutboxRelayWorker : BackgroundService
 
         // Parallel prepare + publish. RabbitMQ publish is serialized via _publishGate on the queue.
         var concurrency = Math.Max(1, opt.PublishConcurrency);
+        var integrationPublisher = scope.ServiceProvider.GetService<IIntegrationEventPublisher>();
         await Parallel.ForEachAsync(
             claimed,
             new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = ct },
@@ -160,12 +187,36 @@ public sealed class OutboxRelayWorker : BackgroundService
             {
                 try
                 {
+                    if (TryGetIntegrationKind(msg.PayloadJson, out var eventType, out var version, out var messageId, out var tenantId, out var correlationId))
+                    {
+                        if (integrationPublisher is not null)
+                        {
+                            if (messageId == Guid.Empty)
+                                messageId = msg.Id;
+                            await integrationPublisher.PublishAsync(eventType, version, messageId, msg.PayloadJson, tenantId, correlationId, token);
+                        }
+                        msg.Status = "published";
+                        msg.PublishedAt = DateTimeOffset.UtcNow;
+                        msg.Attempts++;
+                        msg.LastError = null;
+                        return;
+                    }
+
+                    if (!LooksLikeNotificationRequest(msg.PayloadJson))
+                    {
+                        msg.Status = "failed";
+                        msg.LastError = "unrecognized outbox payload (not notification or integration)";
+                        _logger.LogWarning("Outbox {Id} unrecognized payload shape", msg.Id);
+                        return;
+                    }
+
                     var request = JsonSerializer.Deserialize<NotificationRequest>(msg.PayloadJson, JsonOptions)
                                   ?? throw new InvalidOperationException("null payload");
                     await queue.PublishAsync(request, redeliveryCount: 0, token);
                     msg.Status = "published";
                     msg.PublishedAt = DateTimeOffset.UtcNow;
                     msg.Attempts++;
+                    msg.LastError = null;
                 }
                 catch (Exception ex)
                 {
@@ -179,5 +230,50 @@ public sealed class OutboxRelayWorker : BackgroundService
 
         await db.SaveChangesAsync(ct);
         return true;
+    }
+
+    static bool TryGetIntegrationKind(string payloadJson, out string eventType, out int version, out Guid messageId, out string? tenantId, out string? correlationId)
+    {
+        eventType = "unknown";
+        version = 1;
+        messageId = Guid.Empty;
+        tenantId = null;
+        correlationId = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(payloadJson);
+            var root = doc.RootElement;
+            if (!root.TryGetProperty("kind", out var kindEl) || kindEl.GetString() != "integration")
+                return false;
+            if (root.TryGetProperty("eventType", out var et))
+                eventType = et.GetString() ?? "unknown";
+            if (root.TryGetProperty("version", out var ver) && ver.TryGetInt32(out var v))
+                version = v;
+            if (root.TryGetProperty("messageId", out var mid) && mid.TryGetGuid(out var g))
+                messageId = g;
+            if (root.TryGetProperty("tenantId", out var tid))
+                tenantId = tid.GetString();
+            if (root.TryGetProperty("correlationId", out var cid))
+                correlationId = cid.GetString();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    static bool LooksLikeNotificationRequest(string payloadJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(payloadJson);
+            var root = doc.RootElement;
+            return root.TryGetProperty("recipient", out _) && root.TryGetProperty("templateKey", out _);
+        }
+        catch
+        {
+            return false;
+        }
     }
 }
