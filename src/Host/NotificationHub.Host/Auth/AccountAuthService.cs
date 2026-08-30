@@ -278,9 +278,12 @@ public static class SuperAdminSeeder
 {
     public static async Task EnsureAsync(IServiceProvider sp, CancellationToken ct = default)
     {
-        var db = sp.GetRequiredService<NotificationDbContext>();
-        var opts = sp.GetRequiredService<IOptions<SuperAdminSeedOptions>>().Value;
-        var log = sp.GetRequiredService<ILoggerFactory>().CreateLogger("SuperAdminSeeder");
+        // DbContext is scoped — never resolve from root provider (app.Services).
+        await using var scope = sp.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var db = services.GetRequiredService<NotificationDbContext>();
+        var opts = services.GetRequiredService<IOptions<SuperAdminSeedOptions>>().Value;
+        var log = services.GetRequiredService<ILoggerFactory>().CreateLogger("SuperAdminSeeder");
 
         await IdentitySchema.EnsureAsync(db, log, ct);
 
