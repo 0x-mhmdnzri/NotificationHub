@@ -1,153 +1,19 @@
-"use client";
+'use client'
+import { useRef, useState } from 'react'
+import { Loader2, Megaphone, Play, Plus, Upload, XCircle } from 'lucide-react'
+import { PageHeader } from '@/components/page-header'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
+import { Dialog } from '@/components/ui/dialog'
+import { useTemplates } from '@/hooks/use-templates'
+import { resourcesApi } from '@/lib/api/resources'
+import { useTenant } from '@/providers/tenant-provider'
+import type { CreateCampaignRequest } from '@/types/api'
 
-import { useState } from "react";
-import { PageHeader } from "@/components/page-header";
-import { ResponsePanel } from "@/components/response-panel";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { endpoints, ApiResult } from "@/lib/api";
-import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
-
-const STEPS = ["Create", "Recipients", "Send", "Track"] as const;
-
-export default function CampaignsPage() {
-  const [step, setStep] = useState(0);
-  const [name, setName] = useState("Spring promo");
-  const [templateKey, setTemplateKey] = useState("welcome");
-  const [channels, setChannels] = useState("email");
-  const [campaignId, setCampaignId] = useState("");
-  const [addresses, setAddresses] = useState("a@example.com\nb@example.com");
-  const [result, setResult] = useState<ApiResult | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function create() {
-    setBusy(true);
-    const r = await endpoints.createCampaign({
-      name,
-      templateKey,
-      channels: channels.split(",").map((s) => s.trim()).filter(Boolean),
-      data: { campaign: name },
-    });
-    setResult(r);
-    if (r.ok) {
-      const id = (r.data as { id?: string })?.id;
-      if (id) {
-        setCampaignId(id);
-        setStep(1);
-        toast.success("Campaign created");
-      }
-    } else toast.error(r.error || "Create failed");
-    setBusy(false);
-  }
-
-  async function addRecipients() {
-    if (!campaignId) return toast.error("Create a campaign first");
-    setBusy(true);
-    const r = await endpoints.addRecipients(campaignId, {
-      addresses: addresses.split("\n").map((s) => s.trim()).filter(Boolean),
-      channels: channels.split(",").map((s) => s.trim()).filter(Boolean),
-    });
-    setResult(r);
-    if (r.ok) {
-      setStep(2);
-      toast.success("Recipients added");
-    } else toast.error(r.error || "Failed");
-    setBusy(false);
-  }
-
-  async function start() {
-    if (!campaignId) return;
-    setBusy(true);
-    const r = await endpoints.startCampaign(campaignId);
-    setResult(r);
-    if (r.ok) {
-      setStep(3);
-      toast.success("Campaign started");
-    } else toast.error(r.error || "Start failed");
-    setBusy(false);
-  }
-
-  async function progress() {
-    if (!campaignId) return;
-    setBusy(true);
-    const r = await endpoints.getCampaignProgress(campaignId);
-    setResult(r);
-    if (r.ok) toast.success("Progress updated");
-    else toast.error(r.error || "Failed");
-    setBusy(false);
-  }
-
-  return (
-    <>
-      <PageHeader
-        title="Campaigns"
-        description="Guided demo for batch broadcast: create → import recipients → send → watch progress. Mirrors how a marketer would operate the product."
-      />
-      <div className="flex flex-wrap gap-2 mb-6">
-        {STEPS.map((s, i) => (
-          <Badge key={s} variant={i === step ? "default" : i < step ? "success" : "secondary"}>
-            {i + 1}. {s}
-          </Badge>
-        ))}
-      </div>
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Campaign wizard</CardTitle>
-            <CardDescription>Campaign id is stored after create so you can continue mid-flow.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Name</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Template key</Label>
-              <Input value={templateKey} onChange={(e) => setTemplateKey(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Channels (comma-separated)</Label>
-              <Input value={channels} onChange={(e) => setChannels(e.target.value)} />
-            </div>
-            <Button disabled={busy} onClick={create}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              1. Create
-            </Button>
-            <div className="space-y-2">
-              <Label>Campaign id</Label>
-              <Input className="font-mono text-xs" value={campaignId} onChange={(e) => setCampaignId(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Recipients (one per line)</Label>
-              <Textarea rows={4} value={addresses} onChange={(e) => setAddresses(e.target.value)} />
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button disabled={busy || !campaignId} onClick={addRecipients}>2. Add recipients</Button>
-              <Button disabled={busy || !campaignId} onClick={start}>3. Send</Button>
-              <Button variant="outline" disabled={busy || !campaignId} onClick={progress}>4. Progress</Button>
-              <Button
-                variant="destructive"
-                disabled={busy || !campaignId}
-                onClick={async () => {
-                  setBusy(true);
-                  const r = await endpoints.cancelCampaign(campaignId);
-                  setResult(r);
-                  setBusy(false);
-                  if (r.ok) toast.message("Cancelled");
-                }}
-              >
-                Cancel
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-        <ResponsePanel result={result} />
-      </div>
-    </>
-  );
-}
+export default function CampaignsPage(){const {tenantId}=useTenant();const templates=useTemplates();const [open,setOpen]=useState(false);const [name,setName]=useState('');const [templateKey,setTemplateKey]=useState('');const [channels,setChannels]=useState<string[]>(['email']);const [scheduled,setScheduled]=useState('');const [data,setData]=useState('{}');const [busy,setBusy]=useState(false);const [campaignId,setCampaignId]=useState('');const [progress,setProgress]=useState<any>();const [recipients,setRecipients]=useState('');const fileRef=useRef<HTMLInputElement>(null);const toggle=(c:string)=>setChannels(x=>x.includes(c)?x.filter(v=>v!==c):[...x,c]);const create=async()=>{if(!name||!templateKey||!channels.length)return;setBusy(true);try{const payload:CreateCampaignRequest={name,templateKey,channels,tenantId,data:JSON.parse(data),scheduledAtUtc:scheduled?new Date(scheduled).toISOString():undefined};const res=await resourcesApi.campaigns.create(payload) as any;setCampaignId(String(res?.id??res?.campaignId??''));setOpen(false)}finally{setBusy(false)}};const addRecipients=async()=>{if(!campaignId||!recipients.trim())return;const addresses=recipients.split(/[\n,;]+/).map(x=>x.trim()).filter(Boolean);await resourcesApi.campaigns.recipients(campaignId,{addresses,channels});setRecipients('')};const importCsv=async(e:React.ChangeEvent<HTMLInputElement>)=>{const file=e.target.files?.[0];if(!file||!campaignId)return;const form=new FormData();form.append('file',file);await resourcesApi.campaigns.importCsv(campaignId,form);if(fileRef.current)fileRef.current.value=''};const inspect=async()=>{if(!campaignId)return;const [p]=await Promise.all([resourcesApi.campaigns.progress(campaignId)]);setProgress(p)};const send=async()=>{if(campaignId)await resourcesApi.campaigns.send(campaignId);await inspect()};const cancel=async()=>{if(campaignId)await resourcesApi.campaigns.cancel(campaignId);await inspect()};return <div className="grid-bg min-h-full p-5 md:p-8"><div className="mx-auto max-w-[1500px]"><PageHeader eyebrow="Broadcast operations" title="Campaigns" description="Create, schedule and operate high-volume notification campaigns." action={<Button onClick={()=>setOpen(true)}><Plus size={16}/>New campaign</Button>}/><div className="grid gap-5 lg:grid-cols-[1fr_360px]"><Card><CardHeader><CardTitle>Campaign workspace</CardTitle></CardHeader><CardContent><EmptyState onCreate={()=>setOpen(true)}/></CardContent></Card><Card><CardHeader><CardTitle>Live operation</CardTitle></CardHeader><CardContent>{campaignId?<div className="space-y-5"><div><div className="text-xs text-muted-foreground">Campaign ID</div><div className="mt-1 break-all font-mono text-xs">{campaignId}</div></div><div className="space-y-3 rounded-xl border bg-muted/20 p-4"><div className="text-sm font-medium">Recipients</div><textarea value={recipients} onChange={e=>setRecipients(e.target.value)} placeholder="user-123\nuser-456\nuser-789" className="min-h-24 w-full rounded-xl border bg-background p-3 font-mono text-xs"/><div className="flex flex-wrap gap-2"><Button variant="outline" onClick={addRecipients} disabled={!recipients.trim()}><Plus size={14}/>Add recipients</Button><Button variant="outline" onClick={()=>fileRef.current?.click()}><Upload size={14}/>Import CSV</Button><input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={importCsv}/></div></div><div className="flex gap-2"><Button onClick={send}><Play size={15}/>Send</Button><Button variant="outline" onClick={inspect}>Refresh</Button><Button variant="ghost" className="text-destructive" onClick={cancel}><XCircle size={15}/>Cancel</Button></div>{progress&&<div><div className="mb-2 flex justify-between text-xs"><span>Progress</span><span>{progress?.percentage??progress?.percent??0}%</span></div><Progress value={Number(progress?.percentage??progress?.percent??0)}/><pre className="mt-4 max-h-64 overflow-auto rounded-xl bg-muted p-3 text-[10px]">{JSON.stringify(progress,null,2)}</pre></div>}</div>:<div className="text-sm text-muted-foreground">Create a campaign to control its lifecycle here.</div>}</CardContent></Card></div></div><Dialog open={open} onOpenChange={setOpen} title="Create campaign" description="Build a campaign from an existing template and one or more delivery channels."><div className="space-y-5 p-5"><Field label="Campaign name"><Input value={name} onChange={e=>setName(e.target.value)} placeholder="Weekend payment reminders"/></Field><Field label="Template"><Select value={templateKey} onChange={e=>setTemplateKey(e.target.value)}><option value="">Select a template</option>{templates.data?.map(t=><option key={`${t.key}-${t.channel}-${t.locale}`} value={t.key}>{t.key} · {t.channel} · {t.locale}</option>)}</Select></Field><Field label="Channels"><div className="flex flex-wrap gap-2">{['email','sms','push','webhook'].map(c=><button key={c} onClick={()=>toggle(c)} className={`rounded-xl border px-3 py-2 text-xs transition ${channels.includes(c)?'border-primary bg-primary/10 text-primary':'hover:bg-muted'}`}>{c}</button>)}</div></Field><Field label="Schedule" hint="Optional UTC"><Input type="datetime-local" value={scheduled} onChange={e=>setScheduled(e.target.value)}/></Field><Field label="Data" hint="JSON object"><textarea value={data} onChange={e=>setData(e.target.value)} className="min-h-32 w-full rounded-xl border bg-background p-3 font-mono text-xs"/></Field><div className="flex justify-end border-t pt-4"><Button onClick={create} disabled={busy||!name||!templateKey||!channels.length}>{busy?<Loader2 className="animate-spin" size={15}/>:<Megaphone size={15}/>}Create campaign</Button></div></div></Dialog></div>}
+function Field({label,hint,children}:{label:string;hint?:string;children:React.ReactNode}){return <label className="block space-y-2"><span className="flex gap-2 text-sm font-medium">{label}{hint&&<span className="text-[10px] font-normal text-muted-foreground">{hint}</span>}</span>{children}</label>}
+function EmptyState({onCreate}:{onCreate:()=>void}){return <div className="rounded-2xl border border-dashed p-12 text-center"><div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary"><Megaphone size={22}/></div><h3 className="mt-4 font-semibold">No active campaign loaded</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Create a campaign, add recipients through the API or CSV import endpoint, then operate its send and cancellation lifecycle.</p><Button className="mt-5" onClick={onCreate}><Plus size={15}/>Create campaign</Button><div className="mt-6 flex justify-center gap-4 text-xs text-muted-foreground"><span className="flex items-center gap-1"><Upload size={13}/>CSV recipients</span><span>•</span><span>Progress polling</span></div></div>}

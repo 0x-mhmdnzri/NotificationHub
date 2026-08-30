@@ -1,19 +1,3 @@
-export function PageHeader({
-  title,
-  description,
-  actions,
-}: {
-  title: string;
-  description?: string;
-  actions?: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        {description && <p className="text-sm text-muted-foreground max-w-2xl">{description}</p>}
-      </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-    </div>
-  );
-}
+import {Button} from './ui/button'; import {Plus} from 'lucide-react'; import {ReactNode} from 'react'
+export function PageHeader({eyebrow,title,description,action}:{eyebrow?:string,title:string,description?:string,action?:ReactNode}){return <div className="mb-8 flex flex-col gap-5 md:flex-row md:items-end md:justify-between"><div><div className="mb-2 text-[11px] font-semibold uppercase tracking-[.18em] text-primary">{eyebrow}</div><h1 className="text-2xl font-bold tracking-tight md:text-3xl">{title}</h1>{description&&<p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">{description}</p>}</div>{action}</div>}
+export function CreateButton({children='Create'}:{children?:ReactNode}){return <Button><Plus size={16}/>{children}</Button>}
