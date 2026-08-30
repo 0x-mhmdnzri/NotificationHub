@@ -92,7 +92,7 @@ public sealed class AccountAuthService(
         }
 
         await db.SaveChangesAsync(ct);
-        log.LogInformation("User registered {Email}", email);
+        log.LogInformation("User registered {UserId}", user.Id);
 
         var tokens = await IssueTokensAsync(user, orgId, roles, ct);
         return (true, null, tokens);
