@@ -45,7 +45,7 @@ public sealed class CampaignService(
         };
         db.BroadcastCampaigns.Add(entity);
         await db.SaveChangesAsync(ct);
-        logger.LogInformation("Campaign {CampaignId} created status={Status} tenant={TenantId}", entity.Id, CampaignStatus.Draft, entity.TenantId);
+        logger.LogInformation("Campaign {CampaignId} created status={Status} tenant={TenantId}", entity.Id, CampaignStatus.Draft, (entity.TenantId ?? "").Replace("\r", "_").Replace("\n", "_"));
         return ToModel(entity);
     }
 

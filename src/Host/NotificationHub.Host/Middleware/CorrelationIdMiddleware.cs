@@ -1,3 +1,5 @@
+using NotificationHub.Host.Security;
+
 namespace NotificationHub.Host.Middleware;
 
 /// <summary>Propagates/creates X-Correlation-ID for request tracing (SEC-19).</summary>
@@ -29,8 +31,8 @@ public sealed class CorrelationIdMiddleware
 
         using (logger.BeginScope(new Dictionary<string, object>
         {
-            ["CorrelationId"] = correlationId,
-            ["RequestPath"] = context.Request.Path.Value ?? ""
+            ["CorrelationId"] = LogSanitizer.Sanitize(correlationId, 64),
+            ["RequestPath"] = LogSanitizer.Sanitize(context.Request.Path.Value, 256)
         }))
         {
             await _next(context);

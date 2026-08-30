@@ -72,6 +72,9 @@
     <PackageVersion Include="AspNetCore.HealthChecks.Uris" Version="9.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="9.0.4" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="9.0.4" />
+    <!-- Transitive pin: Aspire AppHost pulls KubernetesClient (GHSA-w7r3-mgwf-4mqq) -->
+    <PackageVersion Include="KubernetesClient" Version="17.0.14" />
+
     <!-- Aspire 9 -->
     <PackageVersion Include="Aspire.Hosting.AppHost" Version="9.1.0" />
     <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="9.1.0" />
