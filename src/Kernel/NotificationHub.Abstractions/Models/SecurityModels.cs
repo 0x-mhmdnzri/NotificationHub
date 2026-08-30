@@ -54,8 +54,10 @@ public sealed class AuthContext
 
     public bool HasAnyRole(params string[] roles)
     {
-        if (IsAdmin) return true;
-        if (roles.Any(HasRole)) return true;
+        if (IsAdmin)
+            return true;
+        if (roles.Any(HasRole))
+            return true;
         // Map identity roles → legacy AppRoles expected by endpoints
         foreach (var r in Roles)
         {
