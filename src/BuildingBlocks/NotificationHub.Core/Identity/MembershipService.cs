@@ -10,32 +10,32 @@ public sealed class MembershipService(NotificationDbContext db, ILogger<Membersh
 {
     public async Task<MembershipSnapshot?> GetActiveMembershipAsync(Guid userId, Guid organizationId, CancellationToken ct = default)
     {
-        var mem = await db.OrganizationMemberships.AsNoTracking()
+        var mem = await db.Set<OrganizationMembershipEntity>().AsNoTracking()
             .FirstOrDefaultAsync(m => m.UserId == userId && m.OrganizationId == organizationId, ct);
         if (mem is null || !string.Equals(mem.Status, "Active", StringComparison.OrdinalIgnoreCase))
             return null;
 
-        var org = await db.Organizations.AsNoTracking().FirstOrDefaultAsync(o => o.Id == organizationId, ct);
+        var org = await db.Set<OrganizationEntity>().AsNoTracking().FirstOrDefaultAsync(o => o.Id == organizationId, ct);
         if (org is null || !string.Equals(org.Status, "Active", StringComparison.OrdinalIgnoreCase))
             return null;
 
-        var roleIds = await db.MembershipRoles.AsNoTracking()
+        var roleIds = await db.Set<MembershipRoleEntity>().AsNoTracking()
             .Where(mr => mr.MembershipId == mem.Id)
             .Select(mr => mr.RoleId)
             .ToListAsync(ct);
 
-        var roles = await db.IdentityRoles.AsNoTracking()
+        var roles = await db.Set<IdentityRoleEntity>().AsNoTracking()
             .Where(r => roleIds.Contains(r.Id))
             .Select(r => r.Name)
             .ToListAsync(ct);
 
-        var permIds = await db.RolePermissions.AsNoTracking()
+        var permIds = await db.Set<RolePermissionEntity>().AsNoTracking()
             .Where(rp => roleIds.Contains(rp.RoleId))
             .Select(rp => rp.PermissionId)
             .Distinct()
             .ToListAsync(ct);
 
-        var permissions = await db.IdentityPermissions.AsNoTracking()
+        var permissions = await db.Set<IdentityPermissionEntity>().AsNoTracking()
             .Where(p => permIds.Contains(p.Id))
             .Select(p => p.Name)
             .ToListAsync(ct);
@@ -46,8 +46,8 @@ public sealed class MembershipService(NotificationDbContext db, ILogger<Membersh
     public async Task<IReadOnlyList<OrganizationMembershipDto>> ListMembershipsAsync(Guid userId, CancellationToken ct = default)
     {
         var q =
-            from m in db.OrganizationMemberships.AsNoTracking()
-            join o in db.Organizations.AsNoTracking() on m.OrganizationId equals o.Id
+            from m in db.Set<OrganizationMembershipEntity>().AsNoTracking()
+            join o in db.Set<OrganizationEntity>().AsNoTracking() on m.OrganizationId equals o.Id
             where m.UserId == userId && m.Status != "Revoked"
             select new { m, o };
 
@@ -55,33 +55,35 @@ public sealed class MembershipService(NotificationDbContext db, ILogger<Membersh
         var result = new List<OrganizationMembershipDto>();
         foreach (var row in rows)
         {
-            var roleIds = await db.MembershipRoles.AsNoTracking()
+            var roleIds = await db.Set<MembershipRoleEntity>().AsNoTracking()
                 .Where(mr => mr.MembershipId == row.m.Id).Select(mr => mr.RoleId).ToListAsync(ct);
-            var roles = await db.IdentityRoles.AsNoTracking()
+            var roles = await db.Set<IdentityRoleEntity>().AsNoTracking()
                 .Where(r => roleIds.Contains(r.Id)).Select(r => r.Name).ToListAsync(ct);
             result.Add(new OrganizationMembershipDto(
                 row.m.Id, row.o.Id, row.o.Name, row.o.Status, row.m.Status, roles));
         }
+
         return result;
     }
 
     public async Task<AuthMeDto?> GetMeAsync(Guid userId, Guid? organizationId, CancellationToken ct = default)
     {
-        var user = await db.IdentityUsers.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
-        if (user is null || string.Equals(user.Status, "Disabled", StringComparison.OrdinalIgnoreCase)
+        var user = await db.Set<IdentityUserEntity>().AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null
+            || string.Equals(user.Status, "Disabled", StringComparison.OrdinalIgnoreCase)
             || string.Equals(user.Status, "Deleted", StringComparison.OrdinalIgnoreCase))
+        {
             return null;
+        }
 
         if (organizationId is null)
-        {
             return new AuthMeDto(user.Id, user.Email, user.DisplayName, null, null, null, [], []);
-        }
 
         var snap = await GetActiveMembershipAsync(userId, organizationId.Value, ct);
         if (snap is null)
             return new AuthMeDto(user.Id, user.Email, user.DisplayName, null, null, null, [], []);
 
-        var org = await db.Organizations.AsNoTracking().FirstAsync(o => o.Id == organizationId.Value, ct);
+        var org = await db.Set<OrganizationEntity>().AsNoTracking().FirstAsync(o => o.Id == organizationId.Value, ct);
         return new AuthMeDto(
             user.Id, user.Email, user.DisplayName,
             org.Id, org.Name, snap.MembershipId,
@@ -95,7 +97,7 @@ public sealed class MembershipService(NotificationDbContext db, ILogger<Membersh
         if (string.IsNullOrWhiteSpace(email))
             return new InviteResult(false, null, "invalid_email");
 
-        var org = await db.Organizations.AsNoTracking().FirstOrDefaultAsync(o => o.Id == organizationId, ct);
+        var org = await db.Set<OrganizationEntity>().AsNoTracking().FirstOrDefaultAsync(o => o.Id == organizationId, ct);
         if (org is null || !string.Equals(org.Status, "Active", StringComparison.OrdinalIgnoreCase))
             return new InviteResult(false, null, "organization_inactive");
 
@@ -110,32 +112,30 @@ public sealed class MembershipService(NotificationDbContext db, ILogger<Membersh
             RoleName = roleName ?? IdentityRoles.Viewer,
             ExpiresAt = DateTimeOffset.UtcNow.AddDays(7)
         };
-        db.Invitations.Add(inv);
+        db.Set<InvitationEntity>().Add(inv);
         await db.SaveChangesAsync(ct);
 
-        // Raw token returned only once via out-of-band channel in production; stored hashed.
         log.LogInformation("Invitation created {InvitationId} for org {OrgId}", inv.Id, organizationId);
         await RecordSecurityEventAsync("UserInvited", invitedByUserId, organizationId, email, ct);
 
-        // For API response in Sprint 2 we return id only (token delivery via email later).
         return new InviteResult(true, inv.Id, null);
     }
 
     public async Task<bool> AcceptInviteAsync(string rawToken, Guid userId, CancellationToken ct = default)
     {
         var hash = HashToken(rawToken);
-        var inv = await db.Invitations.FirstOrDefaultAsync(i => i.TokenHash == hash, ct);
+        var inv = await db.Set<InvitationEntity>().FirstOrDefaultAsync(i => i.TokenHash == hash, ct);
         if (inv is null || inv.AcceptedAt is not null || inv.ExpiresAt < DateTimeOffset.UtcNow)
             return false;
 
-        var user = await db.IdentityUsers.FirstOrDefaultAsync(u => u.Id == userId, ct);
+        var user = await db.Set<IdentityUserEntity>().FirstOrDefaultAsync(u => u.Id == userId, ct);
         if (user is null)
             return false;
 
         if (!string.Equals(user.Email, inv.Email, StringComparison.OrdinalIgnoreCase))
             return false;
 
-        var existing = await db.OrganizationMemberships
+        var existing = await db.Set<OrganizationMembershipEntity>()
             .FirstOrDefaultAsync(m => m.UserId == userId && m.OrganizationId == inv.OrganizationId, ct);
 
         OrganizationMembershipEntity mem;
@@ -148,7 +148,7 @@ public sealed class MembershipService(NotificationDbContext db, ILogger<Membersh
                 Status = "Active",
                 JoinedAt = DateTimeOffset.UtcNow
             };
-            db.OrganizationMemberships.Add(mem);
+            db.Set<OrganizationMembershipEntity>().Add(mem);
             await db.SaveChangesAsync(ct);
         }
         else
@@ -160,11 +160,11 @@ public sealed class MembershipService(NotificationDbContext db, ILogger<Membersh
 
         if (!string.IsNullOrWhiteSpace(inv.RoleName))
         {
-            var role = await db.IdentityRoles.FirstOrDefaultAsync(r => r.Name == inv.RoleName, ct);
+            var role = await db.Set<IdentityRoleEntity>().FirstOrDefaultAsync(r => r.Name == inv.RoleName, ct);
             if (role is not null &&
-                !await db.MembershipRoles.AnyAsync(mr => mr.MembershipId == mem.Id && mr.RoleId == role.Id, ct))
+                !await db.Set<MembershipRoleEntity>().AnyAsync(mr => mr.MembershipId == mem.Id && mr.RoleId == role.Id, ct))
             {
-                db.MembershipRoles.Add(new MembershipRoleEntity { MembershipId = mem.Id, RoleId = role.Id });
+                db.Set<MembershipRoleEntity>().Add(new MembershipRoleEntity { MembershipId = mem.Id, RoleId = role.Id });
             }
         }
 
@@ -176,7 +176,7 @@ public sealed class MembershipService(NotificationDbContext db, ILogger<Membersh
 
     public async Task RevokeSessionAsync(Guid userId, Guid? sessionId, string? jwtId, CancellationToken ct = default)
     {
-        IQueryable<UserSessionEntity> q = db.UserSessions.Where(s => s.UserId == userId && s.IsActive);
+        IQueryable<UserSessionEntity> q = db.Set<UserSessionEntity>().Where(s => s.UserId == userId && s.IsActive);
         if (sessionId is not null)
             q = q.Where(s => s.Id == sessionId);
         else if (!string.IsNullOrEmpty(jwtId))
@@ -188,6 +188,7 @@ public sealed class MembershipService(NotificationDbContext db, ILogger<Membersh
             s.IsActive = false;
             s.RevokedAt = DateTimeOffset.UtcNow;
         }
+
         await db.SaveChangesAsync(ct);
         await RecordSecurityEventAsync("SessionRevoked", userId, null, sessionId?.ToString() ?? jwtId, ct);
     }

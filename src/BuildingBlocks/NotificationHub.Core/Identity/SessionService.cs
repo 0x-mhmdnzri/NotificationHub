@@ -10,7 +10,7 @@ public sealed class SessionService(NotificationDbContext db, ILogger<SessionServ
 {
     public async Task<IReadOnlyList<SessionDto>> ListAsync(Guid userId, CancellationToken ct = default)
     {
-        var rows = await db.UserSessions.AsNoTracking()
+        var rows = await db.Set<UserSessionEntity>().AsNoTracking()
             .Where(s => s.UserId == userId)
             .OrderByDescending(s => s.LastSeenAt)
             .Take(50)
@@ -23,12 +23,12 @@ public sealed class SessionService(NotificationDbContext db, ILogger<SessionServ
 
     public async Task<bool> RevokeAsync(Guid userId, Guid sessionId, CancellationToken ct = default)
     {
-        var s = await db.UserSessions.FirstOrDefaultAsync(x => x.Id == sessionId && x.UserId == userId, ct);
+        var s = await db.Set<UserSessionEntity>().FirstOrDefaultAsync(x => x.Id == sessionId && x.UserId == userId, ct);
         if (s is null) return false;
         if (!s.IsActive) return true;
         s.IsActive = false;
         s.RevokedAt = DateTimeOffset.UtcNow;
-        s.RefreshTokenHash = null; // invalidate refresh
+        s.RefreshTokenHash = null;
         await db.SaveChangesAsync(ct);
         log.LogInformation("Session {SessionId} revoked for user {UserId}", sessionId, userId);
         return true;
@@ -36,13 +36,14 @@ public sealed class SessionService(NotificationDbContext db, ILogger<SessionServ
 
     public async Task RevokeAllAsync(Guid userId, CancellationToken ct = default)
     {
-        var list = await db.UserSessions.Where(s => s.UserId == userId && s.IsActive).ToListAsync(ct);
+        var list = await db.Set<UserSessionEntity>().Where(s => s.UserId == userId && s.IsActive).ToListAsync(ct);
         foreach (var s in list)
         {
             s.IsActive = false;
             s.RevokedAt = DateTimeOffset.UtcNow;
             s.RefreshTokenHash = null;
         }
+
         await db.SaveChangesAsync(ct);
     }
 
@@ -60,26 +61,24 @@ public sealed class SessionService(NotificationDbContext db, ILogger<SessionServ
             ExpiresAt = DateTimeOffset.UtcNow.Add(request.Lifetime),
             IsActive = true
         };
-        db.UserSessions.Add(entity);
+        db.Set<UserSessionEntity>().Add(entity);
         await db.SaveChangesAsync(ct);
         return new SessionDto(
             entity.Id, entity.OrganizationId, entity.ClientId, entity.Ip, entity.UserAgent,
             entity.CreatedAt, entity.LastSeenAt, entity.ExpiresAt, true, true);
     }
 
-    /// <summary>Rotate: old hash must match active session; issue new raw token; store only hash.</summary>
     public async Task<RefreshResult> RotateRefreshTokenAsync(string rawRefreshToken, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(rawRefreshToken))
             return new RefreshResult(false, null, null, null, "invalid_token");
 
         var hash = HashToken(rawRefreshToken);
-        var session = await db.UserSessions
+        var session = await db.Set<UserSessionEntity>()
             .FirstOrDefaultAsync(s => s.RefreshTokenHash == hash, ct);
 
         if (session is null)
         {
-            // Possible reuse attack — fail closed; optionally revoke all for that user if we tracked family.
             log.LogWarning("Refresh token not found (possible reuse)");
             return new RefreshResult(false, null, null, null, "invalid_token");
         }
@@ -90,7 +89,7 @@ public sealed class SessionService(NotificationDbContext db, ILogger<SessionServ
         var newRaw = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         session.RefreshTokenHash = HashToken(newRaw);
         session.LastSeenAt = DateTimeOffset.UtcNow;
-        session.JwtId = Guid.NewGuid().ToString("N"); // new access will carry new jti
+        session.JwtId = Guid.NewGuid().ToString("N");
         await db.SaveChangesAsync(ct);
 
         return new RefreshResult(true, session.UserId, session.OrganizationId, newRaw, null);

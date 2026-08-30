@@ -1,13 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { identityApi } from '@/lib/api/identity'
 import { useAuth } from '@/providers/auth-provider'
 import { getAccessToken } from '@/lib/auth/session'
 
-export default function AcceptInvitePage() {
+function AcceptInviteInner() {
   const params = useSearchParams()
   const token = params.get('token') ?? ''
   const { login, isAuthenticated } = useAuth()
@@ -42,7 +42,10 @@ export default function AcceptInvitePage() {
             : 'Sign in first, then accept the invite.'}
         </p>
         {done ? (
-          <p className="text-sm text-emerald-600">You joined the organization. <a href="/dashboard" className="underline">Go to dashboard</a></p>
+          <p className="text-sm text-emerald-600">
+            You joined the organization.{' '}
+            <a href="/dashboard" className="underline">Go to dashboard</a>
+          </p>
         ) : (
           <Button className="w-full" disabled={!token || pending} onClick={() => void accept()}>
             {isAuthenticated ? 'Accept invite' : 'Sign in to accept'}
@@ -51,5 +54,13 @@ export default function AcceptInvitePage() {
         {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
       </div>
     </div>
+  )
+}
+
+export default function AcceptInvitePage() {
+  return (
+    <Suspense fallback={<div className="grid min-h-screen place-items-center text-sm text-muted-foreground">Loading…</div>}>
+      <AcceptInviteInner />
+    </Suspense>
   )
 }
