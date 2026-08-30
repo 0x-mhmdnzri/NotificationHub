@@ -207,6 +207,21 @@ public sealed class MembershipService(NotificationDbContext db, ILogger<Membersh
         await db.SaveChangesAsync(ct);
     }
 
+
+    public async Task<IReadOnlyList<string>> GetPlatformRolesAsync(Guid userId, CancellationToken ct = default)
+    {
+        // Platform-scoped roles attached via any membership, or dedicated platform org memberships.
+        var roleNames = await (
+            from mr in db.Set<MembershipRoleEntity>()
+            join m in db.Set<OrganizationMembershipEntity>() on mr.MembershipId equals m.Id
+            join r in db.Set<IdentityRoleEntity>() on mr.RoleId equals r.Id
+            where m.UserId == userId && m.Status == "Active"
+                  && (r.Scope == "Platform" || r.Name == IdentityRoles.SuperAdmin || r.Name == IdentityRoles.PlatformAdmin)
+            select r.Name
+        ).Distinct().ToListAsync(ct);
+        return roleNames;
+    }
+
     static string HashToken(string raw)
     {
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(raw));

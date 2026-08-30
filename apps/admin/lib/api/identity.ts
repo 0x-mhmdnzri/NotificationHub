@@ -46,7 +46,26 @@ export interface SessionRow {
   isActive: boolean
 }
 
+export interface TokenResponse {
+  accessToken: string
+  refreshToken: string
+  expiresIn: number
+  tokenType: string
+}
+
 export const identityApi = {
+  login: (body: { email: string; password: string; organizationId?: string }) =>
+    api.post<TokenResponse>('/api/v1/auth/login', body),
+  register: (body: {
+    email: string
+    password: string
+    displayName?: string
+    createOrganization?: boolean
+    organizationName?: string
+  }) => api.post<TokenResponse>('/api/v1/auth/register', body),
+  refresh: (refreshToken: string) =>
+    api.post<TokenResponse>('/api/v1/auth/refresh', { refreshToken }),
+
   me: () => api.get<AuthMe>('/api/v1/auth/me'),
   organizations: () => api.get<OrgMembership[]>('/api/v1/auth/organizations'),
   switchOrganization: (organizationId: string) =>

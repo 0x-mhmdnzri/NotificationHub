@@ -39,6 +39,7 @@ public static class IdentityPermissions
 
 public static class IdentityRoles
 {
+    public const string SuperAdmin = "SuperAdmin";
     public const string PlatformAdmin = "PlatformAdmin";
     public const string OrganizationOwner = "OrganizationOwner";
     public const string OrganizationAdmin = "OrganizationAdmin";

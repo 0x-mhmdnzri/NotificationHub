@@ -26,10 +26,11 @@ function ss(): Storage | null {
 
 function setAuthMarker(on: boolean) {
   if (typeof document === 'undefined') return
+  const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : ''
   if (on) {
-    document.cookie = `${AUTH_MARKER}=1; Path=/; SameSite=Strict; Secure`
+    document.cookie = `${AUTH_MARKER}=1; Path=/; SameSite=Lax${secure}`
   } else {
-    document.cookie = `${AUTH_MARKER}=; Path=/; Max-Age=0; SameSite=Strict`
+    document.cookie = `${AUTH_MARKER}=; Path=/; Max-Age=0; SameSite=Lax${secure}`
   }
 }
 

@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 
 namespace NotificationHub.Core.Identity;
@@ -7,7 +8,7 @@ public sealed class PermissionRequirement(string permission) : IAuthorizationReq
     public string Permission { get; } = permission;
 }
 
-/// <summary>Deny-by-default: requires authenticated human + active membership permission (server-side).</summary>
+/// <summary>Deny-by-default. SuperAdmin succeeds all. PlatformAdmin succeeds all in-tenant.</summary>
 public sealed class PermissionAuthorizationHandler(
     IMembershipService memberships) : AuthorizationHandler<PermissionRequirement>
 {
@@ -18,16 +19,39 @@ public sealed class PermissionAuthorizationHandler(
         if (context.User?.Identity?.IsAuthenticated != true)
             return;
 
-        var sub = context.User.FindFirst("sub")?.Value;
-        var tenant = context.User.FindFirst("tenant_id")?.Value;
-        if (!Guid.TryParse(sub, out var userId) || !Guid.TryParse(tenant, out var orgId))
+        if (context.User.IsInRole(IdentityRoles.SuperAdmin)
+            || context.User.Claims.Any(c =>
+                (c.Type is "role" or ClaimTypes.Role)
+                && string.Equals(c.Value, IdentityRoles.SuperAdmin, StringComparison.OrdinalIgnoreCase)))
+        {
+            context.Succeed(requirement);
             return;
+        }
+
+        var sub = context.User.FindFirst("sub")?.Value
+                  ?? context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        var tenant = context.User.FindFirst("tenant_id")?.Value
+                     ?? context.User.FindFirst("organization_id")?.Value;
+        if (!Guid.TryParse(sub, out var userId))
+            return;
+
+        if (tenant is null || !Guid.TryParse(tenant, out var orgId))
+        {
+            var platform = await memberships.GetPlatformRolesAsync(userId);
+            if (platform.Contains(IdentityRoles.SuperAdmin, StringComparer.OrdinalIgnoreCase)
+                || platform.Contains(IdentityRoles.PlatformAdmin, StringComparer.OrdinalIgnoreCase))
+            {
+                context.Succeed(requirement);
+            }
+            return;
+        }
 
         var snap = await memberships.GetActiveMembershipAsync(userId, orgId);
         if (snap is null)
             return;
 
-        if (snap.Roles.Contains(IdentityRoles.PlatformAdmin, StringComparer.OrdinalIgnoreCase))
+        if (snap.Roles.Contains(IdentityRoles.SuperAdmin, StringComparer.OrdinalIgnoreCase)
+            || snap.Roles.Contains(IdentityRoles.PlatformAdmin, StringComparer.OrdinalIgnoreCase))
         {
             context.Succeed(requirement);
             return;

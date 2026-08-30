@@ -53,6 +53,8 @@ using NotificationHub.Core.Activity;
 using NotificationHub.Core.Analytics;
 using NotificationHub.Core.Audit;
 using NotificationHub.Core.Auth;
+using NotificationHub.Host.Auth;
+using NotificationHub.Core.Identity;
 using NotificationHub.Core.Campaigns;
 using NotificationHub.Core.Cdp;
 using NotificationHub.Core.Common;
@@ -204,7 +206,10 @@ Console.WriteLine(
     $"(Environment={builder.Environment.EnvironmentName}, ContentRoot={builder.Environment.ContentRootPath})");
 
 builder.Services.AddDbContextPool<NotificationDbContext>(opt =>
-    opt.UseNpgsql(cs, n => { n.EnableRetryOnFailure(3); n.CommandTimeout(15); }));
+{
+    opt.UseNpgsql(cs, n => { n.EnableRetryOnFailure(3); n.CommandTimeout(15); });
+    opt.UseOpenIddict();
+});
 
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
 builder.Services.Configure<ProviderOptions>(builder.Configuration.GetSection("Providers"));
@@ -343,6 +348,11 @@ if (runRetention)
 builder.Services.AddInfrastructureCqrs();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IRequestContext, HttpRequestContext>();
+builder.Services.AddNotificationHubJwtBearer(builder.Configuration);
+builder.Services.AddNotificationHubOpenIddict(builder.Configuration);
+builder.Services.AddScoped<IMembershipService, MembershipService>();
+builder.Services.AddScoped<ISessionService, SessionService>();
+
 
 if (runDelivery)
     builder.Services.AddHostedService<NotificationBackgroundWorker>();
@@ -411,6 +421,9 @@ if (autoMigrate)
         }
 
         await Phase1Schema.EnsureAsync(db, startupLog);
+        await IdentitySchema.EnsureAsync(db, startupLog);
+        await SuperAdminSeeder.EnsureAsync(app.Services);
+        await OpenIddictHostExtensions.SeedOpenIddictClientsAsync(app.Services);
         await Phase2Schema.EnsureAsync(db, startupLog);
         await BroadcastSchema.EnsureAsync(db, startupLog);
         await Phase4Schema.EnsureAsync(db, startupLog);
@@ -477,7 +490,9 @@ if (corsOrigins.Length > 0)
 app.UseMiddleware<AdminIpAllowlistMiddleware>();
 
 // AuthN (API key) — equivalent to UseAuthentication for this API
+app.UseAuthentication();
 app.UseMiddleware<ApiKeyAuthMiddleware>();
+app.UseAuthorization();
 // AuthZ: RequireRoles on endpoints + AuthorizationBehavior on MediatR commands
 
 using (var scope = app.Services.CreateScope())
@@ -529,6 +544,11 @@ app.MapPost("/api/v1/notifications/sync", async (NotificationRequest request, Ht
     var result = await sender.Send(new SendNotificationSyncCommand(request, tenantId), ct);
     return result.ToHttpResult();
 }).WithName("SendNotificationSync");
+
+app.MapAccountAuthEndpoints();
+app.MapIdentityAuthEndpoints();
+app.MapOrganizationAdminEndpoints();
+app.MapSessionEndpoints();
 
 app.MapGet("/api/v1/notifications/{id:guid}", async (Guid id, HttpContext http, ISender sender, CancellationToken ct) =>
 {

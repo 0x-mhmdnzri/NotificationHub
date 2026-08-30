@@ -8,6 +8,7 @@ public interface IMembershipService
     Task<InviteResult> InviteAsync(Guid organizationId, string email, string? roleName, Guid invitedByUserId, CancellationToken ct = default);
     Task<bool> AcceptInviteAsync(string rawToken, Guid userId, CancellationToken ct = default);
     Task RevokeSessionAsync(Guid userId, Guid? sessionId, string? jwtId, CancellationToken ct = default);
+    Task<IReadOnlyList<string>> GetPlatformRolesAsync(Guid userId, CancellationToken ct = default);
     Task RecordSecurityEventAsync(string action, Guid? userId, Guid? organizationId, string? details, CancellationToken ct = default);
 }
 

@@ -4,7 +4,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { identityApi, type AuthMe, type OrgMembership } from '@/lib/api/identity'
 import { getAccessToken, setSession, clearSession } from '@/lib/auth/session'
-import { beginLogin, logoutLocal, refreshAccessToken } from '@/lib/auth/oidc'
+import { logoutLocal } from '@/lib/auth/oidc'
+import { identityApi } from '@/lib/api/identity'
+import { getRefreshToken, setSession } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/auth/permissions'
 
 interface AuthContextValue {
@@ -28,7 +30,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void (async () => {
       if (!getAccessToken()) {
-        await refreshAccessToken()
+        const rt = getRefreshToken()
+        if (rt) {
+          try {
+            const tokens = await identityApi.refresh(rt)
+            setSession({ accessToken: tokens.accessToken, refreshToken: tokens.refreshToken })
+          } catch {
+            /* ignore */
+          }
+        }
       }
       setTokenReady(true)
     })()
@@ -48,8 +58,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     retry: false,
   })
 
-  const login = useCallback((returnTo?: string) => {
-    void beginLogin(returnTo)
+  const login = useCallback((_returnTo?: string) => {
+    window.location.href = '/login'
   }, [])
 
   const logout = useCallback(async () => {
