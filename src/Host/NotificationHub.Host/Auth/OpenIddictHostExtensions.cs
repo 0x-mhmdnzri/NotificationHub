@@ -5,9 +5,8 @@ using static OpenIddict.Abstractions.OpenIddictConstants;
 namespace NotificationHub.Host.Auth;
 
 /// <summary>
-/// Registers OpenIddict (Identity Server package) on the API host.
-/// Login/register issue API JWTs; OpenIddict is the long-term token authority surface
-/// (token/introspection endpoints available when fully enabled).
+/// Registers OpenIddict on the API host.
+/// Login/register issue API JWTs; OpenIddict exposes the token endpoint surface.
 /// </summary>
 public static class OpenIddictHostExtensions
 {
@@ -18,8 +17,7 @@ public static class OpenIddictHostExtensions
             .AddCore(o => o.UseEntityFrameworkCore().UseDbContext<NotificationDbContext>())
             .AddServer(o =>
             {
-                o.SetTokenEndpointUris("/connect/token")
-                    .SetUserinfoEndpointUris("/connect/userinfo");
+                o.SetTokenEndpointUris("/connect/token");
 
                 o.AllowPasswordFlow()
                     .AllowRefreshTokenFlow()
@@ -31,8 +29,7 @@ public static class OpenIddictHostExtensions
                     .AddDevelopmentSigningCertificate();
 
                 o.UseAspNetCore()
-                    .EnableTokenEndpointPassthrough()
-                    .EnableUserinfoEndpointPassthrough();
+                    .EnableTokenEndpointPassthrough();
             })
             .AddValidation(o =>
             {

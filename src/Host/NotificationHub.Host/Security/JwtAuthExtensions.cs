@@ -1,6 +1,6 @@
-using Microsoft.AspNetCore.Authorization;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using NotificationHub.Core.Auth;
 using NotificationHub.Core.Identity;
