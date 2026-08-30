@@ -36,8 +36,8 @@ const groups = [
     label: 'Send',
     items: [
       ['/notifications', 'Send notification', BellRing, null],
-      ['/broadcasts', 'Broadcast', Send, null],
-      ['/campaigns', 'Campaigns', Megaphone, null],
+      ['/broadcasts', 'Broadcast', Megaphone, null],
+      ['/campaigns', 'Campaigns', Send, null],
     ] as const,
   },
   {
@@ -56,7 +56,7 @@ const groups = [
     label: 'Audience',
     items: [
       ['/devices', 'Devices', Smartphone, null],
-      ['/preferences', 'Preferences',SlidersHorizontal, null],
+      ['/preferences', 'Preferences', SlidersHorizontal, null],
       ['/consents', 'Consents', ShieldCheck, null],
     ] as const,
   },
@@ -72,11 +72,12 @@ const groups = [
     ] as const,
   },
   {
-    label: 'Organization',
+    label: 'Operations',
     items: [
+      ['/notifications/status', 'Delivery status', Activity, null],
       ['/organization/members', 'Members', UserCog, Perm.MemberRead],
-      ['/organization/settings', 'Settings', Building2, Perm.OrganizationRead],
-      ['/account/sessions', 'Sessions', Activity, null],
+      ['/organization/settings', 'Organization', Building2, Perm.OrganizationRead],
+      ['/account/sessions', 'Sessions', ShieldCheck, null],
     ] as const,
   },
 ]
@@ -130,11 +131,9 @@ export function Sidebar() {
           <div className="rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4">
             <div className="mb-2 flex items-center gap-2">
               <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-              <span className="text-xs font-medium">Systems operational</span>
+              <span className="text-xs font-medium">Systems healthy</span>
             </div>
-            <p className="text-xs leading-5 text-muted-foreground">
-              Messaging infrastructure is healthy.
-            </p>
+            <p className="text-xs leading-5 text-muted-foreground">Messaging infrastructure is operating normally.</p>
           </div>
         </div>
       </div>

@@ -9,10 +9,9 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { TemplateEditor } from '@/components/template-editor'
-import { EmptyState } from '@/components/ux/empty-state'
 import { useTemplates } from '@/hooks/use-templates'
 import { templates } from '@/lib/mock'
-import { formatChannel, humanTemplateName } from '@/lib/ux/labels'
+import { formatChannel, templateTitle } from '@/lib/ux/labels'
 import type { TemplateDefinition } from '@/types/api'
 
 const fallback: TemplateDefinition[] = templates.map((x) => ({
@@ -37,7 +36,7 @@ export default function TemplatesPage() {
     return data.filter(
       (x) =>
         (channel === 'all' || x.channel === channel) &&
-        `${x.key} ${x.subject} ${x.locale}`.toLowerCase().includes(q.toLowerCase()),
+        `${templateTitle(x)} ${x.key} ${x.locale}`.toLowerCase().includes(q.toLowerCase()),
     )
   }, [result.data, channel, q])
 
@@ -52,7 +51,7 @@ export default function TemplatesPage() {
         <PageHeader
           eyebrow="Content"
           title="Templates"
-          description="Create and manage the messages your notifications and campaigns send."
+          description="Reusable message content for notifications and campaigns."
           action={
             <Button
               onClick={() => {
@@ -67,16 +66,8 @@ export default function TemplatesPage() {
 
         <div className="mb-5 grid gap-3 md:grid-cols-3">
           <Metric icon={FileText} label="Templates" value={String(rows.length)} />
-          <Metric
-            icon={Sparkles}
-            label="Active"
-            value={String(rows.filter((x) => x.isActive !== false).length)}
-          />
-          <Metric
-            icon={SlidersHorizontal}
-            label="Channels"
-            value={String(new Set(rows.map((x) => x.channel)).size)}
-          />
+          <Metric icon={Sparkles} label="Active" value={String(rows.filter((x) => x.isActive !== false).length)} />
+          <Metric icon={SlidersHorizontal} label="Channels" value={String(new Set(rows.map((x) => x.channel)).size)} />
         </div>
 
         <Card className="overflow-hidden">
@@ -98,9 +89,7 @@ export default function TemplatesPage() {
                     type="button"
                     onClick={() => setChannel(x)}
                     className={`rounded-lg px-3 py-2 text-xs font-medium transition ${
-                      channel === x
-                        ? 'bg-background text-foreground shadow-sm'
-                        : 'text-muted-foreground hover:text-foreground'
+                      channel === x ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >
                     {x === 'all' ? 'All' : formatChannel(x)}
@@ -109,57 +98,49 @@ export default function TemplatesPage() {
               </div>
             </div>
 
-            {!rows.length ? (
-              <div className="p-6">
-                <EmptyState
-                  icon={FileText}
-                  title={q ? 'No templates match your search' : 'No templates yet'}
-                  description={
-                    q
-                      ? 'Try a different name or clear the filters.'
-                      : 'Create your first notification template to get started.'
-                  }
-                  actionLabel={q ? undefined : 'Create template'}
-                  onAction={
-                    q
-                      ? undefined
-                      : () => {
-                          setSelected(undefined)
-                          setOpen(true)
-                        }
-                  }
-                />
-              </div>
-            ) : (
-              <div>
-                {rows.map((x, i) => (
-                  <motion.button
-                    key={`${x.key}-${x.channel}-${x.locale}`}
-                    type="button"
-                    onClick={() => edit(x)}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.025 }}
-                    className="grid w-full gap-2 border-b px-5 py-4 text-left transition hover:bg-muted/30 md:grid-cols-[1.6fr_.7fr_.7fr_.5fr_auto] md:items-center"
-                  >
-                    <div>
-                      <div className="text-sm font-semibold">{humanTemplateName(x.key, x.subject)}</div>
-                      <div className="mt-1 truncate text-xs text-muted-foreground">{x.body || x.subject}</div>
-                    </div>
-                    <div>
-                      <Badge variant="outline">{formatChannel(x.channel)}</Badge>
-                    </div>
-                    <div className="text-sm text-muted-foreground">{x.locale}</div>
-                    <div>
-                      <Badge variant={x.isActive === false ? 'default' : 'success'}>
-                        {x.isActive === false ? 'Inactive' : 'Active'}
-                      </Badge>
-                    </div>
-                    <div className="text-xs text-muted-foreground">Open →</div>
-                  </motion.button>
-                ))}
-              </div>
-            )}
+            <div className="hidden grid-cols-[1.6fr_.7fr_.7fr_.45fr_.5fr_auto] gap-4 border-b bg-muted/20 px-5 py-3 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground md:grid">
+              <span>Name</span>
+              <span>Channel</span>
+              <span>Language</span>
+              <span>Version</span>
+              <span>Status</span>
+              <span />
+            </div>
+
+            <div>
+              {rows.map((x, i) => (
+                <motion.button
+                  key={`${x.key}-${x.channel}-${x.locale}`}
+                  type="button"
+                  onClick={() => edit(x)}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.025 }}
+                  className="grid w-full gap-2 border-b px-5 py-4 text-left transition hover:bg-muted/30 md:grid-cols-[1.6fr_.7fr_.7fr_.45fr_.5fr_auto] md:items-center"
+                >
+                  <div>
+                    <div className="text-sm font-semibold">{templateTitle(x)}</div>
+                    <div className="mt-1 truncate text-xs text-muted-foreground">{x.subject || 'No subject'}</div>
+                  </div>
+                  <div>
+                    <Badge variant="outline">{formatChannel(x.channel)}</Badge>
+                  </div>
+                  <div className="text-sm text-muted-foreground">{x.locale}</div>
+                  <div className="text-sm">v{x.version ?? 1}</div>
+                  <div>
+                    <Badge variant={x.isActive === false ? 'default' : 'success'}>
+                      {x.isActive === false ? 'Inactive' : 'Active'}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground">Edit</div>
+                </motion.button>
+              ))}
+              {!rows.length && (
+                <div className="p-12 text-center text-sm text-muted-foreground">
+                  No templates match your search. Try another channel or create a new template.
+                </div>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -168,15 +149,7 @@ export default function TemplatesPage() {
   )
 }
 
-function Metric({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ComponentType<{ size?: number }>
-  label: string
-  value: string
-}) {
+function Metric({ icon: Icon, label, value }: { icon: React.ComponentType<{ size?: number }>; label: string; value: string }) {
   return (
     <Card>
       <CardContent className="flex items-center gap-3 p-4">

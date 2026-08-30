@@ -1,26 +1,26 @@
-/** Presentation-layer labels — never leak DTO / enum / route names to operators. */
+/** Presentation-layer labels. Never leak DTO/enum/route names to operators. */
 
 export const channelLabel: Record<string, string> = {
   push: 'Push',
   sms: 'SMS',
   email: 'Email',
   webhook: 'Webhook',
-  inapp: 'In-app',
   chat: 'Chat',
+  inapp: 'In-app',
 }
 
-export function formatChannel(channel?: string | null) {
-  if (!channel) return '—'
-  return channelLabel[channel.toLowerCase()] ?? channel
+export function formatChannel(value?: string | null) {
+  if (!value) return '—'
+  return channelLabel[value.toLowerCase()] ?? value
 }
 
-export function formatStatus(status?: string | null) {
-  if (!status) return 'Unknown'
+export function formatStatus(value?: string | null) {
+  if (!value) return 'Unknown'
   const map: Record<string, string> = {
     delivered: 'Delivered',
     pending: 'Pending',
     queued: 'Queued',
-    processing: 'Processing',
+    processing: 'Sending',
     failed: 'Failed',
     cancelled: 'Cancelled',
     canceled: 'Cancelled',
@@ -32,59 +32,70 @@ export function formatStatus(status?: string | null) {
     inactive: 'Inactive',
     success: 'Succeeded',
   }
-  return map[status.toLowerCase()] ?? status.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase())
+  return map[value.toLowerCase()] ?? value.replace(/[_-]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-export type StatusTone = 'success' | 'warning' | 'danger' | 'default' | 'info'
-
-export function statusTone(status?: string | null): StatusTone {
-  if (!status) return 'default'
-  const s = status.toLowerCase()
-  if (['delivered', 'completed', 'active', 'success', 'succeeded', 'granted'].includes(s)) return 'success'
-  if (['pending', 'queued', 'processing', 'running', 'scheduled', 'draft'].includes(s)) return 'warning'
-  if (['failed', 'cancelled', 'canceled', 'inactive', 'revoked', 'denied'].includes(s)) return 'danger'
+export function statusTone(value?: string | null): 'success' | 'warning' | 'danger' | 'default' | 'outline' {
+  const v = (value ?? '').toLowerCase()
+  if (['delivered', 'completed', 'active', 'success', 'succeeded'].includes(v)) return 'success'
+  if (['pending', 'queued', 'processing', 'running', 'scheduled', 'draft'].includes(v)) return 'warning'
+  if (['failed', 'cancelled', 'canceled', 'inactive', 'error'].includes(v)) return 'danger'
   return 'default'
 }
 
-export function formatRelative(iso?: string | null) {
-  if (!iso) return '—'
-  const d = new Date(iso)
+export function formatDateTime(value?: string | Date | null) {
+  if (!value) return '—'
+  const d = typeof value === 'string' ? new Date(value) : value
+  if (Number.isNaN(d.getTime())) return '—'
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(d)
+}
+
+export function formatRelative(value?: string | Date | null) {
+  if (!value) return '—'
+  const d = typeof value === 'string' ? new Date(value) : value
   if (Number.isNaN(d.getTime())) return '—'
   const diff = Date.now() - d.getTime()
-  const mins = Math.round(diff / 60000)
-  if (Math.abs(mins) < 1) return 'Just now'
-  if (Math.abs(mins) < 60) return mins > 0 ? `${mins} min ago` : `in ${-mins} min`
-  const hrs = Math.round(mins / 60)
-  if (Math.abs(hrs) < 24) return hrs > 0 ? `${hrs}h ago` : `in ${-hrs}h`
-  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  const sec = Math.round(diff / 1000)
+  if (sec < 60) return 'Just now'
+  const min = Math.round(sec / 60)
+  if (min < 60) return `${min}m ago`
+  const hr = Math.round(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.round(hr / 24)
+  if (day < 7) return `${day}d ago`
+  return formatDateTime(d)
 }
 
-export function formatDateTime(iso?: string | null) {
-  if (!iso) return '—'
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return '—'
-  return d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+export function templateTitle(t: { key?: string; subject?: string | null; body?: string | null }) {
+  return t.subject?.trim() || t.body?.slice(0, 48) || humanizeKey(t.key) || 'Untitled template'
 }
 
-export function humanTemplateName(key?: string | null, subject?: string | null) {
-  if (subject?.trim()) return subject.trim()
-  if (!key) return 'Untitled template'
+export function humanizeKey(key?: string | null) {
+  if (!key) return '—'
   return key
-    .replace(/[._-]+/g, ' ')
+    .replace(/[_.-]+/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
-export function maskId(id?: string | null, keep = 6) {
-  if (!id) return '—'
-  if (id.length <= keep + 2) return id
-  return `…${id.slice(-keep)}`
+export function friendlyError(error: unknown): string {
+  if (!error) return 'Something went wrong. Please try again.'
+  if (typeof error === 'string') return error
+  const msg = (error as { message?: string }).message ?? ''
+  if (/network|fetch|reach/i.test(msg)) return 'Could not reach the server. Check your connection and try again.'
+  if (/401|unauthor/i.test(msg)) return 'Your session expired. Please sign in again.'
+  if (/403|forbidden/i.test(msg)) return 'You do not have permission to do this.'
+  if (/404|not found/i.test(msg)) return 'That item could not be found. It may have been removed.'
+  if (/valid/i.test(msg)) return msg
+  if (msg.length > 0 && msg.length < 160 && !/exception|stack|http/i.test(msg)) return msg
+  return 'The operation could not be completed. Please try again or contact support.'
 }
 
-export function friendlyError(message?: string) {
-  if (!message) return 'Something went wrong. Please try again.'
-  if (/timeout|network|fetch/i.test(message)) return 'Could not reach the server. Check your connection and try again.'
-  if (/unauthorized|401/i.test(message)) return 'Your session expired. Please sign in again.'
-  if (/forbidden|403/i.test(message)) return 'You do not have permission to do this.'
-  if (/not found|404/i.test(message)) return 'This item was not found or is no longer available.'
-  return message
+export const priorityLabel: Record<string, string> = {
+  low: 'Low',
+  normal: 'Normal',
+  high: 'High',
+  critical: 'Urgent',
 }
