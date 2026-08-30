@@ -1,13 +1,24 @@
 /**
  * OIDC Auth Code + PKCE client (SPA).
- * Tokens in localStorage — documented risk; prefer BFF in production hardening.
+ * Tokens: access in memory; refresh/PKCE in sessionStorage (see session.ts).
  */
-import { setPkce, setSession, consumePkce, clearSession, getRefreshToken } from './session'
+import {
+  setPkce,
+  setSession,
+  consumePkce,
+  clearSession,
+  getRefreshToken,
+  safeReturnPath,
+} from './session'
 
 const authority = () => (process.env.NEXT_PUBLIC_IDENTITY_AUTHORITY ?? '').replace(/\/$/, '')
 const clientId = () => process.env.NEXT_PUBLIC_OIDC_CLIENT_ID ?? 'admin-ui'
-const redirectUri = () => process.env.NEXT_PUBLIC_OIDC_REDIRECT_URI ?? (typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : '')
-const scopes = () => process.env.NEXT_PUBLIC_OIDC_SCOPES ?? 'openid profile email notificationhub.admin offline_access'
+const redirectUri = () =>
+  process.env.NEXT_PUBLIC_OIDC_REDIRECT_URI ??
+  (typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : '')
+const scopes = () =>
+  process.env.NEXT_PUBLIC_OIDC_SCOPES ??
+  'openid profile email notificationhub.admin offline_access'
 
 function randomString(len = 64) {
   const arr = new Uint8Array(len)
@@ -20,15 +31,18 @@ async function sha256Base64Url(input: string) {
   const hash = await crypto.subtle.digest('SHA-256', data)
   const bytes = new Uint8Array(hash)
   let str = ''
-  bytes.forEach((b) => { str += String.fromCharCode(b) })
+  bytes.forEach((b) => {
+    str += String.fromCharCode(b)
+  })
   return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 export async function beginLogin(returnTo?: string) {
+  if (!authority()) throw new Error('identity_authority_not_configured')
   const verifier = randomString(64)
   const challenge = await sha256Base64Url(verifier)
   const state = randomString(24)
-  if (returnTo) sessionStorage.setItem('notificationhub.returnTo', returnTo)
+  sessionStorage.setItem('notificationhub.returnTo', safeReturnPath(returnTo))
   setPkce(verifier, state)
 
   const url = new URL(`${authority()}/connect/authorize`)
@@ -64,9 +78,10 @@ export async function handleCallback(search: string) {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
+    credentials: 'omit',
   })
   if (!res.ok) throw new Error(`token_exchange_${res.status}`)
-  const json = await res.json() as {
+  const json = (await res.json()) as {
     access_token: string
     refresh_token?: string
     expires_in?: number
@@ -80,7 +95,7 @@ export async function handleCallback(search: string) {
 
 export async function refreshAccessToken(): Promise<string | undefined> {
   const refresh = getRefreshToken()
-  if (!refresh) return undefined
+  if (!refresh || !authority()) return undefined
   const body = new URLSearchParams()
   body.set('grant_type', 'refresh_token')
   body.set('client_id', clientId())
@@ -89,12 +104,13 @@ export async function refreshAccessToken(): Promise<string | undefined> {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body,
+    credentials: 'omit',
   })
   if (!res.ok) {
     clearSession()
     return undefined
   }
-  const json = await res.json() as { access_token: string; refresh_token?: string }
+  const json = (await res.json()) as { access_token: string; refresh_token?: string }
   setSession({ accessToken: json.access_token, refreshToken: json.refresh_token ?? refresh })
   return json.access_token
 }

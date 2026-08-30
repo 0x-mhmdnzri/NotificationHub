@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { ToastHost } from '@/components/toast-host'
 import { resourcesApi } from '@/lib/api/resources'
+import { isAllowedHttpsUrl } from '@/lib/api/config'
 import { useTenant } from '@/providers/tenant-provider'
 import { friendlyError } from '@/lib/ux/labels'
 
@@ -21,7 +22,11 @@ export default function WebhooksPage() {
   const { tenantId } = useTenant()
   const [url, setUrl] = useState('')
   const [secret, setSecret] = useState('')
-  const [events, setEvents] = useState<string[]>(['notification.sent', 'notification.delivered', 'notification.failed'])
+  const [events, setEvents] = useState<string[]>([
+    'notification.sent',
+    'notification.delivered',
+    'notification.failed',
+  ])
   const [toast, setToast] = useState<{ tone: 'success' | 'error'; title: string; description?: string } | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -30,10 +35,28 @@ export default function WebhooksPage() {
   }
 
   async function create() {
+    if (!isAllowedHttpsUrl(url)) {
+      setToast({
+        tone: 'error',
+        title: 'Invalid endpoint',
+        description: 'Use a public https:// URL. Localhost and private networks are not allowed.',
+      })
+      return
+    }
     setBusy(true)
     try {
-      await resourcesApi.webhooks.create({ url, secret: secret || undefined, events, tenantId, isActive: true })
-      setToast({ tone: 'success', title: 'Webhook connected', description: 'Your endpoint will receive the selected events.' })
+      await resourcesApi.webhooks.create({
+        url,
+        secret: secret || undefined,
+        events,
+        tenantId,
+        isActive: true,
+      })
+      setToast({
+        tone: 'success',
+        title: 'Webhook connected',
+        description: 'Your endpoint will receive the selected events.',
+      })
       setSecret('')
     } catch (e) {
       setToast({ tone: 'error', title: 'Could not create webhook', description: friendlyError(e) })
@@ -54,17 +77,31 @@ export default function WebhooksPage() {
         <Card>
           <CardContent className="space-y-5 p-6">
             <Field label="Your endpoint URL">
-              <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://api.yourapp.com/hooks/notifications" />
+              <Input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://api.yourapp.com/hooks/notifications"
+              />
             </Field>
             <Field label="Signing secret" hint="Shown only while creating — keep it private">
-              <Input type="password" value={secret} onChange={(e) => setSecret(e.target.value)} autoComplete="new-password" />
+              <Input
+                type="password"
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+                autoComplete="new-password"
+              />
             </Field>
             <div>
               <div className="mb-2 text-sm font-medium">Events to send</div>
               <div className="space-y-2">
                 {EVENT_OPTIONS.map((ev) => (
                   <label key={ev.id} className="flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm">
-                    <input type="checkbox" checked={events.includes(ev.id)} onChange={() => toggle(ev.id)} className="h-4 w-4 accent-primary" />
+                    <input
+                      type="checkbox"
+                      checked={events.includes(ev.id)}
+                      onChange={() => toggle(ev.id)}
+                      className="h-4 w-4 accent-primary"
+                    />
                     {ev.label}
                   </label>
                 ))}

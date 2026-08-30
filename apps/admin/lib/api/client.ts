@@ -1,11 +1,13 @@
 import { apiUrl } from './config'
 import { ApiError, type ProblemDetails } from './errors'
 import { getAccessToken, getTenantId } from '@/lib/auth/session'
+import { refreshAccessToken, logoutLocal } from '@/lib/auth/oidc'
 
 export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
   body?: unknown
   tenantId?: string
   accessToken?: string
+  _retried?: boolean
 }
 
 async function parseResponse(response: Response): Promise<unknown> {
@@ -27,7 +29,7 @@ export async function request<T>(path: string, options: ApiRequestOptions = {}):
   }
 
   const tenantId = options.tenantId ?? getTenantId()
-  const accessToken = options.accessToken ?? getAccessToken()
+  let accessToken = options.accessToken ?? getAccessToken()
 
   if (tenantId) headers.set('X-Tenant-Id', tenantId)
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
@@ -41,7 +43,17 @@ export async function request<T>(path: string, options: ApiRequestOptions = {}):
           ? options.body
           : JSON.stringify(options.body),
     headers,
+    credentials: 'omit',
+    cache: 'no-store',
   })
+
+  if (response.status === 401 && !options._retried) {
+    const next = await refreshAccessToken()
+    if (next) {
+      return request<T>(path, { ...options, accessToken: next, _retried: true })
+    }
+    logoutLocal()
+  }
 
   const payload = await parseResponse(response)
 
