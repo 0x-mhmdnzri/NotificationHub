@@ -108,3 +108,15 @@ export function safeReturnPath(candidate?: string | null, fallback = '/dashboard
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(t)) return fallback
   return t
 }
+
+export function tenantFromAccessToken(accessToken?: string): string | undefined {
+  if (!accessToken) return undefined
+  try {
+    const part = accessToken.split('.')[1]
+    if (!part) return undefined
+    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')))
+    return (json.tenant_id || json.organization_id || json.tid) as string | undefined
+  } catch {
+    return undefined
+  }
+}

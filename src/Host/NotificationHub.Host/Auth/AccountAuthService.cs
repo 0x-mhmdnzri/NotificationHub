@@ -174,6 +174,29 @@ public sealed class AccountAuthService(
         return (true, tokens);
     }
 
+
+    public async Task<(bool Ok, string? Error, AuthTokenResponse? Tokens)> ReissueForOrganizationAsync(
+        Guid userId, Guid organizationId, CancellationToken ct)
+    {
+        var user = await db.Set<IdentityUserEntity>().FirstOrDefaultAsync(u => u.Id == userId, ct);
+        if (user is null || !string.Equals(user.Status, "Active", StringComparison.OrdinalIgnoreCase))
+            return (false, "user_inactive", null);
+
+        var mem = await db.Set<OrganizationMembershipEntity>()
+            .FirstOrDefaultAsync(m => m.UserId == userId && m.OrganizationId == organizationId && m.Status == "Active", ct);
+        if (mem is null)
+            return (false, "membership_inactive_or_missing", null);
+
+        var roles = await (
+            from mr in db.Set<MembershipRoleEntity>()
+            join r in db.Set<IdentityRoleEntity>() on mr.RoleId equals r.Id
+            where mr.MembershipId == mem.Id
+            select r.Name).Distinct().ToListAsync(ct);
+
+        var tokens = await IssueTokensAsync(user, organizationId, roles, ct);
+        return (true, null, tokens);
+    }
+
     async Task<AuthTokenResponse> IssueTokensAsync(
         IdentityUserEntity user, Guid? orgId, IReadOnlyList<string> roles, CancellationToken ct)
     {
@@ -231,7 +254,7 @@ public sealed class AccountAuthService(
         });
         await db.SaveChangesAsync(ct);
 
-        return new AuthTokenResponse(access, refresh, (int)TimeSpan.FromMinutes(_jwt.AccessTokenMinutes).TotalSeconds, "Bearer");
+        return new AuthTokenResponse(access, refresh, (int)TimeSpan.FromMinutes(_jwt.AccessTokenMinutes).TotalSeconds, "Bearer", orgId);
     }
 
     static string Hash(string raw)
@@ -241,7 +264,7 @@ public sealed class AccountAuthService(
     }
 }
 
-public sealed record AuthTokenResponse(string AccessToken, string RefreshToken, int ExpiresIn, string TokenType);
+public sealed record AuthTokenResponse(string AccessToken, string RefreshToken, int ExpiresIn, string TokenType, Guid? OrganizationId = null);
 
 public sealed class SuperAdminSeedOptions
 {

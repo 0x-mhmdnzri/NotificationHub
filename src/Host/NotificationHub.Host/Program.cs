@@ -161,12 +161,16 @@ builder.Services.AddHttpClient("webhooks", c =>
 // SEC-16 CORS — only when origins are configured
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? Array.Empty<string>();
+if (corsOrigins.Length == 0 && builder.Environment.IsDevelopment())
+{
+    corsOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
+}
 if (corsOrigins.Length > 0)
 {
     builder.Services.AddCors(o => o.AddPolicy("AppCors", p =>
         p.WithOrigins(corsOrigins)
-            .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-            .WithHeaders("Content-Type", "X-Api-Key", "X-Correlation-ID", "Authorization")
+            .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+            .WithHeaders("Content-Type", "X-Api-Key", "X-Correlation-ID", "Authorization", "X-Tenant-Id", "Accept")
             .SetPreflightMaxAge(TimeSpan.FromMinutes(10))));
 }
 

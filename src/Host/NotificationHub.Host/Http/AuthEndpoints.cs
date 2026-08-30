@@ -51,25 +51,25 @@ public static class AuthEndpoints
             SwitchOrgRequest body,
             HttpContext http,
             IMembershipService memberships,
+            NotificationHub.Host.Auth.AccountAuthService account,
             CancellationToken ct) =>
         {
             if (!TryGetUserId(http, out var userId))
                 return Results.Unauthorized();
 
-            var snap = await memberships.GetActiveMembershipAsync(userId, body.OrganizationId, ct);
-            if (snap is null)
-                return Results.Json(new { error = "membership_inactive_or_missing" }, statusCode: StatusCodes.Status403Forbidden);
+            var (ok, error, tokens) = await account.ReissueForOrganizationAsync(userId, body.OrganizationId, ct);
+            if (!ok || tokens is null)
+                return Results.Json(new { error = error ?? "switch_failed" }, statusCode: StatusCodes.Status403Forbidden);
 
             await memberships.RecordSecurityEventAsync("TenantMembershipChanged", userId, body.OrganizationId, "switch", ct);
 
-            // Token re-issue is Identity host responsibility; API confirms membership + returns context for BFF/client.
             return Results.Ok(new
             {
-                organizationId = snap.OrganizationId,
-                membershipId = snap.MembershipId,
-                roles = snap.Roles,
-                permissions = snap.Permissions,
-                note = "Client must request new access token with tenant_id from Identity host"
+                organizationId = body.OrganizationId,
+                accessToken = tokens.AccessToken,
+                refreshToken = tokens.RefreshToken,
+                expiresIn = tokens.ExpiresIn,
+                tokenType = tokens.TokenType
             });
         }).WithName("AuthSwitchOrganization");
 

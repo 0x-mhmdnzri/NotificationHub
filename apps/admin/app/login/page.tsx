@@ -4,7 +4,8 @@ import { useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { identityApi } from '@/lib/api/identity'
-import { setSession, safeReturnPath } from '@/lib/auth/session'
+import { setSession, safeReturnPath, tenantFromAccessToken } from '@/lib/auth/session'
+import { ApiError } from '@/lib/api/errors'
 
 function LoginInner() {
   const params = useSearchParams()
@@ -25,21 +26,38 @@ function LoginInner() {
     try {
       const tokens =
         mode === 'login'
-          ? await identityApi.login({ email, password })
+          ? await identityApi.login({ email: email.trim(), password })
           : await identityApi.register({
-              email,
+              email: email.trim(),
               password,
-              displayName: displayName || undefined,
+              displayName: displayName.trim() || undefined,
               createOrganization: true,
-              organizationName: orgName || undefined,
+              organizationName: orgName.trim() || undefined,
             })
+
+      if (!tokens?.accessToken) {
+        setError('Server did not return an access token')
+        return
+      }
+
       setSession({
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
+        tenantId: tokens.organizationId ?? tenantFromAccessToken(tokens.accessToken),
       })
       router.replace(next)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed')
+      if (err instanceof ApiError) {
+        const map: Record<string, string> = {
+          invalid_credentials: 'Email or password is incorrect',
+          email_taken: 'This email is already registered',
+          invalid_input: 'Check email and password (min 8 characters)',
+          user_inactive: 'This account is inactive',
+        }
+        setError(map[err.message] ?? err.message)
+      } else {
+        setError(err instanceof Error ? err.message : 'Authentication failed')
+      }
     } finally {
       setBusy(false)
     }
@@ -47,13 +65,16 @@ function LoginInner() {
 
   return (
     <div className="grid min-h-screen place-items-center p-6">
-      <form onSubmit={(e) => void submit(e)} className="w-full max-w-md space-y-4 rounded-2xl border bg-card p-8 shadow-sm">
+      <form
+        onSubmit={(e) => void submit(e)}
+        className="w-full max-w-md space-y-4 rounded-2xl border bg-card p-8 shadow-sm"
+      >
         <div>
           <h1 className="text-xl font-semibold tracking-tight">
             {mode === 'login' ? 'Sign in' : 'Create account'}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            Backend API login powered by OpenIddict-ready JWT auth. SuperAdmin has full access.
+            Sign in with your NotificationHub account against the API.
           </p>
         </div>
         {mode === 'register' && (
@@ -107,7 +128,10 @@ function LoginInner() {
         <button
           type="button"
           className="w-full text-center text-xs text-muted-foreground underline"
-          onClick={() => setMode(mode === 'login' ? 'register' : 'login')}
+          onClick={() => {
+            setMode(mode === 'login' ? 'register' : 'login')
+            setError(null)
+          }}
         >
           {mode === 'login' ? 'Need an account? Register' : 'Already registered? Sign in'}
         </button>
@@ -118,7 +142,13 @@ function LoginInner() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="grid min-h-screen place-items-center text-sm text-muted-foreground">Loading…</div>}>
+    <Suspense
+      fallback={
+        <div className="grid min-h-screen place-items-center text-sm text-muted-foreground">
+          Loading…
+        </div>
+      }
+    >
       <LoginInner />
     </Suspense>
   )
