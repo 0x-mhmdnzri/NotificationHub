@@ -1,6 +1,5 @@
 {
-  "version": "0.2.0",
+  "version": "0.3.0",
   "scheme": "semver",
-  "product": "NotificationHub",
-  "tagPattern": "vMAJOR.MINOR.PATCH"
+  "product": "NotificationHub"
 }
