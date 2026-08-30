@@ -222,12 +222,14 @@ public sealed class AccountAuthService(
                 claims.Add(new Claim("permission", p));
         }
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwt.SigningKey.PadRight(32)[..64].PadRight(64, 'x')[..32]));
-        // Use full key material
-        var keyBytes = Encoding.UTF8.GetBytes(_jwt.SigningKey);
+        // HMAC-SHA256 needs >= 256 bits of key material. Prefer configured key;
+        // if shorter, derive 32 bytes via SHA-256 (never use unsafe Substring ranges).
+        var keyBytes = Encoding.UTF8.GetBytes(_jwt.SigningKey ?? string.Empty);
         if (keyBytes.Length < 32)
-            keyBytes = SHA256.HashData(keyBytes);
-        key = new SymmetricSecurityKey(keyBytes);
+            keyBytes = SHA256.HashData(keyBytes.Length == 0 ? "NotificationHub.DevSigningKey"u8.ToArray() : keyBytes);
+        else if (keyBytes.Length > 64)
+            keyBytes = keyBytes.AsSpan(0, 64).ToArray();
+        var key = new SymmetricSecurityKey(keyBytes);
 
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
         var expires = DateTime.UtcNow.AddMinutes(_jwt.AccessTokenMinutes);
