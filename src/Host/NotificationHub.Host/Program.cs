@@ -903,4 +903,25 @@ app.MapPost("/api/v1/broadcasts", async (BroadcastRequest body, HttpContext http
 }).WithName("SendBroadcast");
 
 app.MapNotificationHubHealthEndpoints();
+
+// --- Runtime version (SemVer + commit) — no secrets ---
+app.MapGet("/api/v1/version", () =>
+{
+    var asm = typeof(Program).Assembly;
+    var info = asm.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .OfType<System.Reflection.AssemblyInformationalVersionAttribute>()
+        .FirstOrDefault()?.InformationalVersion
+        ?? asm.GetName().Version?.ToString()
+        ?? "0.0.0";
+    var version = info.Split('+')[0];
+    var commit = info.Contains('+') ? info.Split('+', 2)[1] : (Environment.GetEnvironmentVariable("GITHUB_SHA") ?? "local");
+    return Results.Ok(new
+    {
+        version,
+        commit = commit.Length > 12 ? commit[..12] : commit,
+        product = "NotificationHub",
+        environment = app.Environment.EnvironmentName
+    });
+}).AllowAnonymous().WithName("GetVersion");
+
 app.Run();
