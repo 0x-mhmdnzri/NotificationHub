@@ -8,7 +8,7 @@ public static class RbacServiceCollectionExtensions
     public static IServiceCollection AddNotificationHubRbac(this IServiceCollection services)
     {
         services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
-        services.AddSingleton<IAuthorizationHandler, PermissionAuthorizationHandler>();
+        services.AddScoped<IAuthorizationHandler, PermissionAuthorizationHandler>();
         services.AddAuthorization();
         return services;
     }
