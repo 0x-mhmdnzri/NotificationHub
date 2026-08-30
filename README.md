@@ -323,8 +323,8 @@ dotnet test tests/NotificationHub.Domain.Tests
 
 ```bash
 cd apps/admin
-cp .env.local.example .env.local
-npm install && npm run dev
+cp .env.example .env.local
+pnpm install && pnpm dev
 ```
 
 Open http://localhost:3000 — set API base `http://localhost:5245` and your Host API key under **Settings**.

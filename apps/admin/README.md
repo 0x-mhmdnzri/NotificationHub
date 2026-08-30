@@ -69,8 +69,8 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:5000
 ## Run
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm  dev
 ```
 
 ## Contract limitations
