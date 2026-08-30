@@ -9,6 +9,7 @@
     <PackageReference Include="Aspire.Hosting.PostgreSQL" />
     <PackageReference Include="Aspire.Hosting.RabbitMQ" />
     <PackageReference Include="Aspire.Hosting.Redis" />
+      <PackageReference Include="KubernetesClient" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\NotificationHub.Host\NotificationHub.Host.csproj" />

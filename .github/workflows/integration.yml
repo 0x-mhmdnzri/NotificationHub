@@ -46,6 +46,8 @@ jobs:
       RabbitMQ__UserName: guest
       RabbitMQ__Password: guest
       Hangfire__DashboardEnabled: "false"
+      ConnectionStrings__Redis: ""
+      # Redis optional for smoke; /health/live must not require it
 
     steps:
       - uses: actions/checkout@v4

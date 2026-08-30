@@ -19,6 +19,42 @@ Avoid diverging versions across `.csproj` files, Docker tags, and packages. CI d
 
 ---
 
+## Git tag naming (required)
+
+Tags **must** match SemVer 2.0.0 with a `v` prefix:
+
+```text
+vMAJOR.MINOR.PATCH
+```
+
+Valid examples:
+
+```text
+v0.1.0
+v0.2.0
+v1.0.0
+v1.4.2
+v2.0.0-rc.1
+```
+
+Invalid (do not create):
+
+```text
+0.1.0              ← missing v prefix
+v1.0               ← incomplete
+v1.0.0-final       ← non-SemVer label
+v1.0.0-production
+2026.08.1          ← CalVer (not used)
+latest
+release-1
+```
+
+- Tags are **immutable**: never move `v1.2.3` to another commit.
+- Wrong release → publish a new **PATCH** (e.g. `v1.2.4`), do not rewrite history.
+- GitHub Release **title** uses the bare version (`1.2.3`); the **tag** keeps the `v` prefix (`v1.2.3`).
+- Container images use the bare version: `ghcr.io/.../notificationhub:1.2.3`.
+
+
 ## SemVer rules
 
 ```text

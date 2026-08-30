@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using FluentValidation;
 using NotificationHub.Application.Abstractions;
+using NotificationHub.Host.Security;
 
 namespace NotificationHub.Host.Middleware;
 
@@ -45,9 +46,10 @@ public sealed class ExceptionHandlingMiddleware(
         }
         catch (Exception ex)
         {
-            var correlationId = context.GetCorrelationId() ?? "unknown";
+            var correlationId = LogSanitizer.Sanitize(context.GetCorrelationId() ?? "unknown", 64);
+            var path = LogSanitizer.Sanitize(context.Request.Path.Value, 256);
             logger.LogError(ex, "Unhandled exception CorrelationId={CorrelationId} Path={Path}",
-                correlationId, context.Request.Path);
+                correlationId, path);
 
             object body = env.IsDevelopment()
                 ? new

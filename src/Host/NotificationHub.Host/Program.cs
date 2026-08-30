@@ -312,7 +312,13 @@ builder.Services.AddIntegrationMessaging();
 if (!string.IsNullOrWhiteSpace(redisCs))
 {
     builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(_ =>
-        StackExchange.Redis.ConnectionMultiplexer.Connect(redisCs));
+    {
+        var opts = StackExchange.Redis.ConfigurationOptions.Parse(redisCs);
+        opts.AbortOnConnectFail = false;
+        opts.ConnectTimeout = 3000;
+        opts.ConnectRetry = 2;
+        return StackExchange.Redis.ConnectionMultiplexer.Connect(opts);
+    });
     builder.Services.AddSingleton<IRateLimiter, RedisRateLimiter>();
     builder.Services.AddSingleton<IInboxEventBus, RedisInboxEventBus>();
 }

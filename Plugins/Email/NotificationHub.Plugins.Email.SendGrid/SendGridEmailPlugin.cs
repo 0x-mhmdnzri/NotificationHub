@@ -37,7 +37,7 @@ public sealed class SendGridEmailPlugin : IChannelPlugin
         if (!string.IsNullOrWhiteSpace(_apiKey))
         {
             _client = new SendGridClient(_apiKey);
-            _logger?.LogInformation("SendGrid plugin initialized with From={From}", _fromEmail);
+            _logger?.LogInformation("SendGrid plugin initialized (API key configured, from-address present={HasFrom}).", !string.IsNullOrWhiteSpace(_fromEmail));
         }
         else
         {
