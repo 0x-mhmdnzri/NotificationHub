@@ -26,10 +26,14 @@ ADRs capture **why** a decision was made, alternatives considered, and consequen
 
 Practical runbooks under [`ops/`](ops/):
 
+- [commit-conventions.md](ops/commit-conventions.md) — Conventional Commits (`feat`, `fix`, `ci`, …)
+- [versioning.md](ops/versioning.md) — SemVer 2.0.0, tags `vX.Y.Z`, release workflow, `GET /api/v1/version`
 - [orchestration-otel-aspire.md](ops/orchestration-otel-aspire.md) — Aspire topology, Serilog, Jaeger, health
 - [messaging-reliability.md](ops/messaging-reliability.md) — outbox, ack, DLQ, delayed redelivery
 - [prefetch-tuning.md](ops/prefetch-tuning.md), [latency.md](ops/latency.md)
 - Security hardening notes (`security-hardening-*.md`)
+
+Contributor overview: [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## SDK
 
