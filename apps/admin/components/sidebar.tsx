@@ -3,9 +3,25 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  LayoutDashboard, Send, Workflow, FileText, Users, Smartphone,SlidersHorizontal,
-  ShieldCheck, Radio, Webhook, BarChart3, PlugZap, Layers3, BellRing, ChevronRight,
-  Building2, UserCog,
+  LayoutDashboard,
+  Send,
+  Workflow,
+  FileText,
+  Users,
+  Smartphone,
+  SlidersHorizontal,
+  ShieldCheck,
+  Radio,
+  Webhook,
+  BarChart3,
+  PlugZap,
+  Layers3,
+  BellRing,
+  ChevronRight,
+  Building2,
+  UserCog,
+  Megaphone,
+  Activity,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/providers/auth-provider'
@@ -13,31 +29,45 @@ import { Perm } from '@/lib/auth/permissions'
 
 const groups = [
   {
-    label: 'Core',
+    label: 'Overview',
+    items: [['/dashboard', 'Overview', LayoutDashboard, null]] as const,
+  },
+  {
+    label: 'Send',
     items: [
-      ['/dashboard', 'Overview', LayoutDashboard, null],
-      ['/notifications', 'Notifications', BellRing, null],
-      ['/campaigns', 'Campaigns', Send, null],
-      ['/workflows', 'Workflows', Workflow, null],
+      ['/notifications', 'Send notification', BellRing, null],
       ['/broadcasts', 'Broadcast', Send, null],
+      ['/campaigns', 'Campaigns', Megaphone, null],
     ] as const,
+  },
+  {
+    label: 'Content',
+    items: [
+      ['/templates', 'Templates', FileText, null],
+      ['/topics', 'Topics', Radio, null],
+      ['/segments', 'Segments', Users, null],
+    ] as const,
+  },
+  {
+    label: 'Automation',
+    items: [['/workflows', 'Workflows', Workflow, null]] as const,
   },
   {
     label: 'Audience',
     items: [
-      ['/segments', 'Segments', Users, null],
       ['/devices', 'Devices', Smartphone, null],
       ['/preferences', 'Preferences',SlidersHorizontal, null],
       ['/consents', 'Consents', ShieldCheck, null],
-      ['/topics', 'Topics', Radio, null],
     ] as const,
   },
   {
-    label: 'Content & Ops',
+    label: 'Analytics',
+    items: [['/engagement', 'Engagement', BarChart3, null]] as const,
+  },
+  {
+    label: 'Integrations',
     items: [
-      ['/templates', 'Templates', FileText, null],
       ['/webhooks', 'Webhooks', Webhook, null],
-      ['/engagement', 'Engagement', BarChart3, null],
       ['/plugins', 'Plugins', PlugZap, null],
     ] as const,
   },
@@ -46,7 +76,7 @@ const groups = [
     items: [
       ['/organization/members', 'Members', UserCog, Perm.MemberRead],
       ['/organization/settings', 'Settings', Building2, Perm.OrganizationRead],
-      ['/account/sessions', 'Sessions', ShieldCheck, null],
+      ['/account/sessions', 'Sessions', Activity, null],
     ] as const,
   },
 ]
@@ -64,7 +94,7 @@ export function Sidebar() {
           </div>
           <div>
             <div className="font-bold tracking-tight">NotificationHub</div>
-            <div className="text-[10px] uppercase tracking-[.2em] text-muted-foreground">Control Plane</div>
+            <div className="text-[10px] uppercase tracking-[.2em] text-muted-foreground">Operations</div>
           </div>
         </div>
         <div className="flex-1 overflow-y-auto p-4">
@@ -100,9 +130,11 @@ export function Sidebar() {
           <div className="rounded-2xl bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-4">
             <div className="mb-2 flex items-center gap-2">
               <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-              <span className="text-xs font-medium">All systems operational</span>
+              <span className="text-xs font-medium">Systems operational</span>
             </div>
-            <p className="text-xs leading-5 text-muted-foreground">Messaging infrastructure is healthy.</p>
+            <p className="text-xs leading-5 text-muted-foreground">
+              Messaging infrastructure is healthy.
+            </p>
           </div>
         </div>
       </div>
