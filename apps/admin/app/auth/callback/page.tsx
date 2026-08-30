@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { handleCallback } from '@/lib/auth/oidc'
+import { safeReturnPath } from '@/lib/auth/session'
 
 export default function AuthCallbackPage() {
   const [error, setError] = useState<string | null>(null)
@@ -10,9 +11,9 @@ export default function AuthCallbackPage() {
     void (async () => {
       try {
         await handleCallback(window.location.search)
-        const returnTo = sessionStorage.getItem('notificationhub.returnTo') || '/dashboard'
+        const raw = sessionStorage.getItem('notificationhub.returnTo')
         sessionStorage.removeItem('notificationhub.returnTo')
-        window.location.replace(returnTo)
+        window.location.replace(safeReturnPath(raw, '/dashboard'))
       } catch (e) {
         setError(e instanceof Error ? e.message : 'login_failed')
       }
@@ -25,7 +26,9 @@ export default function AuthCallbackPage() {
         <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-6 text-sm">
           Sign-in failed: {error}
           <div className="mt-4">
-            <a className="text-primary underline" href="/login">Back to login</a>
+            <a className="text-primary underline" href="/login">
+              Back to login
+            </a>
           </div>
         </div>
       </div>

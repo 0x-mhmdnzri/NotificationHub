@@ -1,35 +1,34 @@
 'use client'
 
-import { Layers3 } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { Suspense } from 'react'
 import { Button } from '@/components/ui/button'
-import { useAuth } from '@/providers/auth-provider'
+import { beginLogin } from '@/lib/auth/oidc'
+import { safeReturnPath } from '@/lib/auth/session'
 
-export default function LoginPage() {
-  const { login, isAuthenticated } = useAuth()
-
-  if (isAuthenticated) {
-    if (typeof window !== 'undefined') window.location.href = '/dashboard'
-  }
+function LoginInner() {
+  const params = useSearchParams()
+  const next = safeReturnPath(params.get('next'), '/dashboard')
 
   return (
-    <div className="grid min-h-screen place-items-center bg-background px-4">
-      <div className="w-full max-w-md rounded-3xl border bg-card p-8 shadow-xl">
-        <div className="mb-6 flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-primary text-primary-foreground">
-            <Layers3 size={20} />
-          </div>
-          <div>
-            <div className="text-lg font-bold">NotificationHub</div>
-            <div className="text-xs text-muted-foreground">Admin control plane</div>
-          </div>
-        </div>
-        <p className="mb-6 text-sm leading-6 text-muted-foreground">
-          Sign in with your organization account. Multi-tenant access is enforced server-side.
+    <div className="grid min-h-screen place-items-center p-6">
+      <div className="w-full max-w-md rounded-2xl border bg-card p-8 shadow-sm">
+        <h1 className="text-xl font-semibold tracking-tight">Sign in</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Use your organization account to access NotificationHub operations.
         </p>
-        <Button className="w-full" size="lg" onClick={() => login('/dashboard')}>
-          Continue with SSO
+        <Button className="mt-6 w-full" onClick={() => void beginLogin(next)}>
+          Continue with Identity
         </Button>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="grid min-h-screen place-items-center text-sm text-muted-foreground">Loading…</div>}>
+      <LoginInner />
+    </Suspense>
   )
 }

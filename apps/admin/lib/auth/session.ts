@@ -1,22 +1,48 @@
-const ACCESS_TOKEN_KEY = 'notificationhub.accessToken'
-const REFRESH_TOKEN_KEY = 'notificationhub.refreshToken'
-const TENANT_ID_KEY = 'notificationhub.tenantId'
-const PKCE_VERIFIER_KEY = 'notificationhub.pkceVerifier'
-const OIDC_STATE_KEY = 'notificationhub.oidcState'
+/**
+ * Session storage strategy (SPA, pre-BFF):
+ * - Access token: in-memory only (not durable across full page reloads until refresh).
+ * - Refresh token + tenant + PKCE: sessionStorage (tab-scoped, not shared across tabs/origins as freely as localStorage).
+ * - Auth presence cookie (non-secret): lets edge middleware redirect unauthenticated users.
+ *
+ * Production target: BFF with httpOnly Secure SameSite cookies.
+ */
+
+const REFRESH_TOKEN_KEY = 'nh.rt'
+const TENANT_ID_KEY = 'nh.tid'
+const PKCE_VERIFIER_KEY = 'nh.pkce'
+const OIDC_STATE_KEY = 'nh.oidc_state'
+const AUTH_MARKER = 'nh_auth'
+
+let memoryAccessToken: string | undefined
+
+function ss(): Storage | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.sessionStorage
+  } catch {
+    return null
+  }
+}
+
+function setAuthMarker(on: boolean) {
+  if (typeof document === 'undefined') return
+  if (on) {
+    document.cookie = `${AUTH_MARKER}=1; Path=/; SameSite=Strict; Secure`
+  } else {
+    document.cookie = `${AUTH_MARKER}=; Path=/; Max-Age=0; SameSite=Strict`
+  }
+}
 
 export function getAccessToken(): string | undefined {
-  if (typeof window === 'undefined') return undefined
-  return window.localStorage.getItem(ACCESS_TOKEN_KEY) ?? undefined
+  return memoryAccessToken
 }
 
 export function getRefreshToken(): string | undefined {
-  if (typeof window === 'undefined') return undefined
-  return window.localStorage.getItem(REFRESH_TOKEN_KEY) ?? undefined
+  return ss()?.getItem(REFRESH_TOKEN_KEY) ?? undefined
 }
 
 export function getTenantId(): string | undefined {
-  if (typeof window === 'undefined') return undefined
-  return window.localStorage.getItem(TENANT_ID_KEY) ?? undefined
+  return ss()?.getItem(TENANT_ID_KEY) ?? undefined
 }
 
 export function setSession(input: {
@@ -24,32 +50,60 @@ export function setSession(input: {
   refreshToken?: string
   tenantId?: string
 }) {
-  if (typeof window === 'undefined') return
-  if (input.accessToken) window.localStorage.setItem(ACCESS_TOKEN_KEY, input.accessToken)
-  if (input.refreshToken) window.localStorage.setItem(REFRESH_TOKEN_KEY, input.refreshToken)
-  if (input.tenantId) window.localStorage.setItem(TENANT_ID_KEY, input.tenantId)
+  if (input.accessToken) {
+    memoryAccessToken = input.accessToken
+    setAuthMarker(true)
+  }
+  const store = ss()
+  if (!store) return
+  if (input.refreshToken) store.setItem(REFRESH_TOKEN_KEY, input.refreshToken)
+  if (input.tenantId) store.setItem(TENANT_ID_KEY, input.tenantId)
 }
 
 export function clearSession() {
-  if (typeof window === 'undefined') return
-  window.localStorage.removeItem(ACCESS_TOKEN_KEY)
-  window.localStorage.removeItem(REFRESH_TOKEN_KEY)
-  window.localStorage.removeItem(TENANT_ID_KEY)
-  window.localStorage.removeItem(PKCE_VERIFIER_KEY)
-  window.localStorage.removeItem(OIDC_STATE_KEY)
+  memoryAccessToken = undefined
+  setAuthMarker(false)
+  const store = ss()
+  if (!store) return
+  store.removeItem(REFRESH_TOKEN_KEY)
+  store.removeItem(TENANT_ID_KEY)
+  store.removeItem(PKCE_VERIFIER_KEY)
+  store.removeItem(OIDC_STATE_KEY)
+  // purge legacy localStorage keys if present
+  try {
+    window.localStorage.removeItem('notificationhub.accessToken')
+    window.localStorage.removeItem('notificationhub.refreshToken')
+    window.localStorage.removeItem('notificationhub.tenantId')
+    window.localStorage.removeItem('notificationhub.pkceVerifier')
+    window.localStorage.removeItem('notificationhub.oidcState')
+  } catch {
+    /* ignore */
+  }
 }
 
 export function setPkce(verifier: string, state: string) {
-  if (typeof window === 'undefined') return
-  window.localStorage.setItem(PKCE_VERIFIER_KEY, verifier)
-  window.localStorage.setItem(OIDC_STATE_KEY, state)
+  const store = ss()
+  if (!store) return
+  store.setItem(PKCE_VERIFIER_KEY, verifier)
+  store.setItem(OIDC_STATE_KEY, state)
 }
 
 export function consumePkce(): { verifier?: string; state?: string } {
-  if (typeof window === 'undefined') return {}
-  const verifier = window.localStorage.getItem(PKCE_VERIFIER_KEY) ?? undefined
-  const state = window.localStorage.getItem(OIDC_STATE_KEY) ?? undefined
-  window.localStorage.removeItem(PKCE_VERIFIER_KEY)
-  window.localStorage.removeItem(OIDC_STATE_KEY)
+  const store = ss()
+  if (!store) return {}
+  const verifier = store.getItem(PKCE_VERIFIER_KEY) ?? undefined
+  const state = store.getItem(OIDC_STATE_KEY) ?? undefined
+  store.removeItem(PKCE_VERIFIER_KEY)
+  store.removeItem(OIDC_STATE_KEY)
   return { verifier, state }
+}
+
+/** Only same-app relative paths; blocks open redirects. */
+export function safeReturnPath(candidate?: string | null, fallback = '/dashboard'): string {
+  if (!candidate) return fallback
+  const t = candidate.trim()
+  if (!t.startsWith('/') || t.startsWith('//')) return fallback
+  if (t.includes('\\') || t.includes('@')) return fallback
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(t)) return fallback
+  return t
 }
