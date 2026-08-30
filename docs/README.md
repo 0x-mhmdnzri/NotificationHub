@@ -14,6 +14,7 @@ ADRs capture **why** a decision was made, alternatives considered, and consequen
 | 011 | [ADR-011-Batch-Broadcast-Campaigns.md](ADR-011-Batch-Broadcast-Campaigns.md) | Accepted | Campaign + recipients + dispatch worker |
 | 012 | [ADR-012-Aspire-Composition-vs-Business-Orchestration.md](ADR-012-Aspire-Composition-vs-Business-Orchestration.md) | Accepted | Aspire ≠ business orchestration |
 | 013 | [ADR-013-Per-Channel-Delivery-Workers.md](ADR-013-Per-Channel-Delivery-Workers.md) | Accepted | Separate email/sms/push consumers |
+| 019 | [ADR-019-Multi-Tenant-Identity-RBAC-ABAC.md](ADR-019-Multi-Tenant-Identity-RBAC-ABAC.md) | Proposed | B2B org identity, OIDC, RBAC/ABAC (API Key unchanged) |
 
 ### Writing a new ADR
 
@@ -21,6 +22,10 @@ ADRs capture **why** a decision was made, alternatives considered, and consequen
 2. Use the next free number (`ADR-0NN-...`).
 3. Link it from this index and from the root [README](../README.md).
 4. Prefer amending an existing ADR with a dated **Amendment** section when changing an Accepted decision, rather than rewriting history silently.
+
+## Backlogs
+
+- [Multi-tenant identity (backend-first)](backlog/multi-tenant-identity.md)
 
 ## Operations
 
