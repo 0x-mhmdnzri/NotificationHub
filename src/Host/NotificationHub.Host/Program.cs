@@ -64,6 +64,7 @@ using NotificationHub.Core.Engagement;
 using NotificationHub.Core.Environments;
 using NotificationHub.Core.Expressions;
 using NotificationHub.Core.I18n;
+using NotificationHub.Core.Identity;
 using NotificationHub.Core.Inbox;
 using NotificationHub.Core.Layouts;
 using NotificationHub.Core.Messaging;
@@ -87,6 +88,7 @@ using NotificationHub.Core.Validation;
 using NotificationHub.Core.Webhooks;
 using NotificationHub.Core.Workflow;
 using NotificationHub.Core.Workflow.Handlers;
+using NotificationHub.Host.Auth;
 using NotificationHub.Host.Composition;
 using NotificationHub.Host.Configuration;
 using NotificationHub.Host.Hangfire;
@@ -159,12 +161,16 @@ builder.Services.AddHttpClient("webhooks", c =>
 // SEC-16 CORS — only when origins are configured
 var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
     ?? Array.Empty<string>();
+if (corsOrigins.Length == 0 && builder.Environment.IsDevelopment())
+{
+    corsOrigins = ["http://localhost:3000", "http://127.0.0.1:3000"];
+}
 if (corsOrigins.Length > 0)
 {
     builder.Services.AddCors(o => o.AddPolicy("AppCors", p =>
         p.WithOrigins(corsOrigins)
-            .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-            .WithHeaders("Content-Type", "X-Api-Key", "X-Correlation-ID", "Authorization")
+            .WithMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+            .WithHeaders("Content-Type", "X-Api-Key", "X-Correlation-ID", "Authorization", "X-Tenant-Id", "Accept")
             .SetPreflightMaxAge(TimeSpan.FromMinutes(10))));
 }
 
@@ -204,7 +210,13 @@ Console.WriteLine(
     $"(Environment={builder.Environment.EnvironmentName}, ContentRoot={builder.Environment.ContentRootPath})");
 
 builder.Services.AddDbContextPool<NotificationDbContext>(opt =>
-    opt.UseNpgsql(cs, n => { n.EnableRetryOnFailure(3); n.CommandTimeout(15); }));
+{
+    opt.UseNpgsql(cs, n => { n.EnableRetryOnFailure(3); n.CommandTimeout(15); });
+    // Identity entities are mapped in OnModelCreating + ensured via IdentitySchema SQL;
+    // no EF migration snapshot yet for those tables (same pattern as Phase*Schema).
+    opt.ConfigureWarnings(w =>
+        w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+});
 
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
 builder.Services.Configure<ProviderOptions>(builder.Configuration.GetSection("Providers"));
@@ -343,6 +355,10 @@ if (runRetention)
 builder.Services.AddInfrastructureCqrs();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IRequestContext, HttpRequestContext>();
+builder.Services.AddNotificationHubJwtBearer(builder.Configuration);
+builder.Services.AddScoped<IMembershipService, MembershipService>();
+builder.Services.AddScoped<ISessionService, SessionService>();
+
 
 if (runDelivery)
     builder.Services.AddHostedService<NotificationBackgroundWorker>();
@@ -411,6 +427,8 @@ if (autoMigrate)
         }
 
         await Phase1Schema.EnsureAsync(db, startupLog);
+        await IdentitySchema.EnsureAsync(db, startupLog);
+        await SuperAdminSeeder.EnsureAsync(app.Services);
         await Phase2Schema.EnsureAsync(db, startupLog);
         await BroadcastSchema.EnsureAsync(db, startupLog);
         await Phase4Schema.EnsureAsync(db, startupLog);
@@ -477,7 +495,9 @@ if (corsOrigins.Length > 0)
 app.UseMiddleware<AdminIpAllowlistMiddleware>();
 
 // AuthN (API key) — equivalent to UseAuthentication for this API
+app.UseAuthentication();
 app.UseMiddleware<ApiKeyAuthMiddleware>();
+app.UseAuthorization();
 // AuthZ: RequireRoles on endpoints + AuthorizationBehavior on MediatR commands
 
 using (var scope = app.Services.CreateScope())
@@ -529,6 +549,11 @@ app.MapPost("/api/v1/notifications/sync", async (NotificationRequest request, Ht
     var result = await sender.Send(new SendNotificationSyncCommand(request, tenantId), ct);
     return result.ToHttpResult();
 }).WithName("SendNotificationSync");
+
+app.MapAccountAuthEndpoints();
+app.MapIdentityAuthEndpoints();
+app.MapOrganizationAdminEndpoints();
+app.MapSessionEndpoints();
 
 app.MapGet("/api/v1/notifications/{id:guid}", async (Guid id, HttpContext http, ISender sender, CancellationToken ct) =>
 {

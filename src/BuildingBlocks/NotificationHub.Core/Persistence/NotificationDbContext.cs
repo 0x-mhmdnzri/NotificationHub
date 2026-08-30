@@ -526,5 +526,8 @@ public sealed class NotificationDbContext : DbContext
         n.Property(x => x.CollapseKey).HasMaxLength(256);
         n.HasIndex(x => new { x.Recipient, x.CollapseKey });
         p.Property(x => x.WeeklyScheduleJson);
+
+        // Multi-tenant identity (tables also ensured via IdentitySchema SQL)
+        modelBuilder.ApplyIdentityModel();
     }
 }

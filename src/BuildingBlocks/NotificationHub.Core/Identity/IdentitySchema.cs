@@ -121,6 +121,7 @@ public static class IdentitySchema
 
         await db.SaveChangesAsync(ct);
 
+        await EnsureRoleAsync(db, IdentityRoles.SuperAdmin, "Platform", true, IdentityPermissions.All, ct);
         await EnsureRoleAsync(db, IdentityRoles.PlatformAdmin, "Platform", true, IdentityPermissions.All, ct);
         await EnsureRoleAsync(db, IdentityRoles.OrganizationOwner, "Organization", true, IdentityPermissions.All, ct);
         await EnsureRoleAsync(

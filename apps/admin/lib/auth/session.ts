@@ -26,10 +26,11 @@ function ss(): Storage | null {
 
 function setAuthMarker(on: boolean) {
   if (typeof document === 'undefined') return
+  const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : ''
   if (on) {
-    document.cookie = `${AUTH_MARKER}=1; Path=/; SameSite=Strict; Secure`
+    document.cookie = `${AUTH_MARKER}=1; Path=/; SameSite=Lax${secure}`
   } else {
-    document.cookie = `${AUTH_MARKER}=; Path=/; Max-Age=0; SameSite=Strict`
+    document.cookie = `${AUTH_MARKER}=; Path=/; Max-Age=0; SameSite=Lax${secure}`
   }
 }
 
@@ -106,4 +107,16 @@ export function safeReturnPath(candidate?: string | null, fallback = '/dashboard
   if (t.includes('\\') || t.includes('@')) return fallback
   if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(t)) return fallback
   return t
+}
+
+export function tenantFromAccessToken(accessToken?: string): string | undefined {
+  if (!accessToken) return undefined
+  try {
+    const part = accessToken.split('.')[1]
+    if (!part) return undefined
+    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')))
+    return (json.tenant_id || json.organization_id || json.tid) as string | undefined
+  } catch {
+    return undefined
+  }
 }
