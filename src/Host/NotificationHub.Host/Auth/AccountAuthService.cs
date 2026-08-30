@@ -299,7 +299,7 @@ public static class SuperAdminSeeder
             user.PasswordHash = hasher.HashPassword(user, opts.Password);
             db.Set<IdentityUserEntity>().Add(user);
             await db.SaveChangesAsync(ct);
-            log.LogWarning("Seeded SuperAdmin user {Email} — change password immediately", email);
+            log.LogWarning("Seeded SuperAdmin user — change password immediately");
         }
 
         var role = await db.Set<IdentityRoleEntity>()
