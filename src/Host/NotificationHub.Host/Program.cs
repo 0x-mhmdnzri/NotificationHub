@@ -210,10 +210,7 @@ Console.WriteLine(
     $"(Environment={builder.Environment.EnvironmentName}, ContentRoot={builder.Environment.ContentRootPath})");
 
 builder.Services.AddDbContextPool<NotificationDbContext>(opt =>
-{
-    opt.UseNpgsql(cs, n => { n.EnableRetryOnFailure(3); n.CommandTimeout(15); });
-    opt.UseOpenIddict();
-});
+    opt.UseNpgsql(cs, n => { n.EnableRetryOnFailure(3); n.CommandTimeout(15); }));
 
 builder.Services.Configure<RabbitMqOptions>(builder.Configuration.GetSection(RabbitMqOptions.SectionName));
 builder.Services.Configure<ProviderOptions>(builder.Configuration.GetSection("Providers"));
@@ -353,7 +350,6 @@ builder.Services.AddInfrastructureCqrs();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IRequestContext, HttpRequestContext>();
 builder.Services.AddNotificationHubJwtBearer(builder.Configuration);
-builder.Services.AddNotificationHubOpenIddict(builder.Configuration);
 builder.Services.AddScoped<IMembershipService, MembershipService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 
@@ -427,7 +423,6 @@ if (autoMigrate)
         await Phase1Schema.EnsureAsync(db, startupLog);
         await IdentitySchema.EnsureAsync(db, startupLog);
         await SuperAdminSeeder.EnsureAsync(app.Services);
-        await OpenIddictHostExtensions.SeedOpenIddictClientsAsync(app.Services);
         await Phase2Schema.EnsureAsync(db, startupLog);
         await BroadcastSchema.EnsureAsync(db, startupLog);
         await Phase4Schema.EnsureAsync(db, startupLog);
