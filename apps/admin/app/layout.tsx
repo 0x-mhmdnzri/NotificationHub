@@ -1,25 +1,27 @@
-import type { Metadata } from "next";
-import { Toaster } from "sonner";
-import { AppSidebar } from "@/components/app-sidebar";
-import "./globals.css";
+import './globals.css'
+import { AppProviders } from '@/providers/app-providers'
+import { Sidebar } from '@/components/sidebar'
+import { Topbar } from '@/components/topbar'
 
-export const metadata: Metadata = {
-  title: "NotificationHub Admin",
-  description: "Production-ready demo console for NotificationHub",
-};
+export const metadata = {
+  title: 'NotificationHub',
+  description: 'Notification orchestration control plane',
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" suppressHydrationWarning>
       <body>
-        <div className="flex min-h-screen">
-          <AppSidebar />
-          <main className="flex-1 overflow-auto">
-            <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">{children}</div>
-          </main>
-        </div>
-        <Toaster theme="dark" richColors position="top-right" closeButton />
+        <AppProviders>
+          <div className="min-h-screen bg-background">
+            <Sidebar />
+            <div className="lg:pl-[270px]">
+              <Topbar />
+              <main className="min-h-[calc(100vh-72px)]">{children}</main>
+            </div>
+          </div>
+        </AppProviders>
       </body>
     </html>
-  );
+  )
 }

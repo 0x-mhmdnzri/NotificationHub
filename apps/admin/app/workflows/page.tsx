@@ -1,85 +1,33 @@
-"use client";
-import { useState } from "react";
-import { PageHeader } from "@/components/page-header";
-import { ResponsePanel } from "@/components/response-panel";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { endpoints, ApiResult } from "@/lib/api";
-import { toast } from "sonner";
+'use client'
+import { useMemo, useState } from 'react'
+import { motion, Reorder } from 'framer-motion'
+import { Plus, Trash2, GitBranch, Clock, Send, Save, Play, Eye } from 'lucide-react'
+import Link from 'next/link'
+import { PageHeader } from '@/components/page-header'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/select'
+import { Textarea } from '@/components/ui/textarea'
+import { Badge } from '@/components/ui/badge'
+import { resourcesApi } from '@/lib/api/resources'
+import { useTemplates } from '@/hooks/use-templates'
+import { useTenant } from '@/providers/tenant-provider'
+import type { WorkflowDefinition, WorkflowStep } from '@/types/api'
 
-export default function WorkflowsPage() {
-  const [defJson, setDefJson] = useState(JSON.stringify({
-    key: "onboarding", isActive: true,
-    steps: [
-      { id: "s1", type: "send", channel: "email", templateKey: "welcome", next: "s2" },
-      { id: "s2", type: "delay", delaySeconds: 60, next: null },
-    ],
-  }, null, 2));
-  const [startJson, setStartJson] = useState(JSON.stringify({
-    workflowKey: "onboarding", recipient: "user@example.com", data: { name: "Ada" },
-  }, null, 2));
-  const [runId, setRunId] = useState("");
-  const [result, setResult] = useState<ApiResult | null>(null);
-
-  return (
-    <>
-      <PageHeader
-        title="Workflows"
-        description="Multi-step journeys (send → delay → branch). Save a definition, start a run for a recipient, inspect timeline or cancel."
-      />
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Definition & run</CardTitle>
-            <CardDescription>JSON editors map 1:1 to OpenAPI bodies for demos and power users.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label>Workflow definition</Label>
-              <Textarea rows={10} value={defJson} onChange={(e) => setDefJson(e.target.value)} />
-            </div>
-            <Button onClick={async () => {
-              try {
-                const r = await endpoints.saveWorkflow(JSON.parse(defJson));
-                setResult(r);
-                r.ok ? toast.success("Saved") : toast.error(r.error);
-              } catch { toast.error("Invalid JSON"); }
-            }}>Save workflow</Button>
-            <div className="space-y-2">
-              <Label>Start request</Label>
-              <Textarea rows={5} value={startJson} onChange={(e) => setStartJson(e.target.value)} />
-            </div>
-            <Button variant="secondary" onClick={async () => {
-              try {
-                const r = await endpoints.startWorkflow(JSON.parse(startJson));
-                setResult(r);
-                if (r.ok) {
-                  const id = (r.data as { runId?: string })?.runId;
-                  if (id) setRunId(id);
-                  toast.success("Run started");
-                } else toast.error(r.error);
-              } catch { toast.error("Invalid JSON"); }
-            }}>Start run</Button>
-            <div className="space-y-2">
-              <Label>Run id</Label>
-              <Input className="font-mono text-xs" value={runId} onChange={(e) => setRunId(e.target.value)} />
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={async () => setResult(await endpoints.getWorkflowRun(runId))}>Get</Button>
-              <Button variant="outline" onClick={async () => setResult(await endpoints.getWorkflowTimeline(runId))}>Timeline</Button>
-              <Button variant="destructive" onClick={async () => {
-                const r = await endpoints.cancelWorkflow(runId);
-                setResult(r);
-                r.ok ? toast.message("Cancelled") : toast.error(r.error);
-              }}>Cancel</Button>
-            </div>
-          </CardContent>
-        </Card>
-        <ResponsePanel result={result} />
-      </div>
-    </>
-  );
+const types = ['notification','delay','condition'] as const
+const icons: Record<string, any> = { notification: Send, delay: Clock, condition: GitBranch }
+export default function WorkflowsPage(){
+ const {tenantId}=useTenant(); const templates=useTemplates(); const [key,setKey]=useState('payment-received'); const [active,setActive]=useState(true)
+ const [steps,setSteps]=useState<WorkflowStep[]>([{id:'step-1',type:'notification',channel:'push',templateKey:'',next:'step-2'},{id:'step-2',type:'delay',delaySeconds:3600,next:'step-3'},{id:'step-3',type:'condition',conditionExpression:'data.amount > 1000000',nextOnTrue:'',nextOnFalse:''}])
+ const [recipient,setRecipient]=useState(''); const [runData,setRunData]=useState('{}'); const [runId,setRunId]=useState('')
+ const payload=useMemo<WorkflowDefinition>(()=>({key,tenantId,isActive:active,steps}),[key,tenantId,active,steps])
+ const add=(type:string)=>setSteps(s=>[...s,{id:`step-${Date.now()}`,type,channel:type==='notification'?'push':undefined}])
+ const update=(id:string,p:Partial<WorkflowStep>)=>setSteps(s=>s.map(x=>x.id===id?{...x,...p}:x)); const remove=(id:string)=>setSteps(s=>s.filter(x=>x.id!==id))
+ const start=async()=>{const r:any=await resourcesApi.workflows.start({workflowKey:key,recipient,tenantId,data:JSON.parse(runData)});setRunId(String(r?.id??r?.runId??''))}
+ return <div className="grid-bg min-h-full p-5 md:p-8"><div className="mx-auto max-w-[1500px]"><PageHeader eyebrow="Orchestration" title="Workflow Studio" description="Visualize and edit WorkflowDefinition without adding fields outside the OpenAPI schema." action={<Link href="/workflows/runs"><Button variant="outline"><Eye size={15}/>Run inspector</Button></Link>}/>
+ <div className="grid gap-5 xl:grid-cols-[1fr_380px]"><Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-3"><CardTitle>Workflow graph</CardTitle><div className="flex gap-2">{types.map(t=><Button key={t} size="sm" variant="outline" onClick={()=>add(t)}><Plus size={13}/>{t}</Button>)}</div></div></CardHeader><CardContent><div className="rounded-3xl border bg-muted/20 p-5"><div className="mb-5 grid gap-3 md:grid-cols-[1fr_auto]"><Input value={key} onChange={e=>setKey(e.target.value)} placeholder="workflow-key"/><Button variant={active?'default':'outline'} onClick={()=>setActive(v=>!v)}>{active?'Active':'Draft'}</Button></div>
+ <Reorder.Group axis="y" values={steps} onReorder={setSteps} className="space-y-3">{steps.map((s,i)=>{const Icon=icons[s.type]??GitBranch;return <Reorder.Item key={s.id} value={s} as="div"><motion.div layout className="relative rounded-2xl border bg-card p-4 shadow-sm transition-shadow hover:shadow-md"><div className="flex items-center gap-3"><div className="grid h-10 w-10 place-items-center rounded-xl bg-primary/10 text-primary"><Icon size={17}/></div><div className="flex-1"><div className="font-mono text-xs text-muted-foreground">{s.id}</div><div className="mt-1"><Badge variant="outline">{s.type}</Badge></div></div><Button size="icon" variant="ghost" onClick={()=>remove(s.id)}><Trash2 size={15}/></Button></div><div className="mt-4 grid gap-3 md:grid-cols-2">{s.type==='notification'&&<><Field label="Channel"><Select value={s.channel??''} onChange={e=>update(s.id,{channel:e.target.value})}><option value="">Select channel</option><option>push</option><option>email</option><option>sms</option><option>webhook</option></Select></Field><Field label="Template"><Select value={s.templateKey??''} onChange={e=>update(s.id,{templateKey:e.target.value})}><option value="">Select template</option>{templates.data?.map(t=><option key={`${t.key}-${t.channel}-${t.locale}`} value={t.key}>{t.key} · {t.channel} · {t.locale}</option>)}</Select></Field><Field label="Preferred provider"><Input value={s.preferredProvider??''} onChange={e=>update(s.id,{preferredProvider:e.target.value})}/></Field></>}{s.type==='delay'&&<Field label="Delay seconds"><Input type="number" min="0" value={s.delaySeconds??0} onChange={e=>update(s.id,{delaySeconds:Number(e.target.value)})}/></Field>}{s.type==='condition'&&<Field label="Condition expression"><Textarea value={s.conditionExpression??''} onChange={e=>update(s.id,{conditionExpression:e.target.value})}/></Field>}{s.type!=='condition'&&<Field label="Next"><Input value={s.next??''} onChange={e=>update(s.id,{next:e.target.value})}/></Field>}{s.type==='condition'&&<><Field label="Next on true"><Input value={s.nextOnTrue??''} onChange={e=>update(s.id,{nextOnTrue:e.target.value})}/></Field><Field label="Next on false"><Input value={s.nextOnFalse??''} onChange={e=>update(s.id,{nextOnFalse:e.target.value})}/></Field></>}</div>{s.configJson!==undefined&&<Field label="Config JSON"><Textarea value={s.configJson??''} onChange={e=>update(s.id,{configJson:e.target.value})}/></Field>}{i<steps.length-1&&<div className="absolute -bottom-4 left-1/2 h-7 w-px bg-border"/>}</motion.div></Reorder.Item>})}</Reorder.Group></div></CardContent></Card>
+ <div className="space-y-5"><Card><CardHeader><CardTitle>Definition</CardTitle></CardHeader><CardContent><pre className="max-h-96 overflow-auto rounded-2xl bg-muted p-4 text-[10px] leading-5">{JSON.stringify(payload,null,2)}</pre><Button className="mt-4 w-full" onClick={()=>resourcesApi.workflows.save(payload)}><Save size={15}/>Save workflow</Button></CardContent></Card><Card><CardHeader><CardTitle>Start run</CardTitle></CardHeader><CardContent className="space-y-3"><Field label="Recipient"><Input value={recipient} onChange={e=>setRecipient(e.target.value)}/></Field><Field label="Data JSON"><Textarea className="min-h-28 font-mono text-xs" value={runData} onChange={e=>setRunData(e.target.value)}/></Field><Button className="w-full" disabled={!recipient} onClick={start}><Play size={15}/>Start workflow</Button>{runId&&<div className="rounded-xl border bg-muted/40 p-3 text-xs">Run created: <span className="font-mono">{runId}</span><Link className="mt-2 block text-primary" href={`/workflows/runs?runId=${encodeURIComponent(runId)}`}>Open run inspector</Link></div>}</CardContent></Card></div></div></div></div>
 }
+function Field({label,children}:{label:string;children:React.ReactNode}){return <label className="space-y-1.5 text-xs"><span className="font-medium text-muted-foreground">{label}</span>{children}</label>}

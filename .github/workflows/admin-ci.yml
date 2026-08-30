@@ -22,14 +22,22 @@ jobs:
         working-directory: apps/admin
     steps:
       - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: apps/admin/package-lock.json
-      - run: npm ci
+          cache: pnpm
+          cache-dependency-path: apps/admin/pnpm-lock.yaml
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
       - name: Build
-        run: npm run build
+        run: pnpm build
         env:
           NEXT_PUBLIC_API_BASE_URL: http://localhost:5245
           NEXT_TELEMETRY_DISABLED: "1"
