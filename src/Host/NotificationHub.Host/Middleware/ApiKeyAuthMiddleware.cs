@@ -37,6 +37,14 @@ public sealed class ApiKeyAuthMiddleware
             return;
         }
 
+        // Human JWT path (/api/v1/auth or Authorization: Bearer) — do not require API Key.
+        // Machine clients continue to use X-Api-Key exclusively.
+        if (DualAuthPassThrough.ShouldSkipApiKey(context))
+        {
+            await _next(context);
+            return;
+        }
+
         var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var authFailLimit = config.GetValue("RateLimiting:AuthFailuresPerMinute", 30);
 
