@@ -3,19 +3,14 @@ using NotificationHub.Core.Identity;
 
 namespace NotificationHub.Core.Persistence;
 
-public partial class NotificationDbContext
+/// <summary>
+/// Identity tables configuration applied from Host/startup without partial DbContext.
+/// Call <see cref="ApplyIdentityModel"/> from OnModelCreating after core mappings,
+/// or register via modelBuilder in a dedicated startup hook.
+/// </summary>
+public static class IdentityModelBuilderExtensions
 {
-    public DbSet<OrganizationEntity> Organizations => Set<OrganizationEntity>();
-    public DbSet<IdentityUserEntity> IdentityUsers => Set<IdentityUserEntity>();
-    public DbSet<OrganizationMembershipEntity> OrganizationMemberships => Set<OrganizationMembershipEntity>();
-    public DbSet<IdentityRoleEntity> IdentityRoles => Set<IdentityRoleEntity>();
-    public DbSet<IdentityPermissionEntity> IdentityPermissions => Set<IdentityPermissionEntity>();
-    public DbSet<RolePermissionEntity> RolePermissions => Set<RolePermissionEntity>();
-    public DbSet<MembershipRoleEntity> MembershipRoles => Set<MembershipRoleEntity>();
-    public DbSet<InvitationEntity> Invitations => Set<InvitationEntity>();
-    public DbSet<UserSessionEntity> UserSessions => Set<UserSessionEntity>();
-
-    void ConfigureIdentity(ModelBuilder modelBuilder)
+    public static void ApplyIdentityModel(this ModelBuilder modelBuilder)
     {
         var org = modelBuilder.Entity<OrganizationEntity>();
         org.ToTable("identity_organizations");

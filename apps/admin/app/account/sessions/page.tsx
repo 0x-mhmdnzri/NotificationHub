@@ -31,7 +31,7 @@ export default function SessionsPage() {
           Revoke all
         </Button>
       </div>
-      <SectionCard>
+      <SectionCard title="Active sessions">
         <div className="space-y-3">
           {(sessions.data ?? []).map((s) => (
             <div key={s.id} className="flex flex-col gap-2 rounded-xl border p-4 sm:flex-row sm:items-center">

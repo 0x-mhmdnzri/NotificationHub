@@ -39,8 +39,8 @@ export default function OrgSettingsPage() {
           <p className="text-sm text-muted-foreground">No active organization in session.</p>
         )}
         {org.data && (
-          <SectionCard>
-            <div className="grid gap-4 max-w-lg">
+          <SectionCard title="Profile">
+            <div className="grid max-w-lg gap-4">
               <label className="text-sm">
                 <span className="mb-1 block text-muted-foreground">Name</span>
                 <input

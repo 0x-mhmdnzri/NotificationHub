@@ -47,8 +47,7 @@ export default function MembersPage() {
           </div>
         )}
         {orgId && can(Perm.MemberInvite) && (
-          <SectionCard className="mb-6">
-            <div className="mb-3 text-sm font-medium">Invite member</div>
+          <SectionCard title="Invite member" className="mb-6">
             <div className="flex flex-col gap-3 sm:flex-row">
               <input
                 className="flex-1 rounded-xl border bg-background px-3 py-2 text-sm"
@@ -65,20 +64,15 @@ export default function MembersPage() {
                 <option>Operator</option>
                 <option>OrganizationAdmin</option>
               </select>
-              <Button
-                disabled={!email || invite.isPending}
-                onClick={() => invite.mutate()}
-              >
+              <Button disabled={!email || invite.isPending} onClick={() => invite.mutate()}>
                 Send invite
               </Button>
             </div>
-            {invite.isError && (
-              <p className="mt-2 text-xs text-destructive">Invite failed</p>
-            )}
+            {invite.isError && <p className="mt-2 text-xs text-destructive">Invite failed</p>}
           </SectionCard>
         )}
         {orgId && (
-          <SectionCard>
+          <SectionCard title="Team members">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead className="text-xs uppercase text-muted-foreground">
