@@ -1,3 +1,98 @@
 'use client'
-import {useState} from 'react'; import {PageHeader} from '@/components/page-header'; import {Card,CardContent,CardHeader,CardTitle} from '@/components/ui/card'; import {Button} from '@/components/ui/button'; import {resourcesApi} from '@/lib/api/resources'; import {OperationPanel} from '@/components/operation-panel';
-export default function Page(){const [result,setResult]=useState<unknown>();const check=async()=>setResult(await resourcesApi.messagingHealth());return <div className="grid-bg min-h-full p-5 md:p-8"><div className="mx-auto max-w-[1000px]"><PageHeader eyebrow="Platform" title="Plugins & Messaging" description="Inspect registered providers and validate messaging infrastructure health."/><div className="grid gap-5 md:grid-cols-2"><OperationPanel title="Messaging health" description="GET /api/v1/admin/messaging/health" onSubmit={check} label="Check health"><p className="text-sm text-muted-foreground">The response is rendered in the inspection panel below.</p></OperationPanel><Card><CardHeader><CardTitle>Provider model</CardTitle></CardHeader><CardContent className="space-y-3 text-sm text-muted-foreground"><p>Plugin discovery is exposed by <code>GET /api/v1/plugins</code>.</p><p>Provider selection can be controlled by <code>preferredProvider</code> and <code>allowFallback</code> at notification level.</p></CardContent></Card></div>{result!==undefined&&<Card className="mt-5"><CardHeader><CardTitle>Health response</CardTitle></CardHeader><CardContent><pre className="overflow-auto rounded-xl bg-muted p-4 text-xs">{JSON.stringify(result,null,2)}</pre></CardContent></Card>}</div></div>}
+
+import { useState } from 'react'
+import { PageHeader } from '@/components/page-header'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { ToastHost } from '@/components/toast-host'
+import { resourcesApi } from '@/lib/api/resources'
+import { formatStatus, friendlyError, statusTone } from '@/lib/ux/labels'
+
+export default function PluginsPage() {
+  const [plugins, setPlugins] = useState<Array<Record<string, unknown>>>([])
+  const [health, setHealth] = useState<Record<string, unknown> | null>(null)
+  const [toast, setToast] = useState<{ tone: 'success' | 'error'; title: string; description?: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function loadPlugins() {
+    setBusy(true)
+    try {
+      const res = (await resourcesApi.plugins()) as Array<Record<string, unknown>>
+      setPlugins(Array.isArray(res) ? res : [])
+    } catch (e) {
+      setToast({ tone: 'error', title: 'Could not load integrations', description: friendlyError(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function checkHealth() {
+    setBusy(true)
+    try {
+      const res = (await resourcesApi.messagingHealth()) as Record<string, unknown>
+      setHealth(res)
+      setToast({ tone: 'success', title: 'Health check complete' })
+    } catch (e) {
+      setToast({ tone: 'error', title: 'Health check failed', description: friendlyError(e) })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const overall = String(health?.status ?? health?.overall ?? health?.State ?? '')
+
+  return (
+    <div className="grid-bg min-h-full p-5 md:p-8">
+      <ToastHost toast={toast} onClose={() => setToast(null)} />
+      <div className="mx-auto max-w-[1000px]">
+        <PageHeader
+          eyebrow="Integrations"
+          title="Providers & health"
+          description="See which delivery providers are available and whether messaging is healthy."
+        />
+
+        <div className="mb-5 flex flex-wrap gap-2">
+          <Button disabled={busy} onClick={() => void loadPlugins()}>Refresh providers</Button>
+          <Button disabled={busy} variant="outline" onClick={() => void checkHealth()}>Check messaging health</Button>
+        </div>
+
+        {health && (
+          <Card className="mb-5">
+            <CardContent className="flex items-center justify-between gap-4 p-6">
+              <div>
+                <div className="text-sm text-muted-foreground">Messaging infrastructure</div>
+                <div className="mt-1 text-lg font-semibold">{formatStatus(overall) || 'Checked'}</div>
+              </div>
+              <Badge variant={statusTone(overall)}>{formatStatus(overall) || 'OK'}</Badge>
+            </CardContent>
+          </Card>
+        )}
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          {plugins.length === 0 && (
+            <p className="text-sm text-muted-foreground col-span-full">No providers loaded yet. Press “Refresh providers”.</p>
+          )}
+          {plugins.map((p, i) => {
+            const name = String(p.name ?? p.Name ?? p.id ?? p.Id ?? `Provider ${i + 1}`)
+            const channel = String(p.channel ?? p.Channel ?? p.capability ?? '')
+            const status = String(p.status ?? p.Status ?? p.health ?? 'available')
+            return (
+              <Card key={i}>
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold">{name}</div>
+                      {channel && <div className="mt-1 text-xs text-muted-foreground">{channel}</div>}
+                    </div>
+                    <Badge variant={statusTone(status)}>{formatStatus(status)}</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
