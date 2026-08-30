@@ -39,6 +39,10 @@
     <!-- Messaging / HTTP APIs -->
     <PackageVersion Include="RabbitMQ.Client" Version="7.1.2" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.3.2" />
+    <!-- Identity / OpenIddict -->
+    <PackageVersion Include="OpenIddict.AspNetCore" Version="6.0.0" />
+    <PackageVersion Include="OpenIddict.EntityFrameworkCore" Version="6.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.4" />
     <!-- Provider SDKs -->
     <PackageVersion Include="SendGrid" Version="9.29.3" />
     <PackageVersion Include="Kavenegar" Version="1.2.5" />
