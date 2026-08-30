@@ -307,6 +307,14 @@ Domain unit tests (no database):
 dotnet test tests/NotificationHub.Domain.Tests
 ```
 
+
+## Contributing
+
+- **Commits:** [Conventional Commits](docs/ops/commit-conventions.md) — `type(scope): subject` (e.g. `feat(campaigns): ...`, `fix(ef): ...`, `ci(security): ...`).
+- **Versioning:** [SemVer 2.0.0](docs/ops/versioning.md) — `version.json` + tags `vMAJOR.MINOR.PATCH`; merges to `dev` drive automated bumps; releases at [GitHub Releases](https://github.com/0x-mhmdnzri/NotificationHub/releases).
+- **Runtime version:** `GET /api/v1/version`
+- Full guide: [CONTRIBUTING.md](CONTRIBUTING.md)
+
 ## License
 
 [MIT](LICENSE) — use it, fork it, ship it.

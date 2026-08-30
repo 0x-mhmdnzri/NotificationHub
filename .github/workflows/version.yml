@@ -1,0 +1,140 @@
+name: Version bump (SemVer)
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Force bump level (major|minor|patch|auto)"
+        required: false
+        default: auto
+
+permissions:
+  contents: write
+
+concurrency:
+  group: version-dev
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Compute SemVer and tag
+    runs-on: ubuntu-latest
+    # Merged PR into dev, or manual
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: dev
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Compute next version
+        id: semver
+        env:
+          FORCE_BUMP: ${{ github.event.inputs.bump || 'auto' }}
+        run: |
+          set -euo pipefail
+          CURRENT=$(python3 -c "import json; print(json.load(open('version.json'))['version'])")
+          echo "version.json=$CURRENT"
+
+          LAST_TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            RANGE="${LAST_TAG}..HEAD"
+            LOG=$(git log --pretty=format:'%s' "$RANGE")
+          else
+            LOG=$(git log --pretty=format:'%s' -30)
+          fi
+
+          BUMP="patch"
+          if echo "$LOG" | grep -Eiq '^(feat|fix|perf|refactor|chore|docs|test|ci|build|style)(\(.+\))?!:|BREAKING CHANGE:'; then
+            BUMP="major"
+          elif echo "$LOG" | grep -Eiq '^feat(\(.+\))?:'; then
+            BUMP="minor"
+          fi
+          case "${FORCE_BUMP}" in major|minor|patch) BUMP="$FORCE_BUMP" ;; esac
+
+          IFS=. read -r MA MI PA <<< "$CURRENT"
+          MA=${MA:-0}; MI=${MI:-0}; PA=${PA:-0}
+          case "$BUMP" in
+            major) MA=$((MA+1)); MI=0; PA=0 ;;
+            minor) MI=$((MI+1)); PA=0 ;;
+            patch) PA=$((PA+1)) ;;
+          esac
+          NEXT="${MA}.${MI}.${PA}"
+          TAG="v${NEXT}"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — skip (immutable)"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Avoid tag spam if only chore(release)/merge noise
+          if [ -z "$LOG" ]; then
+            echo "No commits in range — skip"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "bump=$BUMP" >> "$GITHUB_OUTPUT"
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "Next $TAG ($BUMP)"
+
+      - name: Update version files and tag
+        if: steps.semver.outputs.skip != 'true'
+        env:
+          NEXT: ${{ steps.semver.outputs.version }}
+          TAG: ${{ steps.semver.outputs.tag }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, pathlib, re, os
+          next_v = os.environ["NEXT"]
+          pathlib.Path("version.json").write_text(json.dumps({
+              "version": next_v,
+              "scheme": "semver",
+              "product": "NotificationHub"
+          }, indent=2) + "\n")
+          p = pathlib.Path("Directory.Build.props")
+          t = p.read_text()
+          t = re.sub(r"<VersionPrefix>[^<]+</VersionPrefix>", f"<VersionPrefix>{next_v}</VersionPrefix>", t)
+          t = re.sub(r"<AssemblyVersion>[^<]+</AssemblyVersion>", f"<AssemblyVersion>{next_v}.0</AssemblyVersion>", t)
+          p.write_text(t)
+          print("files ->", next_v)
+          PY
+          git add version.json Directory.Build.props
+          git commit -m "chore(release): bump version to ${NEXT}" || true
+          git tag -a "$TAG" -m "Release ${TAG}"
+
+      - name: Push tag (and version commit if allowed)
+        if: steps.semver.outputs.skip != 'true'
+        env:
+          # Optional: repo secret VERSION_BUMP_TOKEN (PAT with contents:write that can push to protected dev)
+          BUMP_TOKEN: ${{ secrets.VERSION_BUMP_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.semver.outputs.tag }}"
+          if [ -n "${BUMP_TOKEN:-}" ]; then
+            git remote set-url origin "https://x-access-token:${BUMP_TOKEN}@github.com/${{ github.repository }}.git"
+            git push origin HEAD:dev
+            git push origin "$TAG"
+          else
+            # GITHUB_TOKEN cannot bypass required status checks on protected branches.
+            # Push tag only from current commit so release.yml still runs.
+            git push origin "$TAG" || {
+              echo "::warning::Could not push version commit to protected dev. Tag-only push attempted."
+              # Tag the pre-commit HEAD if commit couldn't be pushed
+              git push origin "$TAG"
+            }
+          fi
