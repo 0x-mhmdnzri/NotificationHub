@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
@@ -25,7 +26,6 @@
     <ProjectReference Include="..\..\..\Plugins\Chat\NotificationHub.Plugins.Chat.Slack\NotificationHub.Plugins.Chat.Slack.csproj" />
     <ProjectReference Include="..\..\..\Plugins\Chat\NotificationHub.Plugins.Chat.WhatsApp\NotificationHub.Plugins.Chat.WhatsApp.csproj" />
     <ProjectReference Include="..\..\..\Plugins\Push\NotificationHub.Plugins.Push.Fcm\NotificationHub.Plugins.Push.Fcm.csproj" />
-  
     <ProjectReference Include="..\..\..\Plugins\Chat\NotificationHub.Plugins.Chat.Telegram\NotificationHub.Plugins.Chat.Telegram.csproj" />
     <ProjectReference Include="..\..\..\Plugins\Chat\NotificationHub.Plugins.Chat.Discord\NotificationHub.Plugins.Chat.Discord.csproj" />
     <ProjectReference Include="..\..\..\Plugins\Chat\NotificationHub.Plugins.Chat.Teams\NotificationHub.Plugins.Chat.Teams.csproj" />
@@ -44,4 +44,3 @@
     </Content>
   </ItemGroup>
 </Project>
-
