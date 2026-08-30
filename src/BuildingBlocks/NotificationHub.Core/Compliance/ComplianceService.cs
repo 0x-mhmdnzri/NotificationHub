@@ -49,8 +49,13 @@ public sealed class ComplianceService : IComplianceService
             Notifications = notifications.Select(x => x.ToModel()).ToList(),
             InAppMessages = inApps.Select(x => new InAppMessage
             {
-                Id = x.Id, UserId = x.UserId, TenantId = x.TenantId, Title = x.Title, Body = x.Body,
-                IsRead = x.IsRead, CreatedAt = x.CreatedAt
+                Id = x.Id,
+                UserId = x.UserId,
+                TenantId = x.TenantId,
+                Title = x.Title,
+                Body = x.Body,
+                IsRead = x.IsRead,
+                CreatedAt = x.CreatedAt
             }).ToList()
         };
     }

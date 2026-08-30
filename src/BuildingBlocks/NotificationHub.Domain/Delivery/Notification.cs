@@ -263,7 +263,8 @@ public sealed class Notification : AggregateRoot<NotificationId>
 
     private void EnsureTransition(DeliveryStatus to)
     {
-        if (Status == to) return;
+        if (Status == to)
+            return;
         if (!Allowed.Contains((Status, to)))
             throw new DomainException($"Illegal notification transition {Status} → {to}.");
     }

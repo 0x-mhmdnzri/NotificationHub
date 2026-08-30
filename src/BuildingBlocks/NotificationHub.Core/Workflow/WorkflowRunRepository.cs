@@ -1,8 +1,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
-using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Common;
+using NotificationHub.Core.Persistence;
 
 namespace NotificationHub.Core.Workflow;
 
@@ -32,10 +32,15 @@ public sealed class WorkflowRunRepository : IWorkflowRunRepository
         var q = _db.Workflows.AsNoTracking().Where(x => x.Key == key);
         q = tenantId is null ? q.Where(x => x.TenantId == null) : q.Where(x => x.TenantId == tenantId);
         var e = await q.FirstOrDefaultAsync(ct);
-        if (e is null) return null;
+        if (e is null)
+            return null;
         return new WorkflowDefinition
         {
-            Id = e.Id, Key = e.Key, TenantId = e.TenantId, IsActive = e.IsActive, CreatedAt = e.CreatedAt,
+            Id = e.Id,
+            Key = e.Key,
+            TenantId = e.TenantId,
+            IsActive = e.IsActive,
+            CreatedAt = e.CreatedAt,
             Steps = JsonSerializer.Deserialize<List<WorkflowStep>>(e.StepsJson) ?? []
         };
     }
@@ -66,12 +71,21 @@ public sealed class WorkflowRunRepository : IWorkflowRunRepository
     public async Task<WorkflowRunStatusDto?> GetRunStatusAsync(Guid runId, CancellationToken ct = default)
     {
         var e = await _db.WorkflowRuns.AsNoTracking().FirstOrDefaultAsync(x => x.Id == runId, ct);
-        if (e is null) return null;
+        if (e is null)
+            return null;
         return new WorkflowRunStatusDto
         {
-            RunId = e.Id, WorkflowId = e.WorkflowId, WorkflowKey = e.WorkflowKey, Recipient = e.Recipient,
-            TenantId = e.TenantId, Status = e.Status, CurrentStepId = e.CurrentStepId,
-            ContinueAt = e.ContinueAt, CreatedAt = e.CreatedAt, UpdatedAt = e.UpdatedAt, LastError = e.LastError
+            RunId = e.Id,
+            WorkflowId = e.WorkflowId,
+            WorkflowKey = e.WorkflowKey,
+            Recipient = e.Recipient,
+            TenantId = e.TenantId,
+            Status = e.Status,
+            CurrentStepId = e.CurrentStepId,
+            ContinueAt = e.ContinueAt,
+            CreatedAt = e.CreatedAt,
+            UpdatedAt = e.UpdatedAt,
+            LastError = e.LastError
         };
     }
 }

@@ -1,6 +1,6 @@
-using NotificationHub.Abstractions.Models;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
+using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Routing;
 
 namespace NotificationHub.Core.Tests.Routing;

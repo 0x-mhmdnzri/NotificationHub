@@ -152,7 +152,8 @@ public static class Extensions
         foreach (var key in new[] { "Default", "notificationdb", "postgres" })
         {
             var v = builder.Configuration.GetConnectionString(key);
-            if (!string.IsNullOrWhiteSpace(v)) { pg = v; break; }
+            if (!string.IsNullOrWhiteSpace(v))
+            { pg = v; break; }
         }
         if (!string.IsNullOrWhiteSpace(pg))
         {

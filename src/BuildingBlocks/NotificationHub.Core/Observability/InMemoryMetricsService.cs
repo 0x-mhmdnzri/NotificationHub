@@ -23,8 +23,10 @@ public sealed class InMemoryMetricsService : IMetricsService
             {
                 o.Count++;
                 o.Sum += value;
-                if (value < o.Min) o.Min = value;
-                if (value > o.Max) o.Max = value;
+                if (value < o.Min)
+                    o.Min = value;
+                if (value > o.Max)
+                    o.Max = value;
                 return o;
             });
     }
@@ -41,7 +43,8 @@ public sealed class InMemoryMetricsService : IMetricsService
 
     private static string Format(string name, (string Key, string Value)[] tags)
     {
-        if (tags is null || tags.Length == 0) return name;
+        if (tags is null || tags.Length == 0)
+            return name;
         return name + "{" + string.Join(",", tags.Select(t => $"{t.Key}={t.Value}")) + "}";
     }
 

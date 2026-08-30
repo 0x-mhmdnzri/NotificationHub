@@ -55,7 +55,8 @@ public sealed class HttpStepHandler : IWorkflowStepHandler
 
             using var resp = await client.SendAsync(req, ct);
             var text = await resp.Content.ReadAsStringAsync(ct);
-            if (text.Length > 32_000) text = text[..32_000];
+            if (text.Length > 32_000)
+                text = text[..32_000];
 
             var next = root.TryGetProperty("next", out var n) ? n.GetString() : null;
             if (!resp.IsSuccessStatusCode)

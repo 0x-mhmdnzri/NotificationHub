@@ -15,13 +15,16 @@ public sealed class WebhookDispatcher : IWebhookDispatcher
 
     public WebhookDispatcher(NotificationDbContext db, IHttpClientFactory httpClientFactory, ILogger<WebhookDispatcher> logger)
     {
-        _db = db; _httpClientFactory = httpClientFactory; _logger = logger;
+        _db = db;
+        _httpClientFactory = httpClientFactory;
+        _logger = logger;
     }
 
     public async Task DispatchAsync(string eventName, object payload, string? tenantId = null, CancellationToken ct = default)
     {
         var query = _db.WebhookSubscriptions.AsNoTracking().Where(x => x.IsActive);
-        if (tenantId is not null) query = query.Where(x => x.TenantId == null || x.TenantId == tenantId);
+        if (tenantId is not null)
+            query = query.Where(x => x.TenantId == null || x.TenantId == tenantId);
 
         var subs = await query.ToListAsync(ct);
         var client = _httpClientFactory.CreateClient("webhooks");

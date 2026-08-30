@@ -33,8 +33,11 @@ public sealed class WorkflowBuilder
     {
         _steps.Add(new WorkflowStep
         {
-            Id = stepId, Type = "condition", ConditionExpression = expression,
-            NextOnTrue = onTrue, NextOnFalse = onFalse
+            Id = stepId,
+            Type = "condition",
+            ConditionExpression = expression,
+            NextOnTrue = onTrue,
+            NextOnFalse = onFalse
         });
         return this;
     }
@@ -52,8 +55,10 @@ public sealed class WorkflowBuilder
 
     public WorkflowDefinition Build(bool isActive = true)
     {
-        if (string.IsNullOrWhiteSpace(_key)) throw new ArgumentException("Key required");
-        if (_steps.Count == 0) throw new ArgumentException("At least one step required");
+        if (string.IsNullOrWhiteSpace(_key))
+            throw new ArgumentException("Key required");
+        if (_steps.Count == 0)
+            throw new ArgumentException("At least one step required");
         var def = new WorkflowDefinition
         {
             Key = _key,

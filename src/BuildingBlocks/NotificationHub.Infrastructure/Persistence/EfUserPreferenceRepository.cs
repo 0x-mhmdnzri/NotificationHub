@@ -70,7 +70,8 @@ public sealed class EfUserPreferenceRepository(NotificationDbContext db) : IUser
 
     static Dictionary<string, bool> SafeDict(string json)
     {
-        try { return JsonSerializer.Deserialize<Dictionary<string, bool>>(json) ?? new(); }
+        try
+        { return JsonSerializer.Deserialize<Dictionary<string, bool>>(json) ?? new(); }
         catch { return new(); }
     }
 }

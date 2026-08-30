@@ -45,7 +45,8 @@ public sealed class AdminIpAllowlistMiddleware
 
     private static string? NormalizeIp(IPAddress? ip)
     {
-        if (ip is null) return null;
+        if (ip is null)
+            return null;
         if (ip.IsIPv4MappedToIPv6)
             ip = ip.MapToIPv4();
         return ip.ToString();

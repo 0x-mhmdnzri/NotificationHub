@@ -24,7 +24,8 @@ public sealed class DigestFlushWorker : BackgroundService
                 using var scope = _scopeFactory.CreateScope();
                 var digest = scope.ServiceProvider.GetRequiredService<IDigestService>();
                 var n = await digest.FlushDueAsync(stoppingToken);
-                if (n > 0) _logger.LogInformation("Digest worker flushed {Count} buffer rows", n);
+                if (n > 0)
+                    _logger.LogInformation("Digest worker flushed {Count} buffer rows", n);
             }
             catch (Exception ex)
             {

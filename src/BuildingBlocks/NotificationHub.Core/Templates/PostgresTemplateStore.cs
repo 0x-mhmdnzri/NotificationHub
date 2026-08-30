@@ -49,17 +49,20 @@ public sealed class PostgresTemplateStore : ITemplateStore
         if (!string.IsNullOrEmpty(tenantId))
         {
             var tenant = await Query(key, channel, locale, tenantId).FirstOrDefaultAsync(ct);
-            if (tenant is not null) return ToModel(tenant);
+            if (tenant is not null)
+                return ToModel(tenant);
         }
 
         var global = await Query(key, channel, locale, null).FirstOrDefaultAsync(ct);
-        if (global is not null) return ToModel(global);
+        if (global is not null)
+            return ToModel(global);
 
         // Locale fallback to en (global)
         if (!string.Equals(locale, "en", StringComparison.OrdinalIgnoreCase))
         {
             var en = await Query(key, channel, "en", null).FirstOrDefaultAsync(ct);
-            if (en is not null) return ToModel(en);
+            if (en is not null)
+                return ToModel(en);
         }
 
         return null;
@@ -68,8 +71,10 @@ public sealed class PostgresTemplateStore : ITemplateStore
     public async Task<IReadOnlyList<TemplateDefinition>> ListAsync(string? tenantId = null, string? channel = null, CancellationToken ct = default)
     {
         var q = _db.Templates.AsNoTracking().Where(x => x.IsActive);
-        if (tenantId is not null) q = q.Where(x => x.TenantId == tenantId || x.TenantId == null);
-        if (!string.IsNullOrEmpty(channel)) q = q.Where(x => x.Channel == channel);
+        if (tenantId is not null)
+            q = q.Where(x => x.TenantId == tenantId || x.TenantId == null);
+        if (!string.IsNullOrEmpty(channel))
+            q = q.Where(x => x.Channel == channel);
         var list = await q.OrderBy(x => x.Key).ThenBy(x => x.Locale).ToListAsync(ct);
         return list.Select(ToModel).ToList();
     }
@@ -78,7 +83,8 @@ public sealed class PostgresTemplateStore : ITemplateStore
     {
         var entity = await _db.Templates.FirstOrDefaultAsync(x =>
             x.Key == key && x.Channel == channel && x.Locale == locale && x.TenantId == tenantId, ct);
-        if (entity is null) return false;
+        if (entity is null)
+            return false;
         entity.IsActive = false;
         entity.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);

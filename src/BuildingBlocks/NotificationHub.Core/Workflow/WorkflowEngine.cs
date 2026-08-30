@@ -3,8 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NotificationHub.Abstractions.Models;
-using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Common;
+using NotificationHub.Core.Persistence;
 
 namespace NotificationHub.Core.Workflow;
 
@@ -54,8 +54,10 @@ public sealed class WorkflowEngine : IWorkflowEngine
     {
         var def = await _repo.GetDefinitionAsync(request.WorkflowKey, request.TenantId, ct)
                   ?? throw new InvalidOperationException($"Workflow '{request.WorkflowKey}' not found");
-        if (!def.IsActive) throw new InvalidOperationException("Workflow is inactive");
-        if (def.Steps.Count == 0) throw new InvalidOperationException("Workflow has no steps");
+        if (!def.IsActive)
+            throw new InvalidOperationException("Workflow is inactive");
+        if (def.Steps.Count == 0)
+            throw new InvalidOperationException("Workflow has no steps");
 
         var run = new WorkflowRunEntity
         {
@@ -83,7 +85,8 @@ public sealed class WorkflowEngine : IWorkflowEngine
         var runs = await _repo.GetDueRunsAsync(DateTimeOffset.UtcNow, 50, ct);
         foreach (var run in runs)
         {
-            try { await AdvanceAsync(run, ct); }
+            try
+            { await AdvanceAsync(run, ct); }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Workflow run {RunId} failed", run.Id);
@@ -104,8 +107,10 @@ public sealed class WorkflowEngine : IWorkflowEngine
     public async Task<bool> CancelAsync(Guid runId, CancellationToken ct = default)
     {
         var run = await _repo.GetRunAsync(runId, ct);
-        if (run is null) return false;
-        if (run.Status is "completed" or "failed" or "cancelled") return false;
+        if (run is null)
+            return false;
+        if (run.Status is "completed" or "failed" or "cancelled")
+            return false;
         run.Status = "cancelled";
         await _repo.UpdateRunAsync(run, ct);
         await _timeline.AppendAsync(runId, "cancelled", run.CurrentStepId, "Cancelled by API", ct: ct);

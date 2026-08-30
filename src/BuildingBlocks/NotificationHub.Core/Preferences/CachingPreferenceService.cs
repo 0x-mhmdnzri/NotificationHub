@@ -37,12 +37,14 @@ public sealed class CachingPreferenceService : IPreferenceService
         string userId, string channel, string? category, string? tenantId, bool isCritical = false, CancellationToken ct = default)
     {
         var pref = await GetAsync(userId, tenantId, ct);
-        if (pref is null) return (true, null);
+        if (pref is null)
+            return (true, null);
         if (pref.ChannelOptIn.TryGetValue(channel, out var channelOk) && !channelOk)
             return (false, $"User opted out of channel '{channel}'");
         if (!string.IsNullOrEmpty(category) && pref.CategoryOptIn.TryGetValue(category, out var catOk) && !catOk)
             return (false, $"User opted out of category '{category}'");
-        if (isCritical) return (true, null);
+        if (isCritical)
+            return (true, null);
         if (pref.MaxPerDay is int max && max > 0)
             return await _inner.CanSendAsync(userId, channel, category, tenantId, isCritical, ct);
         if (!string.IsNullOrEmpty(pref.QuietHoursStart) && !string.IsNullOrEmpty(pref.QuietHoursEnd))
@@ -54,7 +56,8 @@ public sealed class CachingPreferenceService : IPreferenceService
                 var start = TimeSpan.Parse(pref.QuietHoursStart);
                 var end = TimeSpan.Parse(pref.QuietHoursEnd);
                 var inQuiet = start <= end ? local >= start && local <= end : local >= start || local <= end;
-                if (inQuiet) return (false, "Quiet hours");
+                if (inQuiet)
+                    return (false, "Quiet hours");
             }
             catch { }
         }

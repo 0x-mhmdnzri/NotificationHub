@@ -17,7 +17,8 @@ public static class CsvRecipientParser
         using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
         var results = new List<string>();
         string? headerLine = await reader.ReadLineAsync(ct);
-        if (headerLine is null) return results;
+        if (headerLine is null)
+            return results;
 
         var headers = SplitCsvLine(headerLine).Select(NormalizeHeader).ToArray();
         var addressCol = -1;
@@ -47,9 +48,11 @@ public static class CsvRecipientParser
 
         while (await reader.ReadLineAsync(ct) is { } line)
         {
-            if (string.IsNullOrWhiteSpace(line)) continue;
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
             var cols = SplitCsvLine(line);
-            if (addressCol >= cols.Count) continue;
+            if (addressCol >= cols.Count)
+                continue;
             var addr = cols[addressCol].Trim();
             if (addr.Length > 0)
                 results.Add(addr);

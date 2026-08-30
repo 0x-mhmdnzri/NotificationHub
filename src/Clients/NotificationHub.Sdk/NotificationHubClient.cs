@@ -70,6 +70,7 @@ public sealed class NotificationHubClient : IDisposable
 
     public void Dispose()
     {
-        if (_ownsHttp) _http.Dispose();
+        if (_ownsHttp)
+            _http.Dispose();
     }
 }

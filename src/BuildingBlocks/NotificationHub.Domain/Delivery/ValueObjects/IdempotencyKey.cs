@@ -10,7 +10,8 @@ public sealed record IdempotencyKey
 
     public static IdempotencyKey? From(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
         var v = value.Trim();
         if (v.Length > 256)
             throw new DomainException("Idempotency key exceeds maximum length.");

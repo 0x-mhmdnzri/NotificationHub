@@ -36,7 +36,11 @@ public class CollapseKeyTests
         var engine = new TemplateEngine(new InMemoryTemplateStore(), new PlaceholderTemplateRenderer(), NullLogger<TemplateEngine>.Instance);
         await engine.RegisterTemplateAsync(new TemplateDefinition
         {
-            Key = "welcome", Channel = "email", Locale = "en", Subject = "Hi", Body = "Hello"
+            Key = "welcome",
+            Channel = "email",
+            Locale = "en",
+            Subject = "Hi",
+            Body = "Hello"
         });
 
         // CreateOrchestrator already has template engine with empty store - register via db path?

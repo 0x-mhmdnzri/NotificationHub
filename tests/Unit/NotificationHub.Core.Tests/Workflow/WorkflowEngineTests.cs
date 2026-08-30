@@ -1,10 +1,10 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using NotificationHub.Abstractions.Models;
+using NotificationHub.Core.Expressions;
 using NotificationHub.Core.Tests.Helpers;
 using NotificationHub.Core.Workflow;
 using NotificationHub.Core.Workflow.Handlers;
-using NotificationHub.Core.Expressions;
 
 namespace NotificationHub.Core.Tests.Workflow;
 

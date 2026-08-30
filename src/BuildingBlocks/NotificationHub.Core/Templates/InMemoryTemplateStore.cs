@@ -35,8 +35,10 @@ public sealed class InMemoryTemplateStore : ITemplateStore
     public Task<IReadOnlyList<TemplateDefinition>> ListAsync(string? tenantId = null, string? channel = null, CancellationToken ct = default)
     {
         IEnumerable<TemplateDefinition> q = _templates.Values.Where(x => x.IsActive);
-        if (tenantId is not null) q = q.Where(x => x.TenantId == tenantId || x.TenantId is null);
-        if (!string.IsNullOrEmpty(channel)) q = q.Where(x => x.Channel == channel);
+        if (tenantId is not null)
+            q = q.Where(x => x.TenantId == tenantId || x.TenantId is null);
+        if (!string.IsNullOrEmpty(channel))
+            q = q.Where(x => x.Channel == channel);
         return Task.FromResult<IReadOnlyList<TemplateDefinition>>(q.ToList());
     }
 

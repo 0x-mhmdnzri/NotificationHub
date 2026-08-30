@@ -30,7 +30,8 @@ public sealed class RedisInboxEventBus : IInboxEventBus
             try
             {
                 var item = JsonSerializer.Deserialize<InboxItem>((string)value!);
-                if (item is not null) channel.Writer.TryWrite(item);
+                if (item is not null)
+                    channel.Writer.TryWrite(item);
             }
             catch { /* ignore bad payload */ }
         });

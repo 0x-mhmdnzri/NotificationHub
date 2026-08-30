@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
-using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Common;
+using NotificationHub.Core.Persistence;
 
 namespace NotificationHub.Core.Topics;
 
@@ -30,7 +30,8 @@ public sealed class TopicService : ITopicService
     {
         var exists = await _db.TopicSubscribers.AnyAsync(x =>
             x.TopicKey == topicKey && x.SubscriberId == subscriberId && x.TenantId == tenantId, ct);
-        if (exists) return;
+        if (exists)
+            return;
         _db.TopicSubscribers.Add(new TopicSubscriberEntity
         {
             TopicKey = topicKey,
@@ -54,19 +55,25 @@ public sealed class TopicService : ITopicService
     public async Task<IReadOnlyList<TopicSubscriber>> ListSubscribersAsync(string topicKey, string? tenantId, CancellationToken ct = default)
     {
         var q = _db.TopicSubscribers.AsNoTracking().Where(x => x.TopicKey == topicKey);
-        if (!string.IsNullOrEmpty(tenantId)) q = q.Where(x => x.TenantId == tenantId);
+        if (!string.IsNullOrEmpty(tenantId))
+            q = q.Where(x => x.TenantId == tenantId);
         var list = await q.ToListAsync(ct);
         return list.Select(x => new TopicSubscriber
         {
-            Id = x.Id, TopicKey = x.TopicKey, SubscriberId = x.SubscriberId,
-            TenantId = x.TenantId, Channel = x.Channel, Address = x.Address
+            Id = x.Id,
+            TopicKey = x.TopicKey,
+            SubscriberId = x.SubscriberId,
+            TenantId = x.TenantId,
+            Channel = x.Channel,
+            Address = x.Address
         }).ToList();
     }
 
     public async Task<IReadOnlyList<TopicDefinition>> ListTopicsAsync(string? tenantId, CancellationToken ct = default)
     {
         var q = _db.Topics.AsNoTracking().Where(x => x.IsActive);
-        if (!string.IsNullOrEmpty(tenantId)) q = q.Where(x => x.TenantId == tenantId || x.TenantId == null);
+        if (!string.IsNullOrEmpty(tenantId))
+            q = q.Where(x => x.TenantId == tenantId || x.TenantId == null);
         var list = await q.ToListAsync(ct);
         return list.Select(x => new TopicDefinition { Id = x.Id, Key = x.Key, Name = x.Name, TenantId = x.TenantId, IsActive = x.IsActive }).ToList();
     }

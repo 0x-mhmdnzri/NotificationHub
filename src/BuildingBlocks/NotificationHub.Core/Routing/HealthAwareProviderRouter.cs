@@ -37,7 +37,8 @@ public sealed class HealthAwareProviderRouter : IProviderRouter
             .Where(p => p.Channel.Equals(channel, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
-        if (all.Count == 0) return all;
+        if (all.Count == 0)
+            return all;
 
         var configuredOrder = channel.Equals("email", StringComparison.OrdinalIgnoreCase)
             ? _providerOptions.EmailFallbackOrder
@@ -70,7 +71,8 @@ public sealed class HealthAwareProviderRouter : IProviderRouter
             foreach (var plugin in ordered)
             {
                 var snap = _health.GetHealth(plugin.Id, channel);
-                if (snap.IsHealthy) healthy.Add(plugin);
+                if (snap.IsHealthy)
+                    healthy.Add(plugin);
                 else
                 {
                     unhealthy.Add(plugin);

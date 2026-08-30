@@ -1,5 +1,5 @@
-using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Common;
+using NotificationHub.Core.Persistence;
 
 namespace NotificationHub.Core.Audit;
 
@@ -13,7 +13,11 @@ public sealed class AuditService : IAuditService
         _db.AuditEntries.Add(new AuditEntryEntity
         {
             Id = ServerIds.New(),
-            Action = action, NotificationId = notificationId, TenantId = tenantId, Actor = actor, Details = details
+            Action = action,
+            NotificationId = notificationId,
+            TenantId = tenantId,
+            Actor = actor,
+            Details = details
         });
         await _db.SaveChangesAsync(ct);
     }

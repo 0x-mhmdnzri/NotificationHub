@@ -10,7 +10,8 @@ public sealed record CollapseKey
 
     public static CollapseKey? From(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
         return new CollapseKey(value.Trim());
     }
 

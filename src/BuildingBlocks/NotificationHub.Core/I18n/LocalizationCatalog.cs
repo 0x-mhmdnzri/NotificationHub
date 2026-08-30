@@ -25,7 +25,8 @@ public sealed class LocalizationCatalog : ILocalizationCatalog
     {
         var e = await _db.LocalizationEntries.AsNoTracking()
             .FirstOrDefaultAsync(x => x.Key == key && x.Locale == locale && x.TenantId == tenantId, ct);
-        if (e is not null) return e.Value;
+        if (e is not null)
+            return e.Value;
         // fallback en
         if (!string.Equals(locale, "en", StringComparison.OrdinalIgnoreCase))
         {

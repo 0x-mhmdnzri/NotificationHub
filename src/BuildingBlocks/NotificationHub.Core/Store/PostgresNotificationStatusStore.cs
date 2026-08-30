@@ -22,14 +22,23 @@ public sealed class PostgresNotificationStatusStore : INotificationStatusStore
 
     private static NotificationStatusEntity ToEntity(NotificationStatus status) => new()
     {
-        Id = status.NotificationId, Channel = status.Channel, Recipient = status.Recipient,
-        Status = status.Status, ProviderId = status.ProviderId, ProviderMessageId = status.ProviderMessageId,
-        ErrorCode = status.ErrorCode, ErrorMessage = status.ErrorMessage, AttemptCount = status.AttemptCount,
+        Id = status.NotificationId,
+        Channel = status.Channel,
+        Recipient = status.Recipient,
+        Status = status.Status,
+        ProviderId = status.ProviderId,
+        ProviderMessageId = status.ProviderMessageId,
+        ErrorCode = status.ErrorCode,
+        ErrorMessage = status.ErrorMessage,
+        AttemptCount = status.AttemptCount,
         CreatedAt = status.CreatedAt == default ? DateTimeOffset.UtcNow : status.CreatedAt,
         UpdatedAt = status.UpdatedAt == default ? DateTimeOffset.UtcNow : status.UpdatedAt,
         ScheduledAt = status.ScheduledAt,
-        TenantId = status.TenantId, IdempotencyKey = status.IdempotencyKey, CollapseKey = status.CollapseKey,
-        CorrelationId = status.CorrelationId, Category = status.Category
+        TenantId = status.TenantId,
+        IdempotencyKey = status.IdempotencyKey,
+        CollapseKey = status.CollapseKey,
+        CorrelationId = status.CorrelationId,
+        Category = status.Category
     };
 
     public async Task<NotificationStatus?> GetAsync(Guid notificationId, CancellationToken ct = default)
@@ -48,20 +57,26 @@ public sealed class PostgresNotificationStatusStore : INotificationStatusStore
         string? errorCode = null, string? errorMessage = null, int? attemptCount = null, CancellationToken ct = default)
     {
         var e = await _db.NotificationStatuses.FirstOrDefaultAsync(x => x.Id == notificationId, ct);
-        if (e is null) return;
+        if (e is null)
+            return;
         e.Status = status;
         e.UpdatedAt = DateTimeOffset.UtcNow;
-        if (providerMessageId is not null) e.ProviderMessageId = providerMessageId;
-        if (errorCode is not null) e.ErrorCode = errorCode;
-        if (errorMessage is not null) e.ErrorMessage = errorMessage;
-        if (attemptCount is not null) e.AttemptCount = attemptCount.Value;
+        if (providerMessageId is not null)
+            e.ProviderMessageId = providerMessageId;
+        if (errorCode is not null)
+            e.ErrorCode = errorCode;
+        if (errorMessage is not null)
+            e.ErrorMessage = errorMessage;
+        if (attemptCount is not null)
+            e.AttemptCount = attemptCount.Value;
         await _db.SaveChangesAsync(ct);
     }
 
     public async Task UpdateProviderAsync(Guid notificationId, string? providerId, CancellationToken ct = default)
     {
         var e = await _db.NotificationStatuses.FirstOrDefaultAsync(x => x.Id == notificationId, ct);
-        if (e is null) return;
+        if (e is null)
+            return;
         e.ProviderId = providerId;
         e.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -70,12 +85,13 @@ public sealed class PostgresNotificationStatusStore : INotificationStatusStore
     public async Task SavePayloadAsync(Guid notificationId, string payloadJson, CancellationToken ct = default)
     {
         var e = await _db.NotificationStatuses.FirstOrDefaultAsync(x => x.Id == notificationId, ct);
-        if (e is null) return;
+        if (e is null)
+            return;
         e.PayloadJson = payloadJson;
         await _db.SaveChangesAsync(ct);
     }
 
-    
+
     public async Task<NotificationStatus?> FindByCollapseKeyAsync(string collapseKey, string recipient, string? tenantId = null, CancellationToken ct = default)
     {
         var since = DateTimeOffset.UtcNow.AddHours(-24);

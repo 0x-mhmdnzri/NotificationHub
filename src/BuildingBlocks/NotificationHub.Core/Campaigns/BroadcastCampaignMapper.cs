@@ -19,7 +19,8 @@ public static class BroadcastCampaignMapper
         Dictionary<string, string>? data = null;
         if (e.DataJson is not null)
         {
-            try { data = JsonSerializer.Deserialize<Dictionary<string, string>>(e.DataJson); }
+            try
+            { data = JsonSerializer.Deserialize<Dictionary<string, string>>(e.DataJson); }
             catch { /* ignore */ }
         }
 

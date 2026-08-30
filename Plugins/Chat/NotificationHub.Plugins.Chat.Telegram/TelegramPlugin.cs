@@ -46,7 +46,8 @@ public sealed class TelegramPlugin : IChannelPlugin
         var text = string.IsNullOrWhiteSpace(notification.Subject)
             ? notification.Body
             : $"<b>{EscapeHtml(notification.Subject)}</b>\n{EscapeHtml(notification.Body)}";
-        if (text.Length > 4096) text = text[..4096];
+        if (text.Length > 4096)
+            text = text[..4096];
 
         try
         {

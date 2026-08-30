@@ -12,9 +12,9 @@ using NotificationHub.Core.Orchestration;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.PluginHost;
 using NotificationHub.Core.Preferences;
+using NotificationHub.Core.Routing;
 using NotificationHub.Core.Store;
 using NotificationHub.Core.Templates;
-using NotificationHub.Core.Routing;
 using NotificationHub.Core.Webhooks;
 
 namespace NotificationHub.Core.Tests.Helpers;

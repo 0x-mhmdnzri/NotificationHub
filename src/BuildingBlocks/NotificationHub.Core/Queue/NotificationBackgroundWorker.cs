@@ -59,7 +59,8 @@ public sealed class NotificationBackgroundWorker : BackgroundService
                     _logger.LogError(ex,
                         "RabbitMQ worker pool failed; retrying in {Delay}s (host stays up)",
                         delay.TotalSeconds);
-                    try { await Task.Delay(delay, stoppingToken); }
+                    try
+                    { await Task.Delay(delay, stoppingToken); }
                     catch (OperationCanceledException) { break; }
                     delay = TimeSpan.FromSeconds(Math.Min(60, delay.TotalSeconds * 2));
                 }
@@ -119,7 +120,8 @@ public sealed class NotificationBackgroundWorker : BackgroundService
         if (pending.Length > 0)
         {
             _logger.LogInformation("Draining {Count} in-flight notification workers", pending.Length);
-            try { await Task.WhenAll(pending); }
+            try
+            { await Task.WhenAll(pending); }
             catch { /* individual tasks already logged */ }
         }
 
@@ -191,7 +193,8 @@ public sealed class NotificationBackgroundWorker : BackgroundService
         RabbitMqNotificationQueue rabbit, SemaphoreSlim ackGate, ulong deliveryTag, CancellationToken ct)
     {
         await ackGate.WaitAsync(ct);
-        try { await rabbit.AckAsync(deliveryTag, ct); }
+        try
+        { await rabbit.AckAsync(deliveryTag, ct); }
         finally { ackGate.Release(); }
     }
 
@@ -199,7 +202,8 @@ public sealed class NotificationBackgroundWorker : BackgroundService
         RabbitMqNotificationQueue rabbit, SemaphoreSlim ackGate, ulong deliveryTag, bool requeue, CancellationToken ct)
     {
         await ackGate.WaitAsync(ct);
-        try { await rabbit.NackAsync(deliveryTag, requeue, ct); }
+        try
+        { await rabbit.NackAsync(deliveryTag, requeue, ct); }
         finally { ackGate.Release(); }
     }
 
@@ -239,8 +243,10 @@ public sealed class NotificationBackgroundWorker : BackgroundService
             {
                 n.MarkProcessing(now);
                 await repo.UpdateAsync(n, ct);
-                if (uow is not null) await uow.SaveChangesAsync(ct);
-                else await statusStore.UpdateStatusAsync(request.Id, DeliveryStatus.Processing, attemptCount: n.AttemptCount, ct: ct);
+                if (uow is not null)
+                    await uow.SaveChangesAsync(ct);
+                else
+                    await statusStore.UpdateStatusAsync(request.Id, DeliveryStatus.Processing, attemptCount: n.AttemptCount, ct: ct);
             }
             else
                 await statusStore.UpdateStatusAsync(request.Id, DeliveryStatus.Processing, ct: ct);
@@ -260,7 +266,8 @@ public sealed class NotificationBackgroundWorker : BackgroundService
                 else
                     n.MarkFailed(result.ErrorCode, result.ErrorMessage, maxAttempts: 3, DateTimeOffset.UtcNow);
                 await repo.UpdateAsync(n, ct);
-                if (uow is not null) await uow.SaveChangesAsync(ct);
+                if (uow is not null)
+                    await uow.SaveChangesAsync(ct);
                 else
                 {
                     await statusStore.UpdateStatusAsync(request.Id, (DeliveryStatus)(int)n.Status,

@@ -28,8 +28,10 @@ public sealed class CdpService : ICdpService
             e = new CdpProfileEntity { UserId = request.UserId, TenantId = request.TenantId };
             _db.CdpProfiles.Add(e);
         }
-        if (!string.IsNullOrWhiteSpace(request.Email)) e.Email = request.Email;
-        if (!string.IsNullOrWhiteSpace(request.Phone)) e.Phone = request.Phone;
+        if (!string.IsNullOrWhiteSpace(request.Email))
+            e.Email = request.Email;
+        if (!string.IsNullOrWhiteSpace(request.Phone))
+            e.Phone = request.Phone;
         var traits = string.IsNullOrEmpty(e.TraitsJson)
             ? new Dictionary<string, object?>()
             : JsonSerializer.Deserialize<Dictionary<string, object?>>(e.TraitsJson) ?? new();

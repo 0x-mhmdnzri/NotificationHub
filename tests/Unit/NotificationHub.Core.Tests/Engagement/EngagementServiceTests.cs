@@ -17,13 +17,18 @@ public class EngagementServiceTests
         var id = Guid.NewGuid();
         await store.SaveAsync(new NotificationStatus
         {
-            NotificationId = id, Channel = "email", Recipient = "a@b.com", Status = DeliveryStatus.Sent, TenantId = "t1"
+            NotificationId = id,
+            Channel = "email",
+            Recipient = "a@b.com",
+            Status = DeliveryStatus.Sent,
+            TenantId = "t1"
         });
 
         var sut = new EngagementService(db, store, NullLogger<EngagementService>.Instance);
         var evt = await sut.TrackAsync(new EngagementEvent
         {
-            NotificationId = id, EventType = EngagementEventTypes.Open
+            NotificationId = id,
+            EventType = EngagementEventTypes.Open
         });
 
         evt.Should().NotBeNull();

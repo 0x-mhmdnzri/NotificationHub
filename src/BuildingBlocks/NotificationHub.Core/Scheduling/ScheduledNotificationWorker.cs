@@ -33,9 +33,11 @@ public sealed class ScheduledNotificationWorker : BackgroundService
                 var due = await store.GetDueScheduledAsync(DateTimeOffset.UtcNow, 50, stoppingToken);
                 foreach (var item in due)
                 {
-                    if (string.IsNullOrEmpty(item.PayloadJson)) continue;
+                    if (string.IsNullOrEmpty(item.PayloadJson))
+                        continue;
                     var request = JsonSerializer.Deserialize<NotificationRequest>(item.PayloadJson);
-                    if (request is null) continue;
+                    if (request is null)
+                        continue;
 
                     await store.UpdateStatusAsync(item.Id, DeliveryStatus.Queued, ct: stoppingToken);
                     await queue.EnqueueAsync(request, stoppingToken);

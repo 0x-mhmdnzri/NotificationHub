@@ -19,14 +19,20 @@ public class ConsentAndRetentionTests
 
         await sut.RecordAsync(new ConsentRecord
         {
-            SubjectId = "user-1", Purpose = "marketing", Channel = "email", Granted = true
+            SubjectId = "user-1",
+            Purpose = "marketing",
+            Channel = "email",
+            Granted = true
         });
         var allowed = await sut.EvaluateAsync("user-1", "marketing", "email");
         allowed.Allowed.Should().BeTrue();
 
         await sut.RecordAsync(new ConsentRecord
         {
-            SubjectId = "user-1", Purpose = "marketing", Channel = "email", Granted = false
+            SubjectId = "user-1",
+            Purpose = "marketing",
+            Channel = "email",
+            Granted = false
         });
         var denied = await sut.EvaluateAsync("user-1", "marketing", "email");
         denied.Allowed.Should().BeFalse();
@@ -60,12 +66,16 @@ public class ConsentAndRetentionTests
         var newId = Guid.NewGuid();
         await store.SaveAsync(new NotificationStatus
         {
-            NotificationId = oldId, Channel = "email", Recipient = "a@b.com",
+            NotificationId = oldId,
+            Channel = "email",
+            Recipient = "a@b.com",
             Status = DeliveryStatus.Sent
         });
         await store.SaveAsync(new NotificationStatus
         {
-            NotificationId = newId, Channel = "email", Recipient = "b@b.com",
+            NotificationId = newId,
+            Channel = "email",
+            Recipient = "b@b.com",
             Status = DeliveryStatus.Sent
         });
 
@@ -75,7 +85,11 @@ public class ConsentAndRetentionTests
 
         var retention = new RetentionService(db, Options.Create(new RetentionOptions
         {
-            Enabled = true, NotificationDays = 90, AuditDays = 180, TimelineDays = 90, ConsentDays = 730
+            Enabled = true,
+            NotificationDays = 90,
+            AuditDays = 180,
+            TimelineDays = 90,
+            ConsentDays = 730
         }), NullLogger<RetentionService>.Instance);
 
         var result = await retention.SweepAsync();

@@ -63,7 +63,9 @@ public class HotPathBenchmarks
         _renderer = new PlaceholderTemplateRenderer();
         _base = new NotificationRequest
         {
-            Recipient = "bench@example.com", Channel = "email", TemplateKey = "welcome",
+            Recipient = "bench@example.com",
+            Channel = "email",
+            TemplateKey = "welcome",
             Data = new Dictionary<string, object?> { ["name"] = "Bench" }
         };
     }

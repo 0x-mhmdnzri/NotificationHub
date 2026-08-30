@@ -4,19 +4,19 @@ using Microsoft.Extensions.Options;
 using NotificationHub.Abstractions.Channels;
 using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Audit;
-using NotificationHub.Core.Compliance;
-using NotificationHub.Core.Messaging;
 // Hangfire schedule after COMMIT via IOutboxDispatchScheduler
 using NotificationHub.Core.Common;
+using NotificationHub.Core.Compliance;
+using NotificationHub.Core.Messaging;
+using NotificationHub.Core.Observability;
+using NotificationHub.Core.Persistence;
 using NotificationHub.Core.PluginHost;
 using NotificationHub.Core.Preferences;
 using NotificationHub.Core.Routing;
 using NotificationHub.Core.Store;
 using NotificationHub.Core.Templates;
 using NotificationHub.Core.Webhooks;
-using NotificationHub.Core.Observability;
 using NotificationHub.Domain.Events;
-using NotificationHub.Core.Persistence;
 
 namespace NotificationHub.Core.Orchestration;
 
@@ -328,7 +328,8 @@ public sealed class NotificationOrchestrator
                     await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), ct);
             }
 
-            if (!request.AllowFallback) break;
+            if (!request.AllowFallback)
+                break;
             _logger.LogInformation("Falling back from {Plugin}", plugin.Id);
         }
 
@@ -368,8 +369,10 @@ public sealed class NotificationOrchestrator
 
     private static string ResolveChannel(NotificationRequest request)
     {
-        if (!string.IsNullOrWhiteSpace(request.Channel)) return request.Channel!;
-        if (request.Channels is { Length: > 0 }) return request.Channels[0];
+        if (!string.IsNullOrWhiteSpace(request.Channel))
+            return request.Channel!;
+        if (request.Channels is { Length: > 0 })
+            return request.Channels[0];
         return "email";
     }
 

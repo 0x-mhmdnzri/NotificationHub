@@ -87,26 +87,34 @@ public static class AuthContextExtensions
     public static IResult? RequireRoles(this HttpContext http, params string[] roles)
     {
         var auth = http.GetAuthContext();
-        if (auth is null) return Results.Unauthorized();
-        if (auth.IsAdmin) return null;
-        if (roles.Length == 0) return null;
-        if (auth.HasAnyRole(roles)) return null;
+        if (auth is null)
+            return Results.Unauthorized();
+        if (auth.IsAdmin)
+            return null;
+        if (roles.Length == 0)
+            return null;
+        if (auth.HasAnyRole(roles))
+            return null;
         return Results.Json(new { error = "Insufficient role" }, statusCode: StatusCodes.Status403Forbidden);
     }
 
     public static string? ResolveTenantId(this HttpContext http, string? requestedTenantId)
     {
         var auth = http.GetAuthContext()!;
-        if (auth.IsAdmin) return requestedTenantId ?? auth.TenantId;
+        if (auth.IsAdmin)
+            return requestedTenantId ?? auth.TenantId;
         return auth.TenantId;
     }
 
     public static bool CanAccessTenant(this HttpContext http, string? resourceTenantId)
     {
         var auth = http.GetAuthContext();
-        if (auth is null) return false;
-        if (auth.IsAdmin) return true;
-        if (string.IsNullOrEmpty(auth.TenantId)) return string.IsNullOrEmpty(resourceTenantId);
+        if (auth is null)
+            return false;
+        if (auth.IsAdmin)
+            return true;
+        if (string.IsNullOrEmpty(auth.TenantId))
+            return string.IsNullOrEmpty(resourceTenantId);
         return string.Equals(auth.TenantId, resourceTenantId, StringComparison.Ordinal);
     }
 }

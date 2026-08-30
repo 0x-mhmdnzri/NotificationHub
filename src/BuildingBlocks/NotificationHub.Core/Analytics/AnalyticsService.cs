@@ -33,9 +33,12 @@ public sealed class AnalyticsService : IAnalyticsService
     public async Task<AnalyticsSummary> GetSummaryAsync(DateTimeOffset? from = null, DateTimeOffset? to = null, string? tenantId = null, CancellationToken ct = default)
     {
         var q = _db.NotificationStatuses.AsNoTracking().AsQueryable();
-        if (from.HasValue) q = q.Where(x => x.CreatedAt >= from);
-        if (to.HasValue) q = q.Where(x => x.CreatedAt <= to);
-        if (!string.IsNullOrEmpty(tenantId)) q = q.Where(x => x.TenantId == tenantId);
+        if (from.HasValue)
+            q = q.Where(x => x.CreatedAt >= from);
+        if (to.HasValue)
+            q = q.Where(x => x.CreatedAt <= to);
+        if (!string.IsNullOrEmpty(tenantId))
+            q = q.Where(x => x.TenantId == tenantId);
 
         var items = await q.Select(x => new { x.Status, x.Channel, x.ProviderId, x.Cost }).ToListAsync(ct);
         var total = items.Count;
@@ -48,8 +51,10 @@ public sealed class AnalyticsService : IAnalyticsService
         decimal estimated = 0;
         foreach (var item in items.Where(x => x.Status == DeliveryStatus.Sent || x.Status == DeliveryStatus.Delivered))
         {
-            if (item.Cost.HasValue) estimated += item.Cost.Value;
-            else if (item.ProviderId is not null && costMap.TryGetValue(item.ProviderId, out var c)) estimated += c;
+            if (item.Cost.HasValue)
+                estimated += item.Cost.Value;
+            else if (item.ProviderId is not null && costMap.TryGetValue(item.ProviderId, out var c))
+                estimated += c;
         }
 
         var (opens, clicks) = await _engagement.CountAsync(from, to, tenantId, ct);

@@ -52,8 +52,10 @@ public sealed class DeviceService : IDeviceService
     public async Task<bool> UnregisterAsync(string userId, string token, string? tenantId, CancellationToken ct = default)
     {
         var e = await _db.DeviceTokens.FirstOrDefaultAsync(x => x.UserId == userId && x.Token == token, ct);
-        if (e is null) return false;
-        if (!string.IsNullOrEmpty(tenantId) && e.TenantId != tenantId) return false;
+        if (e is null)
+            return false;
+        if (!string.IsNullOrEmpty(tenantId) && e.TenantId != tenantId)
+            return false;
         e.IsActive = false;
         e.UpdatedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
@@ -63,14 +65,21 @@ public sealed class DeviceService : IDeviceService
     public async Task<IReadOnlyList<DeviceRegistration>> ListAsync(string userId, string? tenantId, CancellationToken ct = default)
     {
         var q = _db.DeviceTokens.AsNoTracking().Where(x => x.UserId == userId && x.IsActive);
-        if (!string.IsNullOrEmpty(tenantId)) q = q.Where(x => x.TenantId == tenantId);
+        if (!string.IsNullOrEmpty(tenantId))
+            q = q.Where(x => x.TenantId == tenantId);
         return (await q.ToListAsync(ct)).Select(ToModel).ToList();
     }
 
     private static DeviceRegistration ToModel(DeviceTokenEntity e) => new()
     {
-        Id = e.Id, UserId = e.UserId, TenantId = e.TenantId, Platform = e.Platform,
-        Token = e.Token, Locale = e.Locale, IsActive = e.IsActive,
-        CreatedAt = e.CreatedAt, UpdatedAt = e.UpdatedAt
+        Id = e.Id,
+        UserId = e.UserId,
+        TenantId = e.TenantId,
+        Platform = e.Platform,
+        Token = e.Token,
+        Locale = e.Locale,
+        IsActive = e.IsActive,
+        CreatedAt = e.CreatedAt,
+        UpdatedAt = e.UpdatedAt
     };
 }

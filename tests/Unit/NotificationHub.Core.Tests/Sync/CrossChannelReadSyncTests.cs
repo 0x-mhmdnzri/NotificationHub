@@ -1,8 +1,8 @@
 using FluentAssertions;
+using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Inbox;
 using NotificationHub.Core.Sync;
 using NotificationHub.Core.Tests.Helpers;
-using NotificationHub.Abstractions.Models;
 
 namespace NotificationHub.Core.Tests.Sync;
 

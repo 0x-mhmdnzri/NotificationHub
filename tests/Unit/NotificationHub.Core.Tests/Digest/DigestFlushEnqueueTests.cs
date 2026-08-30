@@ -17,7 +17,10 @@ public class DigestFlushEnqueueTests
         await sut.SavePolicyAsync(new DigestPolicy { Key = "d", WindowMinutes = 1 });
         db.DigestBuffers.Add(new DigestBufferEntity
         {
-            PolicyKey = "d", Recipient = "a@b.com", PayloadJson = "{}", CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5)
+            PolicyKey = "d",
+            Recipient = "a@b.com",
+            PayloadJson = "{}",
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5)
         });
         await db.SaveChangesAsync();
         (await sut.FlushDueAsync()).Should().Be(1);

@@ -47,7 +47,7 @@ public sealed class RetentionService : IRetentionService
             _db.ConsentLedger.RemoveRange(oldConsents);
         }
 
-        
+
         var outboxDeleted = 0;
         var inboxDeleted = 0;
         if (_options.OutboxPublishedDays > 0)

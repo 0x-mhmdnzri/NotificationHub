@@ -54,7 +54,8 @@ public class ApiKeySecurityTests
         var plain = ApiKeyHasher.GeneratePlainKey(id);
         var created = await store.CreateAsync(new CreateApiKeyRequest
         {
-            Name = "tmp", Roles = [AppRoles.Reader]
+            Name = "tmp",
+            Roles = [AppRoles.Reader]
         }, plain, ApiKeyHasher.Hash(plain));
 
         await store.RevokeAsync(created.Id);
@@ -71,7 +72,8 @@ public class ApiKeySecurityTests
         var plain = ApiKeyHasher.GeneratePlainKey(id);
         await store.CreateAsync(new CreateApiKeyRequest
         {
-            Name = "admin", Roles = [AppRoles.Admin]
+            Name = "admin",
+            Roles = [AppRoles.Admin]
         }, plain, ApiKeyHasher.Hash(plain));
 
         var auth = await new ApiKeyValidator(store).ValidateAsync(plain);

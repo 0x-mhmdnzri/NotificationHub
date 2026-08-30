@@ -54,7 +54,8 @@ public sealed class InMemoryProviderHealthTracker : IProviderHealthTracker
     public IReadOnlyList<ProviderHealthSnapshot> GetAll()
         => _stats.Values.Select(s =>
         {
-            lock (s.Sync) return s.ToSnapshot(_options);
+            lock (s.Sync)
+                return s.ToSnapshot(_options);
         }).OrderBy(x => x.Channel).ThenBy(x => x.ProviderId).ToList();
 
     private static string Key(string providerId, string channel) => $"{channel}:{providerId}";
@@ -83,7 +84,8 @@ public sealed class InMemoryProviderHealthTracker : IProviderHealthTracker
             if (_window.Count >= _windowSize)
                 _window.Dequeue();
             _window.Enqueue(success);
-            if (!success) LastErrorCode = errorCode;
+            if (!success)
+                LastErrorCode = errorCode;
         }
 
         public ProviderHealthSnapshot ToSnapshot(ProviderHealthOptions options)

@@ -2,11 +2,11 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NotificationHub.Abstractions.Models;
+using NotificationHub.Core.Common;
 using NotificationHub.Core.Messaging;
 using NotificationHub.Core.Orchestration;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Queue;
-using NotificationHub.Core.Common;
 
 namespace NotificationHub.Core.Digest;
 
@@ -139,7 +139,12 @@ public sealed class DigestService : IDigestService
 
     private static DigestPolicy ToPolicy(DigestPolicyEntity e) => new()
     {
-        Id = e.Id, Key = e.Key, TenantId = e.TenantId, WindowMinutes = e.WindowMinutes,
-        Channel = e.Channel, TemplateKey = e.TemplateKey, IsActive = e.IsActive
+        Id = e.Id,
+        Key = e.Key,
+        TenantId = e.TenantId,
+        WindowMinutes = e.WindowMinutes,
+        Channel = e.Channel,
+        TemplateKey = e.TemplateKey,
+        IsActive = e.IsActive
     };
 }

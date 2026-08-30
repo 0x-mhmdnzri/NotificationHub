@@ -1,8 +1,8 @@
-using NotificationHub.Core.Messaging;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NotificationHub.Core.Messaging;
 using NotificationHub.Core.Persistence;
 
 namespace NotificationHub.Infrastructure.HangfireJobs;

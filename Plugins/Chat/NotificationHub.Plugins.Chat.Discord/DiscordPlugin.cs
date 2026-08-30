@@ -45,7 +45,8 @@ public sealed class DiscordPlugin : IChannelPlugin
         var content = string.IsNullOrWhiteSpace(notification.Subject)
             ? notification.Body
             : $"**{notification.Subject}**\n{notification.Body}";
-        if (content.Length > 2000) content = content[..2000];
+        if (content.Length > 2000)
+            content = content[..2000];
         try
         {
             using var resp = await _http.PostAsJsonAsync(_webhookUrl, new { content }, cancellationToken);
@@ -64,9 +65,12 @@ public sealed class DiscordPlugin : IChannelPlugin
 
     public static bool IsSafeHttps(string url)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var u)) return false;
-        if (!string.Equals(u.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;
-        if (u.IsLoopback) return false;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var u))
+            return false;
+        if (!string.Equals(u.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (u.IsLoopback)
+            return false;
         return u.Host.Contains("discord", StringComparison.OrdinalIgnoreCase) || u.Host.Contains("discordapp", StringComparison.OrdinalIgnoreCase);
     }
 }

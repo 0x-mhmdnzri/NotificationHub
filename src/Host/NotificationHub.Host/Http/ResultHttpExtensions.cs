@@ -11,19 +11,22 @@ public static class ResultHttpExtensions
 {
     public static IResult ToHttpResult(this Result result)
     {
-        if (result.IsSuccess) return Results.NoContent();
+        if (result.IsSuccess)
+            return Results.NoContent();
         return MapErrors(result.Errors);
     }
 
     public static IResult ToHttpResult<T>(this Result<T> result)
     {
-        if (result.IsSuccess) return Results.Ok(result.Value);
+        if (result.IsSuccess)
+            return Results.Ok(result.Value);
         return MapErrors(result.Errors);
     }
 
     public static IResult ToHttpResult<T>(this Result<T> result, Func<T, IResult> onSuccess)
     {
-        if (result.IsSuccess) return onSuccess(result.Value);
+        if (result.IsSuccess)
+            return onSuccess(result.Value);
         return MapErrors(result.Errors);
     }
 

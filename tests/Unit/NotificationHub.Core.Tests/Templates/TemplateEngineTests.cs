@@ -13,14 +13,20 @@ public class TemplateEngineTests
         // seed like production seeder
         store.SaveAsync(new TemplateDefinition
         {
-            Key = "welcome", Channel = "email", Locale = "en",
-            Subject = "Welcome {{name}}!", Body = "Hello {{name}}, welcome to our service.",
+            Key = "welcome",
+            Channel = "email",
+            Locale = "en",
+            Subject = "Welcome {{name}}!",
+            Body = "Hello {{name}}, welcome to our service.",
             HtmlBody = "<h1>Hello {{name}}</h1>"
         }).GetAwaiter().GetResult();
         store.SaveAsync(new TemplateDefinition
         {
-            Key = "welcome", Channel = "email", Locale = "fa",
-            Subject = "خوش آمدید {{name}}!", Body = "سلام {{name}}، به سرویس ما خوش آمدید."
+            Key = "welcome",
+            Channel = "email",
+            Locale = "fa",
+            Subject = "خوش آمدید {{name}}!",
+            Body = "سلام {{name}}، به سرویس ما خوش آمدید."
         }).GetAwaiter().GetResult();
         return new TemplateEngine(store, new PlaceholderTemplateRenderer(), NullLogger<TemplateEngine>.Instance);
     }
@@ -31,7 +37,10 @@ public class TemplateEngineTests
         var sut = CreateSut(out _);
         var rendered = await sut.RenderAsync(new NotificationRequest
         {
-            Recipient = "a@b.com", Channel = "email", TemplateKey = "welcome", Locale = "en",
+            Recipient = "a@b.com",
+            Channel = "email",
+            TemplateKey = "welcome",
+            Locale = "en",
             Data = new Dictionary<string, object?> { ["name"] = "Ali" }
         });
         rendered.Subject.Should().Be("Welcome Ali!");
@@ -44,7 +53,10 @@ public class TemplateEngineTests
         var sut = CreateSut(out _);
         var rendered = await sut.RenderAsync(new NotificationRequest
         {
-            Recipient = "a@b.com", Channel = "email", TemplateKey = "welcome", Locale = "fa",
+            Recipient = "a@b.com",
+            Channel = "email",
+            TemplateKey = "welcome",
+            Locale = "fa",
             Data = new Dictionary<string, object?> { ["name"] = "علی" }
         });
         rendered.Subject.Should().Contain("علی");
@@ -56,7 +68,10 @@ public class TemplateEngineTests
         var sut = CreateSut(out _);
         var rendered = await sut.RenderAsync(new NotificationRequest
         {
-            Recipient = "a@b.com", Channel = "email", TemplateKey = "missing-template", Data = new()
+            Recipient = "a@b.com",
+            Channel = "email",
+            TemplateKey = "missing-template",
+            Data = new()
         });
         rendered.Subject.Should().Be("missing-template");
     }
@@ -67,11 +82,17 @@ public class TemplateEngineTests
         var sut = CreateSut(out var store);
         await store.SaveAsync(new TemplateDefinition
         {
-            Key = "custom", Channel = "sms", Locale = "en", Subject = "OTP", Body = "Code {{code}} for {{user}}"
+            Key = "custom",
+            Channel = "sms",
+            Locale = "en",
+            Subject = "OTP",
+            Body = "Code {{code}} for {{user}}"
         });
         var rendered = await sut.RenderAsync(new NotificationRequest
         {
-            Recipient = "+98912", Channel = "sms", TemplateKey = "custom",
+            Recipient = "+98912",
+            Channel = "sms",
+            TemplateKey = "custom",
             Data = new Dictionary<string, object?> { ["code"] = "1234" }
         });
         rendered.Body.Should().Contain("1234");
@@ -84,13 +105,20 @@ public class TemplateEngineTests
         var sut = CreateSut(out var store);
         await store.SaveAsync(new TemplateDefinition
         {
-            Key = "invoice", Channel = "email", Locale = "en", TenantId = "t1",
-            Subject = "Tenant Invoice", Body = "Tenant body"
+            Key = "invoice",
+            Channel = "email",
+            Locale = "en",
+            TenantId = "t1",
+            Subject = "Tenant Invoice",
+            Body = "Tenant body"
         });
         await store.SaveAsync(new TemplateDefinition
         {
-            Key = "invoice", Channel = "email", Locale = "en",
-            Subject = "Global Invoice", Body = "Global body"
+            Key = "invoice",
+            Channel = "email",
+            Locale = "en",
+            Subject = "Global Invoice",
+            Body = "Global body"
         });
         var tenant = await sut.GetTemplateAsync("invoice", "email", "en", "t1");
         var global = await sut.GetTemplateAsync("invoice", "email", "en", null);
@@ -105,7 +133,11 @@ public class TemplateEngineTests
         ITemplateStore store = new InMemoryTemplateStore();
         await store.SaveAsync(new TemplateDefinition
         {
-            Key = "x", Channel = "email", Locale = "en", Subject = "S", Body = "B"
+            Key = "x",
+            Channel = "email",
+            Locale = "en",
+            Subject = "S",
+            Body = "B"
         });
         var found = await store.FindAsync("x", "email", "en", null);
         found.Should().NotBeNull();

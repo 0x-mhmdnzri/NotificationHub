@@ -38,10 +38,13 @@ public sealed class PluginLoader
         lock (_sync)
         {
             plugin = _loadedPlugins.FirstOrDefault(p => p.Id == pluginId);
-            if (plugin is null) return;
+            if (plugin is null)
+                return;
             _loadedPlugins.Remove(plugin);
         }
-        try { await plugin.StopAsync(ct); } catch (Exception ex) { _logger.LogWarning(ex, "Stop failed for {Id}", pluginId); }
+        try
+        { await plugin.StopAsync(ct); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Stop failed for {Id}", pluginId); }
         if (_contexts.Remove(pluginId, out var alc))
         {
             alc.Unload();

@@ -1,5 +1,5 @@
-using NotificationHub.Abstractions.Models;
 using Hangfire.Dashboard;
+using NotificationHub.Abstractions.Models;
 using NotificationHub.Core.Security;
 
 namespace NotificationHub.Host.Hangfire;

@@ -1,9 +1,9 @@
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
+using NotificationHub.Core.Common;
 using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Templates;
-using NotificationHub.Core.Common;
 
 namespace NotificationHub.Core.Layouts;
 
@@ -25,7 +25,8 @@ public sealed partial class LayoutService : ILayoutService
             throw new ArgumentException("Layout key required, max 128");
         if (string.IsNullOrWhiteSpace(layout.Html) || !layout.Html.Contains("{{content}}", StringComparison.Ordinal))
             throw new ArgumentException("Layout Html must contain {{content}} placeholder");
-        if (layout.Html.Length > 500_000) throw new ArgumentException("Layout too large");
+        if (layout.Html.Length > 500_000)
+            throw new ArgumentException("Layout too large");
 
         var e = await _db.Layouts.FirstOrDefaultAsync(x => x.Key == layout.Key && x.TenantId == layout.TenantId, ct);
         if (e is null)
@@ -44,7 +45,8 @@ public sealed partial class LayoutService : ILayoutService
 
     public async Task<PartialDefinition> SavePartialAsync(PartialDefinition partial, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(partial.Key)) throw new ArgumentException("Partial key required");
+        if (string.IsNullOrWhiteSpace(partial.Key))
+            throw new ArgumentException("Partial key required");
         var e = await _db.Partials.FirstOrDefaultAsync(x => x.Key == partial.Key && x.TenantId == partial.TenantId, ct);
         if (e is null)
         {
@@ -97,7 +99,12 @@ public sealed partial class LayoutService : ILayoutService
 
     private static LayoutDefinition ToLayout(LayoutEntity e) => new()
     {
-        Id = e.Id, Key = e.Key, TenantId = e.TenantId, Html = e.Html, Description = e.Description, IsActive = e.IsActive
+        Id = e.Id,
+        Key = e.Key,
+        TenantId = e.TenantId,
+        Html = e.Html,
+        Description = e.Description,
+        IsActive = e.IsActive
     };
 
     [GeneratedRegex(@"\{\{>\s*([a-zA-Z0-9._\-]+)\s*\}\}", RegexOptions.Compiled)]

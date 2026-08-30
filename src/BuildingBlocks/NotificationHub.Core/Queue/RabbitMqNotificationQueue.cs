@@ -1,9 +1,9 @@
 using System.Buffers;
 using System.Linq;
-using System.Threading;
-using System.Threading.Channels;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NotificationHub.Abstractions.Models;
@@ -174,7 +174,8 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
     public static int TenantPartitionIndex(RabbitMqOptions o, string? tenantId)
     {
         var n = Math.Max(1, o.TenantPartitionCount);
-        if (string.IsNullOrWhiteSpace(tenantId)) return 0;
+        if (string.IsNullOrWhiteSpace(tenantId))
+            return 0;
         // Stable non-cryptographic partition for ordering per tenant.
         var hash = tenantId.GetHashCode(StringComparison.Ordinal);
         return Math.Abs(hash) % n;
@@ -205,50 +206,52 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
 
         foreach (var ch in channels)
         {
-          foreach (var critical in criticalFlags)
-          {
-            foreach (var part in partitions)
+            foreach (var critical in criticalFlags)
             {
-                var channelKey = string.IsNullOrEmpty(ch) ? null : NormalizeChannel(ch);
-                string qName, rk;
-                if (channelKey is null)
+                foreach (var part in partitions)
                 {
-                    qName = _options.QueueName;
-                    rk = _options.RoutingKey;
-                    if (critical) { qName += ".critical"; rk += ".critical"; }
-                    if (part is int tp) { qName += $".t{tp}"; rk += $".t{tp}"; }
-                }
-                else
-                {
-                    qName = WorkQueueName(_options, channelKey, part, critical);
-                    rk = WorkRoutingKey(_options, channelKey, part, critical);
-                }
-
-                var workArgs = new Dictionary<string, object?>
-                {
-                    ["x-dead-letter-exchange"] = _options.DeadLetterExchange,
-                    ["x-dead-letter-routing-key"] = _options.DeadLetterRoutingKey
-                };
-                _channel.QueueDeclareAsync(qName, durable: true, exclusive: false, autoDelete: false, arguments: workArgs)
-                    .GetAwaiter().GetResult();
-                _channel.QueueBindAsync(qName, _options.ExchangeName, rk).GetAwaiter().GetResult();
-
-                foreach (var delay in _retryDelays)
-                {
-                    var rq = RetryQueueName(qName, delay);
-                    var rrk = RetryRoutingKey(channelKey, delay);
-                    var args = new Dictionary<string, object?>
+                    var channelKey = string.IsNullOrEmpty(ch) ? null : NormalizeChannel(ch);
+                    string qName, rk;
+                    if (channelKey is null)
                     {
-                        ["x-message-ttl"] = delay * 1000,
-                        ["x-dead-letter-exchange"] = _options.ExchangeName,
-                        ["x-dead-letter-routing-key"] = rk
+                        qName = _options.QueueName;
+                        rk = _options.RoutingKey;
+                        if (critical)
+                        { qName += ".critical"; rk += ".critical"; }
+                        if (part is int tp)
+                        { qName += $".t{tp}"; rk += $".t{tp}"; }
+                    }
+                    else
+                    {
+                        qName = WorkQueueName(_options, channelKey, part, critical);
+                        rk = WorkRoutingKey(_options, channelKey, part, critical);
+                    }
+
+                    var workArgs = new Dictionary<string, object?>
+                    {
+                        ["x-dead-letter-exchange"] = _options.DeadLetterExchange,
+                        ["x-dead-letter-routing-key"] = _options.DeadLetterRoutingKey
                     };
-                    _channel.QueueDeclareAsync(rq, durable: true, exclusive: false, autoDelete: false, arguments: args)
+                    _channel.QueueDeclareAsync(qName, durable: true, exclusive: false, autoDelete: false, arguments: workArgs)
                         .GetAwaiter().GetResult();
-                    _channel.QueueBindAsync(rq, _options.RetryExchangeName, rrk).GetAwaiter().GetResult();
+                    _channel.QueueBindAsync(qName, _options.ExchangeName, rk).GetAwaiter().GetResult();
+
+                    foreach (var delay in _retryDelays)
+                    {
+                        var rq = RetryQueueName(qName, delay);
+                        var rrk = RetryRoutingKey(channelKey, delay);
+                        var args = new Dictionary<string, object?>
+                        {
+                            ["x-message-ttl"] = delay * 1000,
+                            ["x-dead-letter-exchange"] = _options.ExchangeName,
+                            ["x-dead-letter-routing-key"] = rk
+                        };
+                        _channel.QueueDeclareAsync(rq, durable: true, exclusive: false, autoDelete: false, arguments: args)
+                            .GetAwaiter().GetResult();
+                        _channel.QueueBindAsync(rq, _options.RetryExchangeName, rrk).GetAwaiter().GetResult();
+                    }
                 }
             }
-          }
         }
 
         _channel.BasicQosAsync(0, _options.PrefetchCount, false).GetAwaiter().GetResult();
@@ -286,8 +289,10 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
         if (!_options.ChannelRouting)
         {
             rk = _options.RoutingKey;
-            if (critical) rk += ".critical";
-            if (part is int tp) rk += $".t{tp}";
+            if (critical)
+                rk += ".critical";
+            if (part is int tp)
+                rk += $".t{tp}";
         }
         await PublishWithConfirmAsync(_options.ExchangeName, rk, props, body, ct);
         _logger.LogDebug("Published+confirmed notification {Id} channel={Channel} redelivery={Count}",
@@ -516,7 +521,7 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
     public Task NackAsync(ulong deliveryTag, bool requeue, CancellationToken ct = default)
         => _channel.BasicNackAsync(deliveryTag, false, requeue, ct).AsTask();
 
-    
+
     /// <summary>
     /// Publish integration event to topic exchange. Routing key = eventType (e.g. notification.accepted).
     /// Consumers bind with patterns like notification.# or notification.suppressed.
@@ -559,7 +564,9 @@ public sealed class RabbitMqNotificationQueue : INotificationQueue, IAsyncDispos
 
     public async ValueTask DisposeAsync()
     {
-        if (_channel is not null) await _channel.CloseAsync();
-        if (_connection is not null) await _connection.CloseAsync();
+        if (_channel is not null)
+            await _channel.CloseAsync();
+        if (_connection is not null)
+            await _connection.CloseAsync();
     }
 }

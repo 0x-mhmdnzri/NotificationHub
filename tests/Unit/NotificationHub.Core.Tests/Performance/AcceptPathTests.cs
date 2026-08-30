@@ -13,7 +13,9 @@ public class AcceptPathTests
         var orch = TestFixtures.CreateOrchestrator(db);
         var (ok, status) = await orch.AcceptAsync(new NotificationRequest
         {
-            Recipient = "a@b.com", Channel = "email", TemplateKey = "welcome"
+            Recipient = "a@b.com",
+            Channel = "email",
+            TemplateKey = "welcome"
         });
         ok.Should().BeTrue();
         status.Status.Should().Be(DeliveryStatus.Queued);
@@ -26,7 +28,10 @@ public class AcceptPathTests
         var orch = TestFixtures.CreateOrchestrator(db);
         var req = new NotificationRequest
         {
-            Recipient = "a@b.com", Channel = "email", TemplateKey = "welcome", IdempotencyKey = "idem-1"
+            Recipient = "a@b.com",
+            Channel = "email",
+            TemplateKey = "welcome",
+            IdempotencyKey = "idem-1"
         };
         var (_, s1) = await orch.AcceptAsync(req);
         var (_, s2) = await orch.AcceptAsync(req);

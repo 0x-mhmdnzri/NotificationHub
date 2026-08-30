@@ -28,7 +28,10 @@ public class DigestServiceTests
         await sut.SavePolicyAsync(new DigestPolicy { Key = "d", WindowMinutes = 1 });
         db.DigestBuffers.Add(new NotificationHub.Core.Persistence.DigestBufferEntity
         {
-            PolicyKey = "d", Recipient = "u", PayloadJson = "{}", CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5)
+            PolicyKey = "d",
+            Recipient = "u",
+            PayloadJson = "{}",
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-5)
         });
         await db.SaveChangesAsync();
 

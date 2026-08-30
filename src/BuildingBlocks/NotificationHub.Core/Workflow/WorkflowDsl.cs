@@ -30,14 +30,19 @@ public static class WorkflowDsl
 
     public static void Validate(WorkflowDefinition def)
     {
-        if (string.IsNullOrWhiteSpace(def.Key)) throw new ArgumentException("Key required");
-        if (def.Steps is null || def.Steps.Count == 0) throw new ArgumentException("At least one step required");
-        if (def.Steps.Count > 100) throw new ArgumentException("Max 100 steps");
+        if (string.IsNullOrWhiteSpace(def.Key))
+            throw new ArgumentException("Key required");
+        if (def.Steps is null || def.Steps.Count == 0)
+            throw new ArgumentException("At least one step required");
+        if (def.Steps.Count > 100)
+            throw new ArgumentException("Max 100 steps");
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var s in def.Steps)
         {
-            if (string.IsNullOrWhiteSpace(s.Id)) throw new ArgumentException("Step Id required");
-            if (!ids.Add(s.Id)) throw new ArgumentException($"Duplicate step id '{s.Id}'");
+            if (string.IsNullOrWhiteSpace(s.Id))
+                throw new ArgumentException("Step Id required");
+            if (!ids.Add(s.Id))
+                throw new ArgumentException($"Duplicate step id '{s.Id}'");
             if (string.IsNullOrWhiteSpace(s.Type) || !KnownSteps.Contains(s.Type))
                 throw new ArgumentException($"Unknown or missing step type '{s.Type}'");
         }

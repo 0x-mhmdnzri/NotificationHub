@@ -1,8 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NotificationHub.Abstractions.Models;
-using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Common;
+using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Store;
 
 namespace NotificationHub.Core.Engagement;
@@ -77,9 +77,12 @@ public sealed class EngagementService : IEngagementService
     public async Task<(long Opens, long Clicks)> CountAsync(DateTimeOffset? from, DateTimeOffset? to, string? tenantId, CancellationToken ct = default)
     {
         var q = _db.EngagementEvents.AsNoTracking().AsQueryable();
-        if (from.HasValue) q = q.Where(x => x.OccurredAt >= from);
-        if (to.HasValue) q = q.Where(x => x.OccurredAt <= to);
-        if (!string.IsNullOrEmpty(tenantId)) q = q.Where(x => x.TenantId == tenantId);
+        if (from.HasValue)
+            q = q.Where(x => x.OccurredAt >= from);
+        if (to.HasValue)
+            q = q.Where(x => x.OccurredAt <= to);
+        if (!string.IsNullOrEmpty(tenantId))
+            q = q.Where(x => x.TenantId == tenantId);
 
         var opens = await q.CountAsync(x => x.EventType == EngagementEventTypes.Open, ct);
         var clicks = await q.CountAsync(x => x.EventType == EngagementEventTypes.Click, ct);

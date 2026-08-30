@@ -33,23 +33,28 @@ public sealed class PostgresApiKeyStore : IApiKeyStore
     public async Task<ApiKeyRecord?> FindByHashAsync(string keyHash, CancellationToken ct = default)
     {
         var e = await _db.ApiKeys.AsNoTracking().FirstOrDefaultAsync(x => x.KeyHash == keyHash && x.IsActive, ct);
-        if (e is null) return null;
-        if (e.ExpiresAt.HasValue && e.ExpiresAt < DateTimeOffset.UtcNow) return null;
+        if (e is null)
+            return null;
+        if (e.ExpiresAt.HasValue && e.ExpiresAt < DateTimeOffset.UtcNow)
+            return null;
         return ToRecord(e);
     }
 
     public async Task<ApiKeyRecord?> FindByIdAsync(Guid id, CancellationToken ct = default)
     {
         var e = await _db.ApiKeys.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id && x.IsActive, ct);
-        if (e is null) return null;
-        if (e.ExpiresAt.HasValue && e.ExpiresAt < DateTimeOffset.UtcNow) return null;
+        if (e is null)
+            return null;
+        if (e.ExpiresAt.HasValue && e.ExpiresAt < DateTimeOffset.UtcNow)
+            return null;
         return ToRecord(e);
     }
 
     public async Task TouchLastUsedAsync(Guid id, CancellationToken ct = default)
     {
         var e = await _db.ApiKeys.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (e is null) return;
+        if (e is null)
+            return;
         e.LastUsedAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync(ct);
     }
@@ -57,7 +62,8 @@ public sealed class PostgresApiKeyStore : IApiKeyStore
     public async Task<IReadOnlyList<ApiKeyInfo>> ListAsync(string? tenantId = null, CancellationToken ct = default)
     {
         var q = _db.ApiKeys.AsNoTracking().Where(x => x.IsActive);
-        if (tenantId is not null) q = q.Where(x => x.TenantId == tenantId);
+        if (tenantId is not null)
+            q = q.Where(x => x.TenantId == tenantId);
         var list = await q.OrderByDescending(x => x.CreatedAt).ToListAsync(ct);
         return list.Select(e => ToInfo(e, null)).ToList();
     }
@@ -65,7 +71,8 @@ public sealed class PostgresApiKeyStore : IApiKeyStore
     public async Task<bool> RevokeAsync(Guid id, CancellationToken ct = default)
     {
         var e = await _db.ApiKeys.FirstOrDefaultAsync(x => x.Id == id, ct);
-        if (e is null) return false;
+        if (e is null)
+            return false;
         e.IsActive = false;
         await _db.SaveChangesAsync(ct);
         return true;
@@ -91,9 +98,14 @@ public sealed class PostgresApiKeyStore : IApiKeyStore
     private static ApiKeyInfo ToInfo(ApiKeyEntity e, string? plain)
         => new()
         {
-            Id = e.Id, Name = e.Name, TenantId = e.TenantId,
+            Id = e.Id,
+            Name = e.Name,
+            TenantId = e.TenantId,
             Roles = JsonSerializer.Deserialize<string[]>(e.RolesJson) ?? [],
-            IsActive = e.IsActive, CreatedAt = e.CreatedAt, ExpiresAt = e.ExpiresAt,
-            LastUsedAt = e.LastUsedAt, PlainKey = plain
+            IsActive = e.IsActive,
+            CreatedAt = e.CreatedAt,
+            ExpiresAt = e.ExpiresAt,
+            LastUsedAt = e.LastUsedAt,
+            PlainKey = plain
         };
 }

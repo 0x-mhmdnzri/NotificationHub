@@ -27,11 +27,23 @@ public sealed class NotificationStatusEntity
 
     public NotificationStatus ToModel() => new()
     {
-        NotificationId = Id, Channel = Channel, Recipient = Recipient, Status = Status,
-        ProviderId = ProviderId, ProviderMessageId = ProviderMessageId, ErrorCode = ErrorCode,
-        ErrorMessage = ErrorMessage, AttemptCount = AttemptCount, CreatedAt = CreatedAt,
-        UpdatedAt = UpdatedAt, ScheduledAt = ScheduledAt, TenantId = TenantId,
-        IdempotencyKey = IdempotencyKey, CollapseKey = CollapseKey, CorrelationId = CorrelationId, Category = Category
+        NotificationId = Id,
+        Channel = Channel,
+        Recipient = Recipient,
+        Status = Status,
+        ProviderId = ProviderId,
+        ProviderMessageId = ProviderMessageId,
+        ErrorCode = ErrorCode,
+        ErrorMessage = ErrorMessage,
+        AttemptCount = AttemptCount,
+        CreatedAt = CreatedAt,
+        UpdatedAt = UpdatedAt,
+        ScheduledAt = ScheduledAt,
+        TenantId = TenantId,
+        IdempotencyKey = IdempotencyKey,
+        CollapseKey = CollapseKey,
+        CorrelationId = CorrelationId,
+        Category = Category
     };
 }
 

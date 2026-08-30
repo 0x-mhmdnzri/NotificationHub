@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
-using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Common;
+using NotificationHub.Core.Persistence;
 
 namespace NotificationHub.Core.Throttle;
 
@@ -27,8 +27,13 @@ public sealed class ThrottleService : IThrottleService
         await _db.SaveChangesAsync(ct);
         return new ThrottlePolicy
         {
-            Id = e.Id, Key = e.Key, TenantId = e.TenantId, Channel = e.Channel,
-            MaxCount = e.MaxCount, WindowMinutes = e.WindowMinutes, IsActive = e.IsActive
+            Id = e.Id,
+            Key = e.Key,
+            TenantId = e.TenantId,
+            Channel = e.Channel,
+            MaxCount = e.MaxCount,
+            WindowMinutes = e.WindowMinutes,
+            IsActive = e.IsActive
         };
     }
 

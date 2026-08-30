@@ -33,8 +33,13 @@ public sealed class WorkflowTimeline : IWorkflowTimeline
 
         return rows.Select(x => new WorkflowTimelineEventDto
         {
-            Id = x.Id, RunId = x.RunId, EventType = x.EventType, StepId = x.StepId,
-            Message = x.Message, DataJson = x.DataJson, OccurredAt = x.OccurredAt
+            Id = x.Id,
+            RunId = x.RunId,
+            EventType = x.EventType,
+            StepId = x.StepId,
+            Message = x.Message,
+            DataJson = x.DataJson,
+            OccurredAt = x.OccurredAt
         }).ToList();
     }
 }

@@ -15,7 +15,8 @@ public sealed class ActivityService : IActivityService
         var items = new List<ActivityItem>();
 
         var notifQ = _db.NotificationStatuses.AsNoTracking().AsQueryable();
-        if (!string.IsNullOrEmpty(tenantId)) notifQ = notifQ.Where(x => x.TenantId == tenantId);
+        if (!string.IsNullOrEmpty(tenantId))
+            notifQ = notifQ.Where(x => x.TenantId == tenantId);
         var notifs = await notifQ.OrderByDescending(x => x.UpdatedAt).Take(take).ToListAsync(ct);
         items.AddRange(notifs.Select(n => new ActivityItem
         {
@@ -34,7 +35,8 @@ public sealed class ActivityService : IActivityService
         }));
 
         var auditQ = _db.AuditEntries.AsNoTracking().AsQueryable();
-        if (!string.IsNullOrEmpty(tenantId)) auditQ = auditQ.Where(x => x.TenantId == tenantId);
+        if (!string.IsNullOrEmpty(tenantId))
+            auditQ = auditQ.Where(x => x.TenantId == tenantId);
         var audits = await auditQ.OrderByDescending(x => x.CreatedAt).Take(take).ToListAsync(ct);
         items.AddRange(audits.Select(a => new ActivityItem
         {

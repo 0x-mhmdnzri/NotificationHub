@@ -23,7 +23,8 @@ public sealed class InAppPlugin : IChannelPlugin
     public Task<PluginHealth> HealthCheckAsync(CancellationToken cancellationToken = default) => Task.FromResult(new PluginHealth(true, "OK"));
     public async Task<DeliveryResult> SendAsync(RenderedNotification notification, CancellationToken cancellationToken = default)
     {
-        if (_services is null) return new DeliveryResult { Success = false, ErrorCode = "NO_SERVICES", ErrorMessage = "DI not available" };
+        if (_services is null)
+            return new DeliveryResult { Success = false, ErrorCode = "NO_SERVICES", ErrorMessage = "DI not available" };
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<NotificationDbContext>();
         var entity = new InAppMessageEntity { Id = Guid.NewGuid(), UserId = notification.Recipient, TenantId = notification.TenantId, Title = notification.Subject, Body = notification.Body, IsRead = false, CreatedAt = DateTimeOffset.UtcNow };

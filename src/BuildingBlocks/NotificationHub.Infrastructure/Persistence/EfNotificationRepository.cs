@@ -4,9 +4,9 @@ using NotificationHub.Core.Persistence;
 using NotificationHub.Domain.Common;
 using NotificationHub.Domain.Delivery;
 using NotificationHub.Domain.Delivery.ValueObjects;
+using AbstractionsModels = NotificationHub.Abstractions.Models;
 using DomainDelivery = NotificationHub.Domain.Delivery.DeliveryStatus;
 using DomainPriority = NotificationHub.Domain.Delivery.NotificationPriority;
-using AbstractionsModels = NotificationHub.Abstractions.Models;
 
 namespace NotificationHub.Infrastructure.Persistence;
 
@@ -41,7 +41,8 @@ public sealed class EfNotificationRepository(NotificationDbContext db) : INotifi
         Dictionary<string, object?>? data = null;
         if (!string.IsNullOrEmpty(e.PayloadJson))
         {
-            try { data = JsonSerializer.Deserialize<Dictionary<string, object?>>(e.PayloadJson, JsonOpts); }
+            try
+            { data = JsonSerializer.Deserialize<Dictionary<string, object?>>(e.PayloadJson, JsonOpts); }
             catch { /* ignore */ }
         }
 

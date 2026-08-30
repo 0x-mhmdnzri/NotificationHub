@@ -55,13 +55,15 @@ public class Result
 
     public Result Tap(Action action)
     {
-        if (IsSuccess) action();
+        if (IsSuccess)
+            action();
         return this;
     }
 
     public Result TapError(Action<IReadOnlyList<Error>> action)
     {
-        if (IsFailure) action(_errors);
+        if (IsFailure)
+            action(_errors);
         return this;
     }
 }
@@ -119,7 +121,8 @@ public class Result<T> : Result
 
     public Result<T> Tap(Action<T> action)
     {
-        if (IsSuccess) action(_value!);
+        if (IsSuccess)
+            action(_value!);
         return this;
     }
 

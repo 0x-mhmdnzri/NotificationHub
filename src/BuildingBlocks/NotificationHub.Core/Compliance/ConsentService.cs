@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using NotificationHub.Abstractions.Models;
-using NotificationHub.Core.Persistence;
 using NotificationHub.Core.Common;
+using NotificationHub.Core.Persistence;
 
 namespace NotificationHub.Core.Compliance;
 
@@ -73,8 +73,15 @@ public sealed class ConsentService : IConsentService
 
     private static ConsentRecord ToModel(ConsentLedgerEntity e) => new()
     {
-        Id = e.Id, SubjectId = e.SubjectId, TenantId = e.TenantId, Purpose = e.Purpose,
-        Channel = e.Channel, Granted = e.Granted, Source = e.Source, Actor = e.Actor,
-        Evidence = e.Evidence, OccurredAt = e.OccurredAt
+        Id = e.Id,
+        SubjectId = e.SubjectId,
+        TenantId = e.TenantId,
+        Purpose = e.Purpose,
+        Channel = e.Channel,
+        Granted = e.Granted,
+        Source = e.Source,
+        Actor = e.Actor,
+        Evidence = e.Evidence,
+        OccurredAt = e.OccurredAt
     };
 }

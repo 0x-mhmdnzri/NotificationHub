@@ -38,7 +38,8 @@ public sealed class ApiKeyBootstrapper
     public async Task EnsureBootstrapKeyAsync(CancellationToken ct = default)
     {
         var existing = await _store.ListAsync(null, ct);
-        if (existing.Count > 0) return;
+        if (existing.Count > 0)
+            return;
 
         var configured = _config["Auth:BootstrapApiKey"] ?? _config["Auth:ApiKey"];
         string plain;

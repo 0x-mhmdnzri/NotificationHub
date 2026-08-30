@@ -72,20 +72,29 @@ public sealed class SlackPlugin : IChannelPlugin
     /// <summary>SEC-29: only https public hosts (no loopback / private IP literals).</summary>
     public static bool IsSafeWebhook(string url)
     {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)) return false;
-        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;
-        if (uri.IsLoopback) return false;
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (uri.IsLoopback)
+            return false;
         if (System.Net.IPAddress.TryParse(uri.Host, out var ip))
         {
-            if (System.Net.IPAddress.IsLoopback(ip)) return false;
+            if (System.Net.IPAddress.IsLoopback(ip))
+                return false;
             var bytes = ip.GetAddressBytes();
             if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
             {
-                if (bytes[0] == 10) return false;
-                if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return false;
-                if (bytes[0] == 192 && bytes[1] == 168) return false;
-                if (bytes[0] == 169 && bytes[1] == 254) return false;
-                if (bytes[0] == 127) return false;
+                if (bytes[0] == 10)
+                    return false;
+                if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31)
+                    return false;
+                if (bytes[0] == 192 && bytes[1] == 168)
+                    return false;
+                if (bytes[0] == 169 && bytes[1] == 254)
+                    return false;
+                if (bytes[0] == 127)
+                    return false;
             }
         }
         return true;

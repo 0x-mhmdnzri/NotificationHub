@@ -15,7 +15,11 @@ public class OutboxInboxTests
         var id = Guid.NewGuid();
         await outbox.AddAsync(new NotificationRequest
         {
-            Id = id, Recipient = "a@b.com", Channel = "email", TemplateKey = "welcome", Data = new()
+            Id = id,
+            Recipient = "a@b.com",
+            Channel = "email",
+            TemplateKey = "welcome",
+            Data = new()
         });
         await db.SaveChangesAsync();
         db.OutboxMessages.Should().ContainSingle(x => x.NotificationId == id && x.Status == "pending");

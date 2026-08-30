@@ -15,7 +15,8 @@ public sealed class PreferenceService : IPreferenceService
         var q = _db.UserPreferences.AsNoTracking().Where(x => x.UserId == userId);
         q = tenantId is null ? q.Where(x => x.TenantId == null) : q.Where(x => x.TenantId == tenantId);
         var e = await q.FirstOrDefaultAsync(ct);
-        if (e is null) return null;
+        if (e is null)
+            return null;
         return Map(e);
     }
 
@@ -45,7 +46,8 @@ public sealed class PreferenceService : IPreferenceService
         string userId, string channel, string? category, string? tenantId, bool isCritical = false, CancellationToken ct = default)
     {
         var pref = await GetAsync(userId, tenantId, ct);
-        if (pref is null) return (true, null);
+        if (pref is null)
+            return (true, null);
 
         // Hard opt-outs always apply
         if (pref.ChannelOptIn.TryGetValue(channel, out var channelOk) && !channelOk)
@@ -66,7 +68,8 @@ public sealed class PreferenceService : IPreferenceService
                 var start = TimeSpan.Parse(pref.QuietHoursStart);
                 var end = TimeSpan.Parse(pref.QuietHoursEnd);
                 var inQuiet = start <= end ? local >= start && local <= end : local >= start || local <= end;
-                if (inQuiet) return (false, "Quiet hours");
+                if (inQuiet)
+                    return (false, "Quiet hours");
             }
             catch { /* ignore */ }
         }
@@ -98,7 +101,8 @@ public sealed class PreferenceService : IPreferenceService
             var count = await _db.NotificationStatuses.CountAsync(x =>
                 x.Recipient == userId && x.CreatedAt >= since &&
                 x.Status != DeliveryStatus.Suppressed && x.Status != DeliveryStatus.Cancelled, ct);
-            if (count >= pref.MaxPerDay) return (false, "Daily frequency cap reached");
+            if (count >= pref.MaxPerDay)
+                return (false, "Daily frequency cap reached");
         }
 
         return (true, null);
@@ -127,10 +131,13 @@ public sealed class PreferenceService : IPreferenceService
         foreach (var part in windows.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
             var bits = part.Split('-', 2);
-            if (bits.Length != 2) continue;
-            if (!TimeSpan.TryParse(bits[0], out var start) || !TimeSpan.TryParse(bits[1], out var end)) continue;
+            if (bits.Length != 2)
+                continue;
+            if (!TimeSpan.TryParse(bits[0], out var start) || !TimeSpan.TryParse(bits[1], out var end))
+                continue;
             var ok = start <= end ? local >= start && local <= end : local >= start || local <= end;
-            if (ok) return true;
+            if (ok)
+                return true;
         }
         return false;
     }

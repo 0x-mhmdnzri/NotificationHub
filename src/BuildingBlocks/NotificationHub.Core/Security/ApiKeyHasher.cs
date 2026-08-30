@@ -58,8 +58,10 @@ public static class ApiKeyHasher
     {
         // v2.pbkdf2.{iterations}.{saltB64}.{hashB64}
         var parts = stored.Split('.', 5);
-        if (parts.Length != 5) return false;
-        if (!int.TryParse(parts[2], out var iterations) || iterations < 10_000) return false;
+        if (parts.Length != 5)
+            return false;
+        if (!int.TryParse(parts[2], out var iterations) || iterations < 10_000)
+            return false;
         byte[] salt, expected;
         try
         {
@@ -97,7 +99,8 @@ public static class ApiKeyHasher
     {
         var bytes = RandomNumberGenerator.GetBytes(48);
         var token = Convert.ToBase64String(bytes).Replace("+", "-").Replace("/", "_").Replace("=", "");
-        if (token.Length > 40) token = token[..40];
+        if (token.Length > 40)
+            token = token[..40];
         return "nh_" + token;
     }
 
@@ -108,7 +111,8 @@ public static class ApiKeyHasher
             return false;
         var rest = plainKey[3..];
         var underscore = rest.IndexOf('_');
-        if (underscore != 32) return false; // Guid N format is 32 hex chars
+        if (underscore != 32)
+            return false; // Guid N format is 32 hex chars
         return Guid.TryParseExact(rest[..32], "N", out keyId);
     }
 }
