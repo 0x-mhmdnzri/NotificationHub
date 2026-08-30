@@ -34,14 +34,20 @@ export async function request<T>(path: string, options: ApiRequestOptions = {}):
 
   const response = await fetch(apiUrl(path), {
     ...options,
-    body: options.body === undefined ? undefined : options.body instanceof FormData ? options.body : JSON.stringify(options.body),
+    body:
+      options.body === undefined
+        ? undefined
+        : options.body instanceof FormData
+          ? options.body
+          : JSON.stringify(options.body),
     headers,
   })
 
   const payload = await parseResponse(response)
 
   if (!response.ok) {
-    const details = typeof payload === 'object' && payload !== null ? payload as ProblemDetails : undefined
+    const details =
+      typeof payload === 'object' && payload !== null ? (payload as ProblemDetails) : undefined
     throw new ApiError(
       details?.detail || details?.title || `Request failed with status ${response.status}`,
       response.status,
@@ -59,6 +65,8 @@ export const api = {
     request<T>(path, { ...options, method: 'POST', body }),
   put: <T>(path: string, body?: unknown, options?: Omit<ApiRequestOptions, 'method' | 'body'>) =>
     request<T>(path, { ...options, method: 'PUT', body }),
+  patch: <T>(path: string, body?: unknown, options?: Omit<ApiRequestOptions, 'method' | 'body'>) =>
+    request<T>(path, { ...options, method: 'PATCH', body }),
   delete: <T>(path: string, options?: Omit<ApiRequestOptions, 'method' | 'body'>) =>
     request<T>(path, { ...options, method: 'DELETE' }),
 }
