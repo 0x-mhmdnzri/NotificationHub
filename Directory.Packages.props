@@ -22,12 +22,12 @@
     <!-- Microsoft.Extensions (net9-aligned) -->
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.4" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.4" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.4" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.11" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.4" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="9.0.4" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="9.0.4" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.4" />
-    <PackageVersion Include="Microsoft.Extensions.Options" Version="9.0.4" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.11" />
     <!-- CQRS -->
     <PackageVersion Include="MediatR" Version="12.4.1" />
     <PackageVersion Include="FluentValidation" Version="11.11.0" />
