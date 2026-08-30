@@ -34,5 +34,8 @@
   "packageManager": "pnpm@11.24.0",
   "overrides": {
     "postcss": "8.5.26"
+  },
+  "resolutions": {
+    "postcss": "8.5.26"
   }
 }
