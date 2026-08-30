@@ -497,6 +497,8 @@ app.UseMiddleware<AdminIpAllowlistMiddleware>();
 // AuthN (API key) — equivalent to UseAuthentication for this API
 app.UseAuthentication();
 app.UseMiddleware<ApiKeyAuthMiddleware>();
+// Bridge JWT principal → AuthContext for RequireRoles on domain endpoints
+app.UseMiddleware<JwtAuthContextMiddleware>();
 app.UseAuthorization();
 // AuthZ: RequireRoles on endpoints + AuthorizationBehavior on MediatR commands
 
