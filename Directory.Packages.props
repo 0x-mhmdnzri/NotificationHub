@@ -35,7 +35,7 @@
     <!-- Hangfire (durable job execution — not a broker) -->
     <PackageVersion Include="Hangfire.Core" Version="1.8.17" />
     <PackageVersion Include="Hangfire.AspNetCore" Version="1.8.17" />
-    <PackageVersion Include="Hangfire.PostgreSql" Version="1.20.10" />
+    <PackageVersion Include="Hangfire.PostgreSql" Version="1.21.1" />
     <!-- Messaging / HTTP APIs -->
     <PackageVersion Include="RabbitMQ.Client" Version="7.1.2" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.3.2" />
