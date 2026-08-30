@@ -63,18 +63,14 @@ export const identityApi = {
   revokeAllSessions: () => api.post<void>('/api/v1/auth/sessions/revoke-all'),
   getOrganization: (id: string) => api.get<OrganizationDto>(`/api/v1/organizations/${id}`),
   updateOrganization: (id: string, body: { name?: string; status?: string }) =>
-    api.request ? (api as any).patch?.(`/api/v1/organizations/${id}`, body) :
-    requestPatch<OrganizationDto>(`/api/v1/organizations/${id}`, body),
+    api.patch<OrganizationDto>(`/api/v1/organizations/${id}`, body),
   listMembers: (orgId: string) => api.get<MemberRow[]>(`/api/v1/organizations/${orgId}/members`),
   assignRole: (orgId: string, membershipId: string, roleName: string) =>
     api.post<void>(`/api/v1/organizations/${orgId}/members/${membershipId}/roles`, { roleName }),
   removeRole: (orgId: string, membershipId: string, roleName: string) =>
-    api.delete<void>(`/api/v1/organizations/${orgId}/members/${membershipId}/roles/${encodeURIComponent(roleName)}`),
+    api.delete<void>(
+      `/api/v1/organizations/${orgId}/members/${membershipId}/roles/${encodeURIComponent(roleName)}`,
+    ),
   setMemberStatus: (orgId: string, membershipId: string, status: string) =>
     api.post<void>(`/api/v1/organizations/${orgId}/members/${membershipId}/status`, { status }),
-}
-
-async function requestPatch<T>(path: string, body: unknown): Promise<T> {
-  const { request } = await import('./client')
-  return request<T>(path, { method: 'PATCH', body })
 }
