@@ -22,7 +22,7 @@ jobs:
           --logger "trx;LogFileName=nightly.trx"
           --collect:"XPlat Code Coverage"
       - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
