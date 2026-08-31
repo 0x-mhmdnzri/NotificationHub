@@ -42,7 +42,7 @@
 
     <PackageVersion Include="SendGrid" Version="9.29.3" />
     <PackageVersion Include="Kavenegar" Version="1.2.5" />
-    <PackageVersion Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="Twilio" Version="7.8.3" />
 
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
