@@ -1,20 +1,15 @@
 /**
- * Session storage strategy (SPA, pre-BFF):
- * - Access + refresh tokens: sessionStorage (tab-scoped).
- * - Auth presence cookie (non-secret): lets edge middleware redirect unauthenticated users.
- *
- * Production target: BFF with httpOnly Secure SameSite cookies.
+ * Session strategy (SPA until BFF lands):
+ * - Access token: **memory only** (not sessionStorage) — reduces XSS token lifetime to tab JS heap
+ * - Refresh token: sessionStorage (tab-scoped); still XSS-exfiltratable — tracked for BFF migration
+ * - Auth marker cookie: non-secret presence flag for edge middleware UX only (not authorization)
  */
 
-const ACCESS_TOKEN_KEY = 'nh.at'
 const REFRESH_TOKEN_KEY = 'nh.rt'
 const TENANT_ID_KEY = 'nh.tid'
-const PKCE_VERIFIER_KEY = 'nh.pkce'
-const OIDC_STATE_KEY = 'nh.oidc_state'
 const AUTH_MARKER = 'nh_auth'
 
 let memoryAccessToken: string | undefined
-/** Prevents AuthProvider refresh from clearing a login that just succeeded. */
 let authBootstrapLock = false
 
 function ss(): Storage | null {
@@ -30,6 +25,7 @@ function setAuthMarker(on: boolean) {
   if (typeof document === 'undefined') return
   const secure = typeof location !== 'undefined' && location.protocol === 'https:' ? '; Secure' : ''
   if (on) {
+    // Marker is intentionally non-secret; middleware must never treat it as proof of identity.
     document.cookie = `${AUTH_MARKER}=1; Path=/; SameSite=Lax${secure}`
   } else {
     document.cookie = `${AUTH_MARKER}=; Path=/; Max-Age=0; SameSite=Lax${secure}`
@@ -45,10 +41,7 @@ export function isAuthBootstrapLocked() {
 }
 
 export function getAccessToken(): string | undefined {
-  if (memoryAccessToken) return memoryAccessToken
-  const fromStore = ss()?.getItem(ACCESS_TOKEN_KEY) ?? undefined
-  if (fromStore) memoryAccessToken = fromStore
-  return fromStore
+  return memoryAccessToken
 }
 
 export function getRefreshToken(): string | undefined {
@@ -68,10 +61,16 @@ export function setSession(input: {
   if (input.accessToken) {
     memoryAccessToken = input.accessToken
     setAuthMarker(true)
-    store?.setItem(ACCESS_TOKEN_KEY, input.accessToken)
   }
   if (input.refreshToken) store?.setItem(REFRESH_TOKEN_KEY, input.refreshToken)
   if (input.tenantId) store?.setItem(TENANT_ID_KEY, input.tenantId)
+  // Purge any legacy access-token keys from storage
+  try {
+    store?.removeItem('nh.at')
+    window.localStorage?.removeItem('notificationhub.accessToken')
+  } catch {
+    /* ignore */
+  }
 }
 
 export function clearSession() {
@@ -80,37 +79,21 @@ export function clearSession() {
   setAuthMarker(false)
   const store = ss()
   if (!store) return
-  store.removeItem(ACCESS_TOKEN_KEY)
   store.removeItem(REFRESH_TOKEN_KEY)
   store.removeItem(TENANT_ID_KEY)
-  store.removeItem(PKCE_VERIFIER_KEY)
-  store.removeItem(OIDC_STATE_KEY)
+  store.removeItem('nh.at')
+  store.removeItem('nh.pkce')
+  store.removeItem('nh.oidc_state')
   try {
     window.localStorage.removeItem('notificationhub.accessToken')
     window.localStorage.removeItem('notificationhub.refreshToken')
     window.localStorage.removeItem('notificationhub.tenantId')
     window.localStorage.removeItem('notificationhub.pkceVerifier')
     window.localStorage.removeItem('notificationhub.oidcState')
+    window.sessionStorage.removeItem('notificationhub.returnTo')
   } catch {
     /* ignore */
   }
-}
-
-export function setPkce(verifier: string, state: string) {
-  const store = ss()
-  if (!store) return
-  store.setItem(PKCE_VERIFIER_KEY, verifier)
-  store.setItem(OIDC_STATE_KEY, state)
-}
-
-export function consumePkce(): { verifier?: string; state?: string } {
-  const store = ss()
-  if (!store) return {}
-  const verifier = store.getItem(PKCE_VERIFIER_KEY) ?? undefined
-  const state = store.getItem(OIDC_STATE_KEY) ?? undefined
-  store.removeItem(PKCE_VERIFIER_KEY)
-  store.removeItem(OIDC_STATE_KEY)
-  return { verifier, state }
 }
 
 /** Only same-app relative paths; blocks open redirects. */
@@ -123,21 +106,15 @@ export function safeReturnPath(candidate?: string | null, fallback = '/dashboard
   return t
 }
 
-export function tenantFromAccessToken(accessToken?: string): string | undefined {
-  if (!accessToken) return undefined
-  try {
-    const part = accessToken.split('.')[1]
-    if (!part) return undefined
-    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')))
-    return (json.tenant_id || json.organization_id || json.tid) as string | undefined
-  } catch {
-    return undefined
-  }
+/**
+ * @deprecated Prefer tenantId from login/register/switchOrganization API response or /auth/me.
+ * Client-side JWT parse is unverified and must not drive authorization.
+ */
+export function tenantFromAccessToken(_accessToken?: string): string | undefined {
+  return undefined
 }
 
 export function isPublicAuthPath(pathname?: string): boolean {
   const p = pathname ?? (typeof window !== 'undefined' ? window.location.pathname : '')
-  return ['/login', '/auth/callback', '/auth/accept-invite'].some(
-    (x) => p === x || p.startsWith(`${x}/`),
-  )
+  return ['/login', '/auth/accept-invite'].some((x) => p === x || p.startsWith(`${x}/`))
 }

@@ -1,43 +1,18 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { handleCallback } from '@/lib/auth/oidc'
-import { safeReturnPath } from '@/lib/auth/session'
+import { useEffect } from 'react'
 
-export default function AuthCallbackPage() {
-  const [error, setError] = useState<string | null>(null)
-
+/**
+ * OIDC SPA callback removed — admin authenticates via API login/register only.
+ * Keep route to avoid broken bookmarks; redirect to password login.
+ */
+export default function AuthCallbackRemoved() {
   useEffect(() => {
-    void (async () => {
-      try {
-        await handleCallback(window.location.search)
-        const raw = sessionStorage.getItem('notificationhub.returnTo')
-        sessionStorage.removeItem('notificationhub.returnTo')
-        window.location.replace(safeReturnPath(raw, '/dashboard'))
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'login_failed')
-      }
-    })()
+    window.location.replace('/login')
   }, [])
-
-  if (error) {
-    return (
-      <div className="grid min-h-screen place-items-center p-6">
-        <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-6 text-sm">
-          Sign-in failed: {error}
-          <div className="mt-4">
-            <a className="text-primary underline" href="/login">
-              Back to login
-            </a>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="grid min-h-screen place-items-center text-sm text-muted-foreground">
-      Completing sign-in…
+      Redirecting to sign-in…
     </div>
   )
 }
