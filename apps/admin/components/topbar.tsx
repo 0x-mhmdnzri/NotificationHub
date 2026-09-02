@@ -37,7 +37,7 @@ export function Topbar() {
           className="max-w-[200px] bg-transparent font-medium outline-none"
           disabled={!organizations.length}
         >
-          {!organizations.length && <option value="">No organizations</option>}
+          {!organizations.length && <option value="">سازمانی نیست</option>}
           {organizations.map((o) => (
             <option key={o.organizationId} value={o.organizationId}>
               {o.name}
@@ -45,24 +45,24 @@ export function Topbar() {
           ))}
         </select>
       </div>
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ms-auto flex items-center gap-2">
         <div className="hidden max-w-sm items-center gap-2 rounded-xl border bg-background/70 px-3 py-2 lg:flex">
           <Command size={14} className="text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">Search anything</span>
-          <kbd className="ml-8 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">⌘K</kbd>
+          <span className="text-xs text-muted-foreground">جستجوی سریع</span>
+          <kbd className="ms-8 rounded border px-1.5 py-0.5 text-[10px] text-muted-foreground">⌘K</kbd>
         </div>
         <Button variant="ghost" size="icon" onClick={toggle}>
           {dark ? <Sun size={18} /> : <Moon size={18} />}
         </Button>
         <Button variant="ghost" size="icon" className="relative">
           <Bell size={18} />
-          <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-primary" />
+          <span className="absolute end-2 top-2 h-1.5 w-1.5 rounded-full bg-primary" />
         </Button>
-        <div className="ml-2 flex items-center gap-3 border-l pl-4">
-          <div className="hidden text-right sm:block">
-            <div className="text-sm font-medium">{me?.user.displayName || me?.user.email || 'Guest'}</div>
+        <div className="ms-2 flex items-center gap-3 border-s ps-4">
+          <div className="hidden text-start sm:block">
+            <div className="text-sm font-medium">{me?.user.displayName || me?.user.email || 'مهمان'}</div>
             <div className="text-[11px] text-muted-foreground">
-              {me?.roles?.[0] || (isAuthenticated ? 'Member' : 'Signed out')}
+              {me?.roles?.[0] || (isAuthenticated ? 'عضو' : 'خارج‌شده')}
             </div>
           </div>
           <Link
