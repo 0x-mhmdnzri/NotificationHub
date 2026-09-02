@@ -1,15 +1,20 @@
 'use client'
 
 import { useState, Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { identityApi } from '@/lib/api/identity'
-import { setSession, safeReturnPath, tenantFromAccessToken } from '@/lib/auth/session'
+import {
+  setSession,
+  clearSession,
+  safeReturnPath,
+  tenantFromAccessToken,
+  setAuthBootstrapLock,
+} from '@/lib/auth/session'
 import { ApiError } from '@/lib/api/errors'
 
 function LoginInner() {
   const params = useSearchParams()
-  const router = useRouter()
   const next = safeReturnPath(params.get('next'), '/dashboard')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -23,6 +28,13 @@ function LoginInner() {
     e.preventDefault()
     setBusy(true)
     setError(null)
+
+    // Stop AuthProvider / 401 handlers from wiping tokens during this flow
+    setAuthBootstrapLock(true)
+    // Drop stale refresh tokens so a parallel refresh cannot race login
+    clearSession()
+    setAuthBootstrapLock(true)
+
     try {
       const tokens =
         mode === 'login'
@@ -35,18 +47,27 @@ function LoginInner() {
               organizationName: orgName.trim() || undefined,
             })
 
-      if (!tokens?.accessToken) {
+      const accessToken = tokens?.accessToken
+      const refreshToken = tokens?.refreshToken
+      if (!accessToken) {
         setError('Server did not return an access token')
+        setAuthBootstrapLock(false)
         return
       }
 
       setSession({
-        accessToken: tokens.accessToken,
-        refreshToken: tokens.refreshToken,
-        tenantId: tokens.organizationId ?? tenantFromAccessToken(tokens.accessToken),
+        accessToken,
+        refreshToken,
+        tenantId:
+          tokens.organizationId ??
+          (typeof tokens.organizationId === 'string' ? tokens.organizationId : undefined) ??
+          tenantFromAccessToken(accessToken),
       })
-      router.replace(next)
+
+      // Hard navigation so middleware sees nh_auth cookie and memory/storage are consistent
+      window.location.assign(next)
     } catch (err) {
+      setAuthBootstrapLock(false)
       if (err instanceof ApiError) {
         const map: Record<string, string> = {
           invalid_credentials: 'Email or password is incorrect',
