@@ -8,9 +8,9 @@
     <Deterministic>true</Deterministic>
 
     <!-- Unified SemVer (see version.json + docs/ops/versioning.md) -->
-    <VersionPrefix>0.2.1</VersionPrefix>
+    <VersionPrefix>0.2.2</VersionPrefix>
     <Version>$(VersionPrefix)</Version>
-    <AssemblyVersion>0.2.1.0</AssemblyVersion>
+    <AssemblyVersion>0.2.2.0</AssemblyVersion>
     <FileVersion>$(VersionPrefix).0</FileVersion>
     <InformationalVersion>$(VersionPrefix)+$(SourceRevisionId)</InformationalVersion>
     <SourceRevisionId Condition="'$(SourceRevisionId)' == ''">local</SourceRevisionId>
