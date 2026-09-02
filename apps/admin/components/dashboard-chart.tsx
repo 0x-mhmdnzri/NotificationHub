@@ -1,4 +1,16 @@
 'use client'
-import {AreaChart,Area,XAxis,YAxis,Tooltip,ResponsiveContainer} from 'recharts'
-const data=[{d:'Mon',sent:18,delivered:16},{d:'Tue',sent:25,delivered:23},{d:'Wed',sent:21,delivered:20},{d:'Thu',sent:34,delivered:31},{d:'Fri',sent:29,delivered:27},{d:'Sat',sent:41,delivered:38},{d:'Sun',sent:47,delivered:44}]
-export function DashboardChart(){return <div className="h-[290px] w-full"><ResponsiveContainer width="100%" height="100%"><AreaChart data={data}><defs><linearGradient id="sent" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="hsl(250 83% 62%)" stopOpacity={.25}/><stop offset="100%" stopColor="hsl(250 83% 62%)" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="d" axisLine={false} tickLine={false} tick={{fontSize:11,fill:'#94a3b8'}}/><YAxis axisLine={false} tickLine={false} tick={{fontSize:11,fill:'#94a3b8'}}/><Tooltip contentStyle={{borderRadius:12,border:'1px solid #e2e8f0',boxShadow:'0 12px 30px rgba(15,23,42,.1)'}}/><Area type="monotone" dataKey="sent" stroke="hsl(250 83% 62%)" strokeWidth={2.5} fill="url(#sent)"/><Area type="monotone" dataKey="delivered" stroke="#10b981" strokeWidth={2} fill="transparent"/></AreaChart></ResponsiveContainer></div>}
+
+/**
+ * Throughput chart is disabled until a real time-series metrics endpoint exists.
+ * Do not invent daily series on the client.
+ */
+export function DashboardChart({ hasData = false }: { hasData?: boolean }) {
+  if (!hasData) {
+    return (
+      <div className="flex h-[290px] w-full items-center justify-center rounded-xl border border-dashed text-sm text-muted-foreground">
+        No throughput series available yet
+      </div>
+    )
+  }
+  return null
+}
