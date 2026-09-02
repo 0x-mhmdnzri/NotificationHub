@@ -8,13 +8,14 @@ import { cn } from '@/lib/utils'
 import { formatChannel, formatStatus } from '@/lib/ux/labels'
 import { Button } from '@/components/ui/button'
 
+/** Colors aligned to site palette (primary violet, teal success, etc.) */
 const CAT: Record<string, string> = {
-  trigger: '#f78c6c',
-  api: '#89ddff',
-  prep: '#c3e88d',
-  ai: '#c792ea',
-  success: '#4DB6AC',
-  retry: '#f07178',
+  trigger: '#7C6BF0', // primary
+  api: '#38BDF8', // sky
+  prep: '#84CC16', // lime
+  ai: '#A78BFA', // violet
+  success: '#14B8A6', // teal
+  retry: '#F43F5E', // rose/destructive
 }
 
 type Wire = { from: string; to: string; kind: string; label?: string }
@@ -27,13 +28,14 @@ const WIRES: Wire[] = [
   { from: 'dispatch', to: 'failed', kind: 'retry', label: 'error' },
 ]
 
+/** Taller layout so the flow is readable without vertical scroll inside the canvas */
 const LAYOUT: Record<string, { x: number; y: number; w: number; h: number }> = {
-  app: { x: 24, y: 48, w: 150, h: 72 },
-  plugin: { x: 220, y: 48, w: 170, h: 72 },
-  queue: { x: 440, y: 48, w: 150, h: 72 },
-  dispatch: { x: 640, y: 48, w: 150, h: 72 },
-  delivered: { x: 840, y: 24, w: 150, h: 72 },
-  failed: { x: 840, y: 120, w: 150, h: 72 },
+  app: { x: 32, y: 80, w: 160, h: 80 },
+  plugin: { x: 240, y: 80, w: 180, h: 80 },
+  queue: { x: 480, y: 80, w: 160, h: 80 },
+  dispatch: { x: 700, y: 80, w: 160, h: 80 },
+  delivered: { x: 920, y: 32, w: 160, h: 80 },
+  failed: { x: 920, y: 160, w: 160, h: 80 },
 }
 
 function formatLag(ms?: number | null) {
@@ -149,8 +151,10 @@ export function DeliveryFlowCanvas() {
               type="button"
               onClick={() => setSpeed(s)}
               className={cn(
-                'rounded-full border px-2.5 py-1 text-xs',
-                speed === s ? 'border-teal-500/50 bg-teal-500/10 text-teal-200' : 'text-muted-foreground',
+                'rounded-full border px-2.5 py-1 text-xs transition',
+                speed === s
+                  ? 'border-primary/50 bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-muted/50',
               )}
             >
               {s}×
@@ -174,7 +178,8 @@ export function DeliveryFlowCanvas() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1fr_280px]">
-        <div className="overflow-auto rounded-xl border bg-[#263238] shadow-sm">
+        {/* Taller canvas area — no cramped vertical scroll */}
+        <div className="min-h-[420px] overflow-auto rounded-xl border bg-card shadow-sm">
           <FlowSvg
             nodes={snap?.nodes ?? []}
             playing={playing && ((snap?.queued ?? 0) > 0 || (snap?.sending ?? 0) > 0)}
@@ -188,7 +193,7 @@ export function DeliveryFlowCanvas() {
         </div>
 
         <aside className="rounded-xl border bg-card p-4 shadow-sm">
-          <div className="mb-2 inline-block rounded bg-teal-600/90 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-teal-50">
+          <div className="mb-2 inline-block rounded bg-primary px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary-foreground">
             {inspector.overline}
           </div>
           <h3 className="text-base font-medium tracking-tight">{inspector.title}</h3>
@@ -261,17 +266,17 @@ export function DeliveryFlowCanvas() {
 
 function toneClass(status: string) {
   const b = statusBucket(status)
-  if (b === 'delivered') return 'text-teal-600'
+  if (b === 'delivered') return 'text-teal-600 dark:text-teal-400'
   if (b === 'failed') return 'text-destructive'
-  if (b === 'queued') return 'text-lime-700'
-  if (b === 'sending') return 'text-violet-600'
+  if (b === 'queued') return 'text-lime-700 dark:text-lime-400'
+  if (b === 'sending') return 'text-violet-600 dark:text-violet-400'
   return 'text-muted-foreground'
 }
 
 function Stat({ label, value, tone }: { label: string; value: string | number; tone: string }) {
   return (
-    <span className="inline-flex items-center gap-2 rounded-full border px-2.5 py-1">
-      <span className="h-2 w-2 rounded-full" style={{ background: CAT[tone] ?? '#90A4AE' }} />
+    <span className="inline-flex items-center gap-2 rounded-full border bg-card px-2.5 py-1">
+      <span className="h-2 w-2 rounded-full" style={{ background: CAT[tone] ?? '#94A3B8' }} />
       <span className="text-muted-foreground">{label}</span>
       <span className="font-medium text-foreground">{value}</span>
     </span>
@@ -361,11 +366,11 @@ function FlowSvg({
   }
 
   return (
-    <div className="relative min-w-[1020px] p-4">
-      <svg width={1020} height={220} className="absolute left-4 top-4">
+    <div className="relative min-h-[380px] min-w-[1120px] p-6">
+      <svg width={1120} height={280} className="absolute left-6 top-6">
         {WIRES.map((w, i) => {
           const d = pathD(w.from, w.to)
-          const color = CAT[w.kind] ?? '#90A4AE'
+          const color = CAT[w.kind] ?? '#94A3B8'
           return (
             <g key={`${w.from}-${w.to}`}>
               <path
@@ -395,7 +400,7 @@ function FlowSvg({
 
       {Object.entries(LAYOUT).map(([id, box]) => {
         const n = byId.get(id)
-        const accent = CAT[n?.category ?? 'trigger'] ?? '#90A4AE'
+        const accent = CAT[n?.category ?? 'trigger'] ?? '#94A3B8'
         const active = n?.active
         return (
           <button
@@ -403,9 +408,9 @@ function FlowSvg({
             type="button"
             onClick={() => onSelect(id)}
             className={cn(
-              'absolute rounded-md border border-[#2A373E] bg-[#2E3C43] px-3 py-2 text-left shadow transition',
-              'hover:bg-[#314549]',
-              selected === id && 'ring-1 ring-white/80',
+              'absolute rounded-lg border bg-card px-3 py-2.5 text-left shadow-sm transition',
+              'hover:bg-muted/50',
+              selected === id && 'ring-2 ring-primary/60',
               active && 'ring-1',
             )}
             style={{
@@ -416,10 +421,10 @@ function FlowSvg({
               boxShadow: active ? `0 0 0 1px ${accent}` : undefined,
             }}
           >
-            <span className="absolute bottom-0 left-0 top-0 w-1 rounded-l-md" style={{ background: accent }} />
+            <span className="absolute bottom-0 left-0 top-0 w-1 rounded-l-lg" style={{ background: accent }} />
             <div className="pl-1.5">
-              <div className="text-[12.5px] font-medium text-[#CFD8DC]">{n?.title ?? id}</div>
-              <div className="mt-0.5 font-mono text-[10px] text-[#607D8B]">
+              <div className="text-[13px] font-medium text-foreground">{n?.title ?? id}</div>
+              <div className="mt-1 font-mono text-[11px] text-muted-foreground">
                 {n?.subtitle ?? '—'}
                 {typeof n?.count === 'number' ? ` · ${n.count}` : ''}
               </div>
