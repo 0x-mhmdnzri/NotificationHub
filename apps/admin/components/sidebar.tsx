@@ -70,7 +70,7 @@ export function Sidebar() {
   ]
 
   return (
-    <aside className="fixed inset-y-0 end-0 z-40 hidden w-[270px] border-s bg-card lg:block">
+    <aside className="fixed inset-y-0 right-0 z-40 hidden w-[270px] border-l bg-card lg:block">
       <div className="flex h-full flex-col">
         <div className="flex h-[72px] items-center gap-3 border-b px-6">
           <div className="grid h-9 w-9 place-items-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/25">
