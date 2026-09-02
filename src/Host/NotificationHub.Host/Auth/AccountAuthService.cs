@@ -102,13 +102,27 @@ public sealed class AccountAuthService(
         string email, string password, Guid? organizationId, CancellationToken ct)
     {
         email = email.Trim().ToLowerInvariant();
-        var user = await db.Set<IdentityUserEntity>().FirstOrDefaultAsync(u => u.Email == email, ct);
+        // Case-insensitive email match (unique index is on lower("Email"))
+        var user = await db.Set<IdentityUserEntity>()
+            .FirstOrDefaultAsync(u => u.Email.ToLower() == email, ct);
         if (user is null || string.IsNullOrEmpty(user.PasswordHash))
+        {
+            log.LogDebug("Login miss: user not found or empty password hash for {Email}", email);
             return (false, "invalid_credentials", null);
+        }
 
         var verify = _hasher.VerifyHashedPassword(user, user.PasswordHash, password);
         if (verify == PasswordVerificationResult.Failed)
+        {
+            log.LogDebug("Login miss: bad password for {Email}", email);
             return (false, "invalid_credentials", null);
+        }
+        if (verify == PasswordVerificationResult.SuccessRehashNeeded)
+        {
+            user.PasswordHash = _hasher.HashPassword(user, password);
+            user.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
 
         if (!string.Equals(user.Status, "Active", StringComparison.OrdinalIgnoreCase))
             return (false, "user_inactive", null);
@@ -299,12 +313,30 @@ public static class SuperAdminSeeder
             {
                 Email = email,
                 DisplayName = opts.DisplayName,
-                Status = "Active"
+                Status = "Active",
+                CreatedAt = DateTimeOffset.UtcNow,
+                UpdatedAt = DateTimeOffset.UtcNow
             };
             user.PasswordHash = hasher.HashPassword(user, opts.Password);
             db.Set<IdentityUserEntity>().Add(user);
             await db.SaveChangesAsync(ct);
             log.LogWarning("Seeded SuperAdmin user — change password immediately");
+        }
+        else
+        {
+            // Keep bootstrap password in sync with configuration so first login always works
+            // after reseeds / config changes (empty hash, rotated Auth:SuperAdmin:Password, etc.).
+            var needsHash = string.IsNullOrEmpty(user.PasswordHash);
+            var mismatch = !needsHash
+                && hasher.VerifyHashedPassword(user, user.PasswordHash!, opts.Password) == PasswordVerificationResult.Failed;
+            if (needsHash || mismatch)
+            {
+                user.PasswordHash = hasher.HashPassword(user, opts.Password);
+                user.Status = "Active";
+                user.UpdatedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(ct);
+                log.LogWarning("Re-synced SuperAdmin password hash from Auth:SuperAdmin configuration");
+            }
         }
 
         var role = await db.Set<IdentityRoleEntity>()

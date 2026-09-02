@@ -28,10 +28,8 @@ function LoginInner() {
     setBusy(true)
     setError(null)
 
-    // Stop AuthProvider / 401 handlers from wiping tokens during this flow
-    setAuthBootstrapLock(true)
-    // Drop stale refresh tokens so a parallel refresh cannot race login
-    clearSession()
+    // Drop any stale tokens first (force), then lock so parallel refresh cannot wipe a new session
+    clearSession(true)
     setAuthBootstrapLock(true)
 
     try {
