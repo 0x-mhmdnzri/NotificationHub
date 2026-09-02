@@ -50,7 +50,10 @@ const groups = [
   },
   {
     label: 'Automation',
-    items: [['/workflows', 'Workflows', Workflow, null]] as const,
+    items: [
+      ['/workflows', 'Workflows', Workflow, null],
+      ['/workflows/live', 'Delivery flow', Activity, null],
+    ] as const,
   },
   {
     label: 'Audience',

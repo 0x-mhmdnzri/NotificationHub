@@ -6,32 +6,15 @@ namespace NotificationHub.Host.Middleware;
 /// </summary>
 public static class DualAuthPassThrough
 {
-    static readonly string[] AnonymousAuthExact =
-    [
-        "/api/v1/auth/login",
-        "/api/v1/auth/register",
-        "/api/v1/auth/refresh"
-    ];
-
-    public static bool IsAnonymousAuthPath(string path)
-    {
-        foreach (var p in AnonymousAuthExact)
-        {
-            if (path.Equals(p, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-        return false;
-    }
-
     public static bool ShouldSkipApiKey(HttpContext context)
     {
         var path = context.Request.Path.Value ?? "";
 
-        // Entire human identity surface (login/register/refresh/me/orgs/sessions/…)
+        // Human identity surface
         if (path.StartsWith("/api/v1/auth", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        // Bearer present → let JWT auth handle
+        // Bearer present → let JWT auth handle (admin routes later)
         var auth = context.Request.Headers.Authorization.ToString();
         if (auth.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
             return true;

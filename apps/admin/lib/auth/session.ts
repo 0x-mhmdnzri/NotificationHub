@@ -73,8 +73,8 @@ export function setSession(input: {
   }
 }
 
-export function clearSession(force = false) {
-  if (authBootstrapLock && !force) return
+export function clearSession() {
+  if (authBootstrapLock) return
   memoryAccessToken = undefined
   setAuthMarker(false)
   const store = ss()
