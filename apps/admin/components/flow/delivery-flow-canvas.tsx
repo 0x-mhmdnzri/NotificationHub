@@ -3,19 +3,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Play, Pause, RefreshCw } from 'lucide-react'
-import { flowApi, type FlowEventDto, type FlowItemDto, type FlowNodeState } from '@/lib/api/flow'
+import { flowApi, type FlowEventDto, type FlowNodeState } from '@/lib/api/flow'
 import { cn } from '@/lib/utils'
 import { formatChannel, formatStatus } from '@/lib/ux/labels'
 import { Button } from '@/components/ui/button'
 
-/** Colors aligned to site palette (primary violet, teal success, etc.) */
+/** Colors aligned to site palette */
 const CAT: Record<string, string> = {
-  trigger: '#7C6BF0', // primary
-  api: '#38BDF8', // sky
-  prep: '#84CC16', // lime
-  ai: '#A78BFA', // violet
-  success: '#14B8A6', // teal
-  retry: '#F43F5E', // rose/destructive
+  trigger: '#7C6BF0',
+  api: '#38BDF8',
+  prep: '#84CC16',
+  ai: '#A78BFA',
+  success: '#14B8A6',
+  retry: '#F43F5E',
 }
 
 type Wire = { from: string; to: string; kind: string; label?: string }
@@ -28,15 +28,18 @@ const WIRES: Wire[] = [
   { from: 'dispatch', to: 'failed', kind: 'retry', label: 'error' },
 ]
 
-/** Taller layout so the flow is readable without vertical scroll inside the canvas */
+/** Balanced layout — nodes have clear gaps so wire tails land on edges */
 const LAYOUT: Record<string, { x: number; y: number; w: number; h: number }> = {
-  app: { x: 32, y: 80, w: 160, h: 80 },
-  plugin: { x: 240, y: 80, w: 180, h: 80 },
-  queue: { x: 480, y: 80, w: 160, h: 80 },
-  dispatch: { x: 700, y: 80, w: 160, h: 80 },
-  delivered: { x: 920, y: 32, w: 160, h: 80 },
-  failed: { x: 920, y: 160, w: 160, h: 80 },
+  app: { x: 24, y: 110, w: 168, h: 84 },
+  plugin: { x: 240, y: 110, w: 188, h: 84 },
+  queue: { x: 476, y: 110, w: 168, h: 84 },
+  dispatch: { x: 692, y: 110, w: 168, h: 84 },
+  delivered: { x: 920, y: 36, w: 168, h: 84 },
+  failed: { x: 920, y: 200, w: 168, h: 84 },
 }
+
+const CANVAS_W = 1120
+const CANVAS_H = 320
 
 function formatLag(ms?: number | null) {
   if (ms == null || Number.isNaN(ms)) return '—'
@@ -52,6 +55,19 @@ function statusBucket(status: string): 'queued' | 'sending' | 'delivered' | 'fai
   if (['delivered', 'read'].includes(s)) return 'delivered'
   if (['failed', 'deadletter', 'cancelled', 'suppressed', 'rejected'].includes(s)) return 'failed'
   return 'other'
+}
+
+/** Right-center of source → left-center of target with horizontal-first cubic (clean tails) */
+function pathD(from: string, to: string) {
+  const a = LAYOUT[from]
+  const b = LAYOUT[to]
+  if (!a || !b) return ''
+  const p1 = { x: a.x + a.w, y: a.y + a.h / 2 }
+  const p2 = { x: b.x, y: b.y + b.h / 2 }
+  const dx = p2.x - p1.x
+  const midX = p1.x + dx * 0.5
+  // Elbow-style cubic: horizontal then vertical, endpoints sit exactly on node edges
+  return `M ${p1.x} ${p1.y} C ${midX} ${p1.y}, ${midX} ${p2.y}, ${p2.x} ${p2.y}`
 }
 
 export function DeliveryFlowCanvas() {
@@ -178,8 +194,7 @@ export function DeliveryFlowCanvas() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1fr_280px]">
-        {/* Taller canvas area — no cramped vertical scroll */}
-        <div className="min-h-[420px] overflow-auto rounded-xl border bg-card shadow-sm">
+        <div className="min-h-[360px] overflow-x-auto overflow-y-hidden rounded-xl border bg-card shadow-sm">
           <FlowSvg
             nodes={snap?.nodes ?? []}
             playing={playing && ((snap?.queued ?? 0) > 0 || (snap?.sending ?? 0) > 0)}
@@ -320,10 +335,7 @@ function FlowSvg({
   selected: string | null
   onSelect: (id: string) => void
 }) {
-  const byId = useMemo(() => {
-    const m = new Map(nodes.map((n) => [n.id, n]))
-    return m
-  }, [nodes])
+  const byId = useMemo(() => new Map(nodes.map((n) => [n.id, n])), [nodes])
 
   const dotsRef = useRef<SVGCircleElement[]>([])
   const pathsRef = useRef<SVGPathElement[]>([])
@@ -341,6 +353,7 @@ function FlowSvg({
       pathsRef.current.forEach((path, i) => {
         if (!path) return
         const len = path.getTotalLength()
+        if (len <= 0) return
         const cycle = (t * 0.35 + i * 0.2) % 1
         const pt = path.getPointAtLength(cycle * len)
         const dot = dotsRef.current[i]
@@ -355,19 +368,9 @@ function FlowSvg({
     return () => cancelAnimationFrame(raf.current)
   }, [playing, speed])
 
-  const pathD = (from: string, to: string) => {
-    const a = LAYOUT[from]
-    const b = LAYOUT[to]
-    if (!a || !b) return ''
-    const p1 = { x: a.x + a.w, y: a.y + a.h / 2 }
-    const p2 = { x: b.x, y: b.y + b.h / 2 }
-    const mx = (p1.x + p2.x) / 2
-    return `M ${p1.x} ${p1.y} C ${mx} ${p1.y}, ${mx} ${p2.y}, ${p2.x} ${p2.y}`
-  }
-
   return (
-    <div className="relative min-h-[380px] min-w-[1120px] p-6">
-      <svg width={1120} height={280} className="absolute left-6 top-6">
+    <div className="relative" style={{ width: CANVAS_W, height: CANVAS_H, minWidth: CANVAS_W }}>
+      <svg width={CANVAS_W} height={CANVAS_H} className="absolute inset-0" aria-hidden>
         {WIRES.map((w, i) => {
           const d = pathD(w.from, w.to)
           const color = CAT[w.kind] ?? '#94A3B8'
@@ -382,8 +385,9 @@ function FlowSvg({
                 stroke={color}
                 strokeWidth={w.kind === 'retry' ? 1.6 : 2}
                 strokeDasharray={w.kind === 'retry' ? '6 5' : undefined}
-                opacity={0.85}
+                opacity={0.9}
                 strokeLinecap="round"
+                strokeLinejoin="round"
               />
               <circle
                 ref={(el) => {
