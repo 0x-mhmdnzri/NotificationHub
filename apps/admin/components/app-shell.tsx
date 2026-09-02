@@ -19,7 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <RequireAuth>
       <div className="min-h-screen bg-background">
         <Sidebar />
-        <div className="lg:pl-[270px]">
+        <div className="lg:pe-[270px]">
           <Topbar />
           <main className="min-h-[calc(100vh-72px)]">{children}</main>
         </div>
