@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 import { motion, Reorder } from 'framer-motion'
 import { Plus, Trash2, GitBranch, Clock, Send, Save, Play } from 'lucide-react'
 import Link from 'next/link'
+import { Activity } from 'lucide-react'
 import { PageHeader } from '@/components/page-header'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -100,6 +101,20 @@ export default function WorkflowsPage() {
             </Link>
           }
         />
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Activity size={16} className="text-teal-600" />
+          Live delivery path — queue, plugins, latency, and humanized errors
+        </div>
+        <Link
+          href="/workflows/live"
+          className="text-sm font-medium text-primary underline-offset-4 hover:underline"
+        >
+          Open delivery flow
+        </Link>
+      </div>
+
 
         <div className="grid gap-5 xl:grid-cols-[1fr_360px]">
           <Card>

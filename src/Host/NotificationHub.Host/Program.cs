@@ -50,6 +50,7 @@ using NotificationHub.Application.Features.Workflows.GetTimeline;
 using NotificationHub.Application.Features.Workflows.Save;
 using NotificationHub.Application.Features.Workflows.Start;
 using NotificationHub.Core.Activity;
+using NotificationHub.Core.DeliveryFlow;
 using NotificationHub.Core.Analytics;
 using NotificationHub.Core.Audit;
 using NotificationHub.Core.Auth;
@@ -356,6 +357,7 @@ builder.Services.AddInfrastructureCqrs();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<IRequestContext, HttpRequestContext>();
 builder.Services.AddNotificationHubJwtBearer(builder.Configuration);
+builder.Services.AddScoped<INotificationFlowService, NotificationFlowService>();
 builder.Services.AddScoped<IMembershipService, MembershipService>();
 builder.Services.AddScoped<ISessionService, SessionService>();
 
@@ -556,6 +558,18 @@ app.MapAccountAuthEndpoints();
 app.MapIdentityAuthEndpoints();
 app.MapOrganizationAdminEndpoints();
 app.MapSessionEndpoints();
+
+
+app.MapGet("/api/v1/notifications/flow", async (HttpContext http, INotificationFlowService flow, CancellationToken ct) =>
+{
+    var auth = http.GetAuthContext();
+    if (auth is null) return Results.Unauthorized();
+    var take = 80;
+    if (int.TryParse(http.Request.Query["take"], out var tq)) take = tq;
+    var tenant = auth.IsAdmin ? http.Request.Query["tenantId"].FirstOrDefault() ?? auth.TenantId : auth.TenantId;
+    var snap = await flow.GetSnapshotAsync(tenant, take, ct);
+    return Results.Ok(snap);
+}).WithName("GetNotificationFlow");
 
 app.MapGet("/api/v1/notifications/{id:guid}", async (Guid id, HttpContext http, ISender sender, CancellationToken ct) =>
 {
