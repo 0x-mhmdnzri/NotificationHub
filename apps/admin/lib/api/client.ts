@@ -6,6 +6,7 @@ import {
   getTenantId,
   setSession,
   clearSession,
+  isAuthBootstrapLocked,
 } from '@/lib/auth/session'
 
 export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
@@ -54,7 +55,7 @@ async function tryRefresh(): Promise<string | undefined> {
       cache: 'no-store',
     })
     if (!response.ok) {
-      clearSession()
+      if (!isAuthBootstrapLocked()) clearSession()
       return undefined
     }
     const data = (await response.json()) as {
@@ -66,13 +67,13 @@ async function tryRefresh(): Promise<string | undefined> {
     const accessToken = data.accessToken ?? data.AccessToken
     const refreshToken = data.refreshToken ?? data.RefreshToken
     if (!accessToken) {
-      clearSession()
+      if (!isAuthBootstrapLocked()) clearSession()
       return undefined
     }
     setSession({ accessToken, refreshToken: refreshToken ?? rt })
     return accessToken
   } catch {
-    clearSession()
+    if (!isAuthBootstrapLocked()) clearSession()
     return undefined
   }
 }
@@ -109,7 +110,7 @@ export async function request<T>(path: string, options: ApiRequestOptions = {}):
     if (next) {
       return request<T>(path, { ...options, accessToken: next, _retried: true })
     }
-    clearSession()
+    if (!isAuthBootstrapLocked()) clearSession()
     if (typeof window !== 'undefined' && !path.includes('/auth/login') && !path.includes('/auth/refresh')) {
       const nextPath = window.location.pathname + window.location.search
       if (!window.location.pathname.startsWith('/login')) {

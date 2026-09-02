@@ -1,12 +1,12 @@
 /**
  * Session storage strategy (SPA, pre-BFF):
- * - Access token: in-memory only (not durable across full page reloads until refresh).
- * - Refresh token + tenant + PKCE: sessionStorage (tab-scoped, not shared across tabs/origins as freely as localStorage).
+ * - Access + refresh tokens: sessionStorage (tab-scoped).
  * - Auth presence cookie (non-secret): lets edge middleware redirect unauthenticated users.
  *
  * Production target: BFF with httpOnly Secure SameSite cookies.
  */
 
+const ACCESS_TOKEN_KEY = 'nh.at'
 const REFRESH_TOKEN_KEY = 'nh.rt'
 const TENANT_ID_KEY = 'nh.tid'
 const PKCE_VERIFIER_KEY = 'nh.pkce'
@@ -14,6 +14,8 @@ const OIDC_STATE_KEY = 'nh.oidc_state'
 const AUTH_MARKER = 'nh_auth'
 
 let memoryAccessToken: string | undefined
+/** Prevents AuthProvider refresh from clearing a login that just succeeded. */
+let authBootstrapLock = false
 
 function ss(): Storage | null {
   if (typeof window === 'undefined') return null
@@ -34,8 +36,19 @@ function setAuthMarker(on: boolean) {
   }
 }
 
+export function setAuthBootstrapLock(locked: boolean) {
+  authBootstrapLock = locked
+}
+
+export function isAuthBootstrapLocked() {
+  return authBootstrapLock
+}
+
 export function getAccessToken(): string | undefined {
-  return memoryAccessToken
+  if (memoryAccessToken) return memoryAccessToken
+  const fromStore = ss()?.getItem(ACCESS_TOKEN_KEY) ?? undefined
+  if (fromStore) memoryAccessToken = fromStore
+  return fromStore
 }
 
 export function getRefreshToken(): string | undefined {
@@ -51,26 +64,27 @@ export function setSession(input: {
   refreshToken?: string
   tenantId?: string
 }) {
+  const store = ss()
   if (input.accessToken) {
     memoryAccessToken = input.accessToken
     setAuthMarker(true)
+    store?.setItem(ACCESS_TOKEN_KEY, input.accessToken)
   }
-  const store = ss()
-  if (!store) return
-  if (input.refreshToken) store.setItem(REFRESH_TOKEN_KEY, input.refreshToken)
-  if (input.tenantId) store.setItem(TENANT_ID_KEY, input.tenantId)
+  if (input.refreshToken) store?.setItem(REFRESH_TOKEN_KEY, input.refreshToken)
+  if (input.tenantId) store?.setItem(TENANT_ID_KEY, input.tenantId)
 }
 
 export function clearSession() {
+  if (authBootstrapLock) return
   memoryAccessToken = undefined
   setAuthMarker(false)
   const store = ss()
   if (!store) return
+  store.removeItem(ACCESS_TOKEN_KEY)
   store.removeItem(REFRESH_TOKEN_KEY)
   store.removeItem(TENANT_ID_KEY)
   store.removeItem(PKCE_VERIFIER_KEY)
   store.removeItem(OIDC_STATE_KEY)
-  // purge legacy localStorage keys if present
   try {
     window.localStorage.removeItem('notificationhub.accessToken')
     window.localStorage.removeItem('notificationhub.refreshToken')
@@ -119,4 +133,11 @@ export function tenantFromAccessToken(accessToken?: string): string | undefined 
   } catch {
     return undefined
   }
+}
+
+export function isPublicAuthPath(pathname?: string): boolean {
+  const p = pathname ?? (typeof window !== 'undefined' ? window.location.pathname : '')
+  return ['/login', '/auth/callback', '/auth/accept-invite'].some(
+    (x) => p === x || p.startsWith(`${x}/`),
+  )
 }

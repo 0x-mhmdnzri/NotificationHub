@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { identityApi, type AuthMe, type OrgMembership } from '@/lib/api/identity'
 import {
@@ -8,6 +9,8 @@ import {
   getRefreshToken,
   setSession,
   clearSession,
+  isPublicAuthPath,
+  isAuthBootstrapLocked,
 } from '@/lib/auth/session'
 import { hasPermission } from '@/lib/auth/permissions'
 
@@ -28,43 +31,55 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [tokenReady, setTokenReady] = useState(false)
   const queryClient = useQueryClient()
+  const pathname = usePathname()
+  const onPublic = isPublicAuthPath(pathname)
 
   useEffect(() => {
     void (async () => {
+      // On login/register pages never auto-refresh or clearSession — avoids racing the form submit.
+      if (onPublic || isAuthBootstrapLocked()) {
+        setTokenReady(true)
+        return
+      }
+
       if (!getAccessToken()) {
         const rt = getRefreshToken()
         if (rt) {
           try {
             const tokens = await identityApi.refresh(rt)
-            setSession({
-              accessToken: tokens.accessToken,
-              refreshToken: tokens.refreshToken,
-            })
+            if (tokens?.accessToken) {
+              setSession({
+                accessToken: tokens.accessToken,
+                refreshToken: tokens.refreshToken ?? rt,
+              })
+            }
           } catch {
-            clearSession()
+            if (!isAuthBootstrapLocked()) clearSession()
           }
         }
       }
       setTokenReady(true)
     })()
-  }, [])
+  }, [onPublic])
+
+  const hasToken = tokenReady && !!getAccessToken()
 
   const meQuery = useQuery({
     queryKey: ['auth', 'me'],
     queryFn: () => identityApi.me(),
-    enabled: tokenReady && !!getAccessToken(),
+    enabled: !onPublic && hasToken,
     retry: false,
   })
 
   const orgsQuery = useQuery({
     queryKey: ['auth', 'organizations'],
     queryFn: () => identityApi.organizations(),
-    enabled: tokenReady && !!getAccessToken(),
+    enabled: !onPublic && hasToken,
     retry: false,
   })
 
-  const login = useCallback((_returnTo?: string) => {
-    const next = _returnTo ?? '/dashboard'
+  const login = useCallback((returnTo?: string) => {
+    const next = returnTo ?? '/dashboard'
     window.location.href = `/login?next=${encodeURIComponent(next)}`
   }, [])
 
@@ -109,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       me: meQuery.data,
       organizations: orgsQuery.data ?? [],
-      isLoading: !tokenReady || meQuery.isLoading || orgsQuery.isLoading,
+      isLoading: !tokenReady || (!onPublic && hasToken && (meQuery.isLoading || orgsQuery.isLoading)),
       isAuthenticated: !!getAccessToken() && !!meQuery.data,
       can,
       login,
@@ -117,7 +132,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       switchOrganization,
       refreshMe,
     }),
-    [meQuery.data, meQuery.isLoading, orgsQuery.data, orgsQuery.isLoading, tokenReady, can, login, logout, switchOrganization, refreshMe],
+    [
+      meQuery.data,
+      meQuery.isLoading,
+      orgsQuery.data,
+      orgsQuery.isLoading,
+      tokenReady,
+      onPublic,
+      hasToken,
+      can,
+      login,
+      logout,
+      switchOrganization,
+      refreshMe,
+    ],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
