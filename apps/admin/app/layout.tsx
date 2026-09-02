@@ -1,6 +1,7 @@
 import './globals.css'
 import { AppProviders } from '@/providers/app-providers'
 import { AppShell } from '@/components/app-shell'
+import { FontLoader } from '@/components/font-loader'
 
 export const metadata = {
   title: 'ناتیفیکیش‌هاب',
@@ -11,6 +12,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="fa" dir="rtl" suppressHydrationWarning>
       <body className="font-sans">
+        <FontLoader />
         <AppProviders>
           <AppShell>{children}</AppShell>
         </AppProviders>
