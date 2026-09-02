@@ -1,24 +1,29 @@
 using System.Text;
-using System.Security.Cryptography;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using NotificationHub.Core.Auth;
 using NotificationHub.Core.Identity;
 using NotificationHub.Host.Auth;
-using NotificationHub.Host.Middleware;
 
 namespace NotificationHub.Host.Security;
 
 public static class JwtAuthExtensions
 {
-    public static IServiceCollection AddNotificationHubJwtBearer(this IServiceCollection services, IConfiguration config)
+    /// <summary>
+    /// JWT Bearer for human clients. API Key middleware remains for machine clients.
+    /// Supports local HS256 (Auth:Jwt) and optional external Authority (Auth:JwtBearer).
+    /// </summary>
+    public static IServiceCollection AddNotificationHubJwtBearer(
+        this IServiceCollection services, IConfiguration config)
     {
-        services.Configure<JwtTokenOptions>(config.GetSection(JwtTokenOptions.SectionName));
         services.Configure<JwtBearerAuthOptions>(config.GetSection(JwtBearerAuthOptions.SectionName));
+        services.Configure<JwtTokenOptions>(config.GetSection(JwtTokenOptions.SectionName));
         services.Configure<SuperAdminSeedOptions>(config.GetSection(SuperAdminSeedOptions.SectionName));
-        services.AddSingleton<JwtSecurityContextFactory>();
-        services.AddScoped(sp => sp.GetRequiredService<JwtSecurityContextFactory>().Create());
+
+        services.AddScoped<ITenantContext, JwtTenantContext>();
+        services.AddScoped<JwtSecurityContextFactory>();
+        services.AddScoped<ISecurityContext>(sp => sp.GetRequiredService<JwtSecurityContextFactory>().Create());
         services.AddScoped<AccountAuthService>();
 
         var local = config.GetSection(JwtTokenOptions.SectionName).Get<JwtTokenOptions>() ?? new JwtTokenOptions();
@@ -47,19 +52,13 @@ public static class JwtAuthExtensions
                     NameClaimType = "sub",
                     RoleClaimType = "role"
                 };
-                o.Events = AnonymousAuthJwtEvents();
             });
         }
         else
         {
-            // MUST match AccountAuthService.IssueTokensAsync key derivation
-            var keyBytes = Encoding.UTF8.GetBytes(local.SigningKey ?? string.Empty);
+            var keyBytes = Encoding.UTF8.GetBytes(local.SigningKey);
             if (keyBytes.Length < 32)
-                keyBytes = SHA256.HashData(keyBytes.Length == 0
-                    ? "NotificationHub.DevSigningKey"u8.ToArray()
-                    : keyBytes);
-            else if (keyBytes.Length > 64)
-                keyBytes = keyBytes.AsSpan(0, 64).ToArray();
+                keyBytes = System.Security.Cryptography.SHA256.HashData(keyBytes);
 
             auth.AddJwtBearer(o =>
             {
@@ -76,7 +75,6 @@ public static class JwtAuthExtensions
                     RoleClaimType = "role",
                     ClockSkew = TimeSpan.FromMinutes(1)
                 };
-                o.Events = AnonymousAuthJwtEvents();
             });
         }
 
@@ -86,28 +84,4 @@ public static class JwtAuthExtensions
 
         return services;
     }
-
-    /// <summary>
-    /// Never let a leftover/invalid Bearer token challenge anonymous auth endpoints.
-    /// </summary>
-    static JwtBearerEvents AnonymousAuthJwtEvents() => new()
-    {
-        OnMessageReceived = context =>
-        {
-            var path = context.Request.Path.Value ?? "";
-            if (DualAuthPassThrough.IsAnonymousAuthPath(path))
-                context.Token = null;
-            return Task.CompletedTask;
-        },
-        OnChallenge = context =>
-        {
-            var path = context.Request.Path.Value ?? "";
-            if (DualAuthPassThrough.IsAnonymousAuthPath(path))
-            {
-                // Endpoint handles its own 401 body (invalid_credentials, etc.)
-                context.HandleResponse();
-            }
-            return Task.CompletedTask;
-        }
-    };
 }
