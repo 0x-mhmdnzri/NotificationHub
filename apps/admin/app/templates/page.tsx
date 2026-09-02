@@ -8,21 +8,11 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import { TemplateEditor } from '@/components/template-editor'
 import { useTemplates } from '@/hooks/use-templates'
-import { templates } from '@/lib/mock'
 import { formatChannel, templateTitle } from '@/lib/ux/labels'
 import type { TemplateDefinition } from '@/types/api'
-
-const fallback: TemplateDefinition[] = templates.map((x) => ({
-  key: x[0],
-  subject: x[1],
-  channel: x[2],
-  locale: x[3],
-  version: Number(x[4]) || 1,
-  isActive: x[5] === 'Active',
-  body: x[1],
-}))
 
 export default function TemplatesPage() {
   const [channel, setChannel] = useState('all')
@@ -32,13 +22,15 @@ export default function TemplatesPage() {
   const result = useTemplates(channel === 'all' ? undefined : channel)
 
   const rows = useMemo(() => {
-    const data = result.data?.length ? result.data : fallback
+    const data = result.data ?? []
     return data.filter(
       (x) =>
         (channel === 'all' || x.channel === channel) &&
         `${templateTitle(x)} ${x.key} ${x.locale}`.toLowerCase().includes(q.toLowerCase()),
     )
   }, [result.data, channel, q])
+
+  const loading = result.isLoading
 
   const edit = (x: TemplateDefinition) => {
     setSelected(x)
@@ -65,9 +57,19 @@ export default function TemplatesPage() {
         />
 
         <div className="mb-5 grid gap-3 md:grid-cols-3">
-          <Metric icon={FileText} label="Templates" value={String(rows.length)} />
-          <Metric icon={Sparkles} label="Active" value={String(rows.filter((x) => x.isActive !== false).length)} />
-          <Metric icon={SlidersHorizontal} label="Channels" value={String(new Set(rows.map((x) => x.channel)).size)} />
+          {loading ? (
+            <>
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-[72px] w-full rounded-xl" />
+              ))}
+            </>
+          ) : (
+            <>
+              <Metric icon={FileText} label="Templates" value={String(rows.length)} />
+              <Metric icon={Sparkles} label="Active" value={String(rows.filter((x) => x.isActive !== false).length)} />
+              <Metric icon={SlidersHorizontal} label="Channels" value={String(new Set(rows.map((x) => x.channel)).size)} />
+            </>
+          )}
         </div>
 
         <Card className="overflow-hidden">
@@ -108,36 +110,50 @@ export default function TemplatesPage() {
             </div>
 
             <div>
-              {rows.map((x, i) => (
-                <motion.button
-                  key={`${x.key}-${x.channel}-${x.locale}`}
-                  type="button"
-                  onClick={() => edit(x)}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.025 }}
-                  className="grid w-full gap-2 border-b px-5 py-4 text-left transition hover:bg-muted/30 md:grid-cols-[1.6fr_.7fr_.7fr_.45fr_.5fr_auto] md:items-center"
-                >
-                  <div>
-                    <div className="text-sm font-semibold">{templateTitle(x)}</div>
-                    <div className="mt-1 truncate text-xs text-muted-foreground">{x.subject || 'No subject'}</div>
-                  </div>
-                  <div>
-                    <Badge variant="outline">{formatChannel(x.channel)}</Badge>
-                  </div>
-                  <div className="text-sm text-muted-foreground">{x.locale}</div>
-                  <div className="text-sm">v{x.version ?? 1}</div>
-                  <div>
-                    <Badge variant={x.isActive === false ? 'default' : 'success'}>
-                      {x.isActive === false ? 'Inactive' : 'Active'}
-                    </Badge>
-                  </div>
-                  <div className="text-xs text-muted-foreground">Edit</div>
-                </motion.button>
-              ))}
-              {!rows.length && (
+              {loading && (
+                <div className="space-y-0">
+                  {[0, 1, 2, 3, 4, 5].map((i) => (
+                    <div key={i} className="border-b px-5 py-4">
+                      <Skeleton className="h-12 w-full" />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!loading &&
+                rows.map((x, i) => (
+                  <motion.button
+                    key={`${x.key}-${x.channel}-${x.locale}`}
+                    type="button"
+                    onClick={() => edit(x)}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.025 }}
+                    className="grid w-full gap-2 border-b px-5 py-4 text-left transition hover:bg-muted/30 md:grid-cols-[1.6fr_.7fr_.7fr_.45fr_.5fr_auto] md:items-center"
+                  >
+                    <div>
+                      <div className="text-sm font-semibold">{templateTitle(x)}</div>
+                      <div className="mt-1 truncate text-xs text-muted-foreground">{x.subject || 'No subject'}</div>
+                    </div>
+                    <div>
+                      <Badge variant="outline">{formatChannel(x.channel)}</Badge>
+                    </div>
+                    <div className="text-sm text-muted-foreground">{x.locale}</div>
+                    <div className="text-sm">v{x.version ?? 1}</div>
+                    <div>
+                      <Badge variant={x.isActive === false ? 'default' : 'success'}>
+                        {x.isActive === false ? 'Inactive' : 'Active'}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">Edit</div>
+                  </motion.button>
+                ))}
+
+              {!loading && !rows.length && (
                 <div className="p-12 text-center text-sm text-muted-foreground">
-                  No templates match your search. Try another channel or create a new template.
+                  {result.isError
+                    ? 'Could not load templates. Check API auth and tenant.'
+                    : 'No templates yet. Create one to get started.'}
                 </div>
               )}
             </div>
