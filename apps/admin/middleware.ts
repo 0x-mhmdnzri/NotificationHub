@@ -1,15 +1,18 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-const PUBLIC_PREFIXES = ['/login', '/auth/callback', '/auth/accept-invite']
+/**
+ * UX gate only. Cookie `nh_auth` is a forgeable presence marker set by the SPA.
+ * Authorization is enforced exclusively by the API via JWT Bearer validation.
+ * Do not treat this middleware as a security boundary for data access.
+ */
+const PUBLIC_PREFIXES = ['/login', '/auth/accept-invite']
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isPublic = PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
   if (isPublic) return NextResponse.next()
 
-  // Non-secret presence marker set by the SPA after login (defense in depth).
-  // Authoritative auth remains server-side JWT validation on the API.
   const marker = request.cookies.get('nh_auth')?.value
   if (!marker) {
     const login = new URL('/login', request.url)

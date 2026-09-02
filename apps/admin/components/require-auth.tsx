@@ -32,6 +32,7 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+/** UI progressive disclosure only — API must enforce the same permission. */
 export function RequirePermission({
   permission,
   children,

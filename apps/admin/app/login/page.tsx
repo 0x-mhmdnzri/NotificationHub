@@ -8,7 +8,6 @@ import {
   setSession,
   clearSession,
   safeReturnPath,
-  tenantFromAccessToken,
   setAuthBootstrapLock,
 } from '@/lib/auth/session'
 import { ApiError } from '@/lib/api/errors'
@@ -58,10 +57,7 @@ function LoginInner() {
       setSession({
         accessToken,
         refreshToken,
-        tenantId:
-          tokens.organizationId ??
-          (typeof tokens.organizationId === 'string' ? tokens.organizationId : undefined) ??
-          tenantFromAccessToken(accessToken),
+        tenantId: tokens.organizationId ? String(tokens.organizationId) : undefined,
       })
 
       // Hard navigation so middleware sees nh_auth cookie and memory/storage are consistent

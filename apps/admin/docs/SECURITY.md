@@ -1,16 +1,17 @@
 # Admin UI security posture
 
-## Fixed in `sec/admin-nextjs-harden`
+## Current model
+- SPA talks to API with Bearer access tokens (memory) + refresh token (sessionStorage).
+- Next.js middleware `nh_auth` cookie is a **UX gate only**, not authorization.
+- Server API enforces JWT + RBAC/ABAC.
 
-| Issue | Mitigation |
-|-------|------------|
-| #28 Tokens in localStorage | Access token in memory; refresh/PKCE in sessionStorage; purge legacy keys |
-| #29 Missing headers | CSP, HSTS (prod), XFO DENY, nosniff, Referrer-Policy, Permissions-Policy |
-| #30 Open redirect | `safeReturnPath` allows only same-app relative paths |
-| #31 Client-only auth shell | `middleware.ts` + non-secret `nh_auth` marker |
-| #32 API path injection | `apiUrl` rejects absolute URLs; webhook HTTPS + private-IP block |
-| #33 Insecure defaults | `poweredByHeader: false`, no prod source maps, hardened env example |
+## Mitigations applied
+- Access token not persisted to web storage
+- CSP without `unsafe-eval` in production; HSTS in production
+- OIDC SPA client removed (single password/API auth path)
+- Login/register/refresh rate-limited server-side
+- Webhook URLs validated client (UX) and server (DNS + private range deny)
+- Client RBAC is progressive disclosure only
 
-## Residual risk
-
-SPA cannot fully protect refresh tokens from XSS. Target architecture: Next.js BFF with httpOnly Secure SameSite cookies and server-side token exchange.
+## Target: BFF
+Move session to httpOnly Secure SameSite cookies via Next.js Route Handlers proxying the API, eliminating browser-held refresh tokens (closes residual XSS session-theft risk).
