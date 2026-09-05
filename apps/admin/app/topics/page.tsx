@@ -16,7 +16,7 @@ import { formatChannel, friendlyError, humanizeKey } from '@/lib/ux/labels'
 export default function TopicsPage() {
   const { tenantId } = useTenant()
   const [key, setKey] = useState('product-updates')
-  const [name, setName] = useState('Product updates')
+  const [name, setName] = useState('به‌روزرسانی محصول')
   const [subscriberId, setSubscriberId] = useState('')
   const [channel, setChannel] = useState('push')
   const [address, setAddress] = useState('')
@@ -29,9 +29,9 @@ export default function TopicsPage() {
     setBusy(true)
     try {
       await resourcesApi.topics.save({ key, name, tenantId, isActive: true })
-      setToast({ tone: 'success', title: 'Topic saved', description: name })
+      setToast({ tone: 'success', title: 'تاپیک ذخیره شد', description: name })
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not save topic', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'ذخیره تاپیک ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -41,9 +41,9 @@ export default function TopicsPage() {
     setBusy(true)
     try {
       await resourcesApi.topics.subscribe(key, { subscriberId, channel, address: address || undefined, tenantId })
-      setToast({ tone: 'success', title: 'Subscribed', description: subscriberId })
+      setToast({ tone: 'success', title: 'عضویت ثبت شد', description: subscriberId })
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not subscribe', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'عضویت ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -54,10 +54,10 @@ export default function TopicsPage() {
     try {
       await resourcesApi.topics.unsubscribe(key, subscriberId, tenantId)
       setConfirmUnsub(false)
-      setToast({ tone: 'success', title: 'Unsubscribed' })
+      setToast({ tone: 'success', title: 'عضویت لغو شد' })
       await loadSubs()
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not unsubscribe', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'لغو عضویت ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -69,7 +69,7 @@ export default function TopicsPage() {
       const res = (await resourcesApi.topics.subscribers(key, tenantId)) as Array<Record<string, unknown>>
       setSubscribers(Array.isArray(res) ? res : [])
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not load subscribers', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'بارگذاری اعضا ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -80,41 +80,41 @@ export default function TopicsPage() {
       <ToastHost toast={toast} onClose={() => setToast(null)} />
       <div className="mx-auto max-w-[1100px]">
         <PageHeader
-          eyebrow="Content"
-          title="Topics"
-          description="Topics people can subscribe to — product updates, alerts, and more."
+          eyebrow="محتوا"
+          title="تاپیک‌ها"
+          description="موضوعاتی که افراد می‌توانند در آن‌ها عضو شوند — به‌روزرسانی محصول، هشدارها و بیشتر."
         />
         <div className="grid gap-5 lg:grid-cols-2">
           <Card>
             <CardContent className="space-y-4 p-6">
-              <h2 className="font-semibold">Topic</h2>
-              <Field label="Name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-              <Field label="Code" hint="Internal identifier"><Input value={key} onChange={(e) => setKey(e.target.value)} /></Field>
-              <Button disabled={busy || !key} onClick={() => void saveTopic()}>Save topic</Button>
+              <h2 className="font-semibold">تاپیک</h2>
+              <Field label="نام"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+              <Field label="کد" hint="شناسه داخلی"><Input value={key} onChange={(e) => setKey(e.target.value)} /></Field>
+              <Button disabled={busy || !key} onClick={() => void saveTopic()}>ذخیره تاپیک</Button>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="space-y-4 p-6">
-              <h2 className="font-semibold">Subscription</h2>
-              <Field label="Subscriber"><Input value={subscriberId} onChange={(e) => setSubscriberId(e.target.value)} placeholder="User ID" /></Field>
-              <Field label="Channel">
+              <h2 className="font-semibold">عضویت</h2>
+              <Field label="عضو"><Input value={subscriberId} onChange={(e) => setSubscriberId(e.target.value)} placeholder="شناسه کاربر" /></Field>
+              <Field label="کانال">
                 <Select value={channel} onChange={(e) => setChannel(e.target.value)} className="w-full">
-                  <option value="push">Push</option>
-                  <option value="email">Email</option>
-                  <option value="sms">SMS</option>
+                  <option value="push">پوش</option>
+                  <option value="email">ایمیل</option>
+                  <option value="sms">پیامک</option>
                 </Select>
               </Field>
-              <Field label="Address" hint="Email or phone when needed"><Input value={address} onChange={(e) => setAddress(e.target.value)} /></Field>
+              <Field label="آدرس" hint="ایمیل یا موبایل در صورت نیاز"><Input value={address} onChange={(e) => setAddress(e.target.value)} /></Field>
               <div className="flex flex-wrap gap-2">
-                <Button disabled={busy || !subscriberId} onClick={() => void subscribe()}>Subscribe</Button>
-                <Button disabled={busy || !subscriberId} variant="outline" onClick={() => setConfirmUnsub(true)}>Unsubscribe</Button>
-                <Button disabled={busy} variant="ghost" onClick={() => void loadSubs()}>Show subscribers</Button>
+                <Button disabled={busy || !subscriberId} onClick={() => void subscribe()}>عضویت</Button>
+                <Button disabled={busy || !subscriberId} variant="outline" onClick={() => setConfirmUnsub(true)}>لغو عضویت</Button>
+                <Button disabled={busy} variant="ghost" onClick={() => void loadSubs()}>نمایش اعضا</Button>
               </div>
               <div className="space-y-2">
                 {subscribers.map((s, i) => (
                   <div key={i} className="flex justify-between rounded-xl border p-3 text-sm">
-                    <span>{String(s.subscriberId ?? s.userId ?? s.id ?? 'Subscriber')}</span>
+                    <span>{String(s.subscriberId ?? s.userId ?? s.id ?? 'عضو')}</span>
                     <Badge variant="outline">{formatChannel(String(s.channel ?? ''))}</Badge>
                   </div>
                 ))}
@@ -127,12 +127,12 @@ export default function TopicsPage() {
       <ConfirmDialog
         open={confirmUnsub}
         onOpenChange={setConfirmUnsub}
-        title="Unsubscribe this person?"
-        confirmLabel="Yes, unsubscribe"
+        title="عضویت این فرد لغو شود؟"
+        confirmLabel="بله، لغو شود"
         destructive
         busy={busy}
         onConfirm={unsubscribe}
-        description={`They will stop receiving “${name || humanizeKey(key)}” on ${formatChannel(channel)}.`}
+        description={`دیگر «${name || humanizeKey(key)}» را از طریق ${formatChannel(channel)} دریافت نمی‌کند.`}
       />
     </div>
   )
