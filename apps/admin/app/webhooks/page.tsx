@@ -12,10 +12,10 @@ import { useTenant } from '@/providers/tenant-provider'
 import { friendlyError } from '@/lib/ux/labels'
 
 const EVENT_OPTIONS = [
-  { id: 'notification.sent', label: 'Message accepted' },
-  { id: 'notification.delivered', label: 'Message delivered' },
-  { id: 'notification.failed', label: 'Message failed' },
-  { id: 'notification.opened', label: 'Message opened' },
+  { id: 'notification.sent', label: 'پیام پذیرفته شد' },
+  { id: 'notification.delivered', label: 'پیام تحویل شد' },
+  { id: 'notification.failed', label: 'پیام ناموفق بود' },
+  { id: 'notification.opened', label: 'پیام باز شد' },
 ]
 
 export default function WebhooksPage() {
@@ -38,8 +38,8 @@ export default function WebhooksPage() {
     if (!isAllowedHttpsUrl(url)) {
       setToast({
         tone: 'error',
-        title: 'Invalid endpoint',
-        description: 'Use a public https:// URL. Localhost and private networks are not allowed.',
+        title: 'آدرس نامعتبر',
+        description: 'از یک URL عمومی https:// استفاده کنید. localhost و شبکه خصوصی مجاز نیستند.',
       })
       return
     }
@@ -54,12 +54,12 @@ export default function WebhooksPage() {
       })
       setToast({
         tone: 'success',
-        title: 'Webhook connected',
-        description: 'Your endpoint will receive the selected events.',
+        title: 'وب‌هوک متصل شد',
+        description: 'نقطه پایانی شما رویدادهای انتخاب‌شده را دریافت می‌کند.',
       })
       setSecret('')
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not create webhook', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'ایجاد وب‌هوک ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -70,20 +70,20 @@ export default function WebhooksPage() {
       <ToastHost toast={toast} onClose={() => setToast(null)} />
       <div className="mx-auto max-w-[800px]">
         <PageHeader
-          eyebrow="Integrations"
-          title="Webhooks"
-          description="Notify your systems when delivery events happen."
+          eyebrow="یکپارچه‌سازی"
+          title="وب‌هوک‌ها"
+          description="وقتی رویدادهای تحویل رخ می‌دهد، سیستم‌های خود را مطلع کنید."
         />
         <Card>
           <CardContent className="space-y-5 p-6">
-            <Field label="Your endpoint URL">
+            <Field label="آدرس نقطه پایانی شما">
               <Input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://api.yourapp.com/hooks/notifications"
               />
             </Field>
-            <Field label="Signing secret" hint="Shown only while creating — keep it private">
+            <Field label="رمز امضا" hint="فقط هنگام ایجاد نمایش داده می‌شود — محرمانه نگه دارید">
               <Input
                 type="password"
                 value={secret}
@@ -92,7 +92,7 @@ export default function WebhooksPage() {
               />
             </Field>
             <div>
-              <div className="mb-2 text-sm font-medium">Events to send</div>
+              <div className="mb-2 text-sm font-medium">رویدادهای ارسالی</div>
               <div className="space-y-2">
                 {EVENT_OPTIONS.map((ev) => (
                   <label key={ev.id} className="flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm">
@@ -108,7 +108,7 @@ export default function WebhooksPage() {
               </div>
             </div>
             <Button disabled={busy || !url || !events.length} onClick={() => void create()}>
-              Connect webhook
+              اتصال وب‌هوک
             </Button>
           </CardContent>
         </Card>

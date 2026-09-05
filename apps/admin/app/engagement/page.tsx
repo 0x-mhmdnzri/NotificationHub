@@ -15,12 +15,12 @@ import { useTenant } from '@/providers/tenant-provider'
 import { formatChannel, formatDateTime, formatStatus, friendlyError } from '@/lib/ux/labels'
 
 const eventLabel: Record<string, string> = {
-  delivered: 'Delivered',
-  opened: 'Opened',
-  clicked: 'Clicked',
-  failed: 'Failed',
-  unsubscribed: 'Unsubscribed',
-  bounced: 'Bounced',
+  delivered: 'تحویل‌شده',
+  opened: 'بازشده',
+  clicked: 'کلیک‌شده',
+  failed: 'ناموفق',
+  unsubscribed: 'لغو عضویت',
+  bounced: 'برگشت‌خورده',
 }
 
 export default function EngagementPage() {
@@ -58,7 +58,7 @@ export default function EngagementPage() {
       }
       setStats(nums)
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not load stats', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'بارگذاری آمار ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -75,9 +75,9 @@ export default function EngagementPage() {
         tenantId,
         occurredAt: new Date().toISOString(),
       })
-      setToast({ tone: 'success', title: 'Event recorded', description: eventLabel[eventType] || eventType })
+      setToast({ tone: 'success', title: 'رویداد ثبت شد', description: eventLabel[eventType] || eventType })
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not record event', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'ثبت رویداد ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -90,7 +90,7 @@ export default function EngagementPage() {
       const res = (await resourcesApi.engagement.list(notificationId)) as Array<Record<string, unknown>>
       setEvents(Array.isArray(res) ? res : [])
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not load events', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'بارگذاری رویدادها ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -101,14 +101,14 @@ export default function EngagementPage() {
       <ToastHost toast={toast} onClose={() => setToast(null)} />
       <div className="mx-auto max-w-[1200px]">
         <PageHeader
-          eyebrow="Analytics"
-          title="Engagement"
-          description="See how people interact with your messages."
+          eyebrow="تحلیل‌ها"
+          title="تعامل"
+          description="ببینید افراد چگونه با پیام‌های شما تعامل می‌کنند."
         />
 
         <div className="mb-5 flex flex-wrap items-end gap-3">
           <div className="flex gap-1 rounded-xl border bg-muted/30 p-1">
-            {([['7d', 'Last 7 days'], ['30d', 'Last 30 days'], ['custom', 'Custom']] as const).map(([k, label]) => (
+            {([['7d', '۷ روز اخیر'], ['30d', '۳۰ روز اخیر'], ['custom', 'سفارشی']] as const).map(([k, label]) => (
               <button
                 key={k}
                 type="button"
@@ -125,48 +125,48 @@ export default function EngagementPage() {
               <Input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} />
             </>
           )}
-          <Button disabled={busy} onClick={() => void loadStats()}>Update overview</Button>
+          <Button disabled={busy} onClick={() => void loadStats()}>بروزرسانی نمای کلی</Button>
         </div>
 
         <div className="grid gap-4 md:grid-cols-3">
-          <StatCard label="Opens" value={String(stats?.opened ?? stats?.opens ?? '—')} change="From selected range" icon={<BarChart3 size={18} />} />
-          <StatCard label="Clicks" value={String(stats?.clicked ?? stats?.clicks ?? '—')} change="From selected range" icon={<BarChart3 size={18} />} />
-          <StatCard label="Delivered" value={String(stats?.delivered ?? '—')} change="From selected range" icon={<BarChart3 size={18} />} />
+          <StatCard label="باز شدن" value={String(stats?.opened ?? stats?.opens ?? '—')} change="از بازه انتخابی" icon={<BarChart3 size={18} />} />
+          <StatCard label="کلیک" value={String(stats?.clicked ?? stats?.clicks ?? '—')} change="از بازه انتخابی" icon={<BarChart3 size={18} />} />
+          <StatCard label="تحویل‌شده" value={String(stats?.delivered ?? '—')} change="از بازه انتخابی" icon={<BarChart3 size={18} />} />
         </div>
 
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
           <Card>
             <CardContent className="space-y-4 p-6">
-              <h2 className="font-semibold">Record an event</h2>
-              <Field label="Notification reference"><Input value={notificationId} onChange={(e) => setNotificationId(e.target.value)} /></Field>
-              <Field label="What happened">
+              <h2 className="font-semibold">ثبت رویداد</h2>
+              <Field label="مرجع اعلان"><Input value={notificationId} onChange={(e) => setNotificationId(e.target.value)} /></Field>
+              <Field label="چه اتفاقی افتاد">
                 <Select value={eventType} onChange={(e) => setEventType(e.target.value)} className="w-full">
                   {Object.entries(eventLabel).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </Select>
               </Field>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Recipient"><Input value={recipient} onChange={(e) => setRecipient(e.target.value)} /></Field>
-                <Field label="Channel">
+                <Field label="گیرنده"><Input value={recipient} onChange={(e) => setRecipient(e.target.value)} /></Field>
+                <Field label="کانال">
                   <Select value={channel} onChange={(e) => setChannel(e.target.value)} className="w-full">
-                    <option value="email">Email</option>
-                    <option value="sms">SMS</option>
-                    <option value="push">Push</option>
+                    <option value="email">ایمیل</option>
+                    <option value="sms">پیامک</option>
+                    <option value="push">پوش</option>
                   </Select>
                 </Field>
               </div>
-              <Button disabled={busy} onClick={() => void track()}>Save event</Button>
+              <Button disabled={busy} onClick={() => void track()}>ذخیره رویداد</Button>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="space-y-4 p-6">
-              <h2 className="font-semibold">Events for a notification</h2>
-              <Field label="Notification reference"><Input value={notificationId} onChange={(e) => setNotificationId(e.target.value)} /></Field>
+              <h2 className="font-semibold">رویدادهای یک اعلان</h2>
+              <Field label="مرجع اعلان"><Input value={notificationId} onChange={(e) => setNotificationId(e.target.value)} /></Field>
               <Button disabled={busy || !notificationId} variant="outline" onClick={() => void loadEvents()}>
-                Show timeline
+                نمایش خط زمانی
               </Button>
               <div className="space-y-2">
-                {events.length === 0 && <p className="text-sm text-muted-foreground">No events loaded.</p>}
+                {events.length === 0 && <p className="text-sm text-muted-foreground">رویدادی بارگذاری نشده.</p>}
                 {events.map((ev, i) => (
                   <div key={i} className="flex items-center justify-between rounded-xl border p-3 text-sm">
                     <div>

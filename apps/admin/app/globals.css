@@ -1,4 +1,4 @@
-@import './fonts-cdn-fallback.css';
+@import './fonts-local.css';
 
 @tailwind base;
 @tailwind components;

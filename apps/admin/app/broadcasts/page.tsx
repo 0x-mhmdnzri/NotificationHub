@@ -6,48 +6,47 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { ConfirmDialog } from '@/components/confirm-dialog'
-import { KeyValueEditor, pairsToRecord, type KeyValuePair } from '@/components/key-value-editor'
-import { ToastHost } from '@/components/toast-host'
 import { resourcesApi } from '@/lib/api/resources'
-import { useTemplates } from '@/hooks/use-templates'
 import { useTenant } from '@/providers/tenant-provider'
-import { formatChannel, friendlyError, templateTitle } from '@/lib/ux/labels'
+import { ToastHost } from '@/components/toast-host'
+import { KeyValueEditor, pairsToRecord, type KeyValuePair } from '@/components/key-value-editor'
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { friendlyError } from '@/lib/ux/labels'
+import { useTemplates } from '@/hooks/use-templates'
 
 export default function BroadcastsPage() {
   const { tenantId } = useTenant()
   const templates = useTemplates()
-  const [name, setName] = useState('Product announcement')
+  const [name, setName] = useState('')
   const [templateKey, setTemplateKey] = useState('')
   const [channel, setChannel] = useState('push')
+  const [audienceKey, setAudienceKey] = useState('')
   const [recipients, setRecipients] = useState('')
-  const [segmentKey, setSegmentKey] = useState('')
   const [locale, setLocale] = useState('fa-IR')
   const [pairs, setPairs] = useState<KeyValuePair[]>([])
-  const [confirm, setConfirm] = useState(false)
-  const [busy, setBusy] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [toast, setToast] = useState<{ tone: 'success' | 'error'; title: string; description?: string } | null>(null)
-
-  const list = recipients.split(/\n|,/).map((x) => x.trim()).filter(Boolean)
-  const audienceSize = segmentKey ? 'a saved audience' : `${list.length} recipient${list.length === 1 ? '' : 's'}`
+  const [busy, setBusy] = useState(false)
 
   async function send() {
     setBusy(true)
     try {
-      await resourcesApi.broadcasts.send({
+      const body: Record<string, unknown> = {
         name,
         templateKey,
         channel,
-        recipients: list.length ? list : undefined,
-        segmentKey: segmentKey || undefined,
-        locale,
         tenantId,
+        locale,
         data: pairsToRecord(pairs),
-      })
-      setConfirm(false)
-      setToast({ tone: 'success', title: 'Broadcast submitted', description: `Sending via ${formatChannel(channel)}.` })
+      }
+      if (audienceKey.trim()) body.audienceKey = audienceKey.trim()
+      const lines = recipients.split('\n').map((x) => x.trim()).filter(Boolean)
+      if (lines.length) body.recipients = lines
+      await resourcesApi.broadcasts.send(body)
+      setToast({ tone: 'success', title: 'پخش همگانی ثبت شد' })
+      setConfirmOpen(false)
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not send broadcast', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'ارسال پخش همگانی ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -55,82 +54,80 @@ export default function BroadcastsPage() {
 
   return (
     <div className="grid-bg min-h-full p-5 md:p-8">
-      <ToastHost toast={toast} onClose={() => setToast(null)} />
       <div className="mx-auto max-w-[900px]">
         <PageHeader
-          eyebrow="Send"
-          title="Broadcast"
-          description="Send one message to many people at once. Review carefully before sending."
+          title="پخش همگانی"
+          description="یک پیام را هم‌زمان برای افراد زیادی بفرستید. قبل از ارسال با دقت بررسی کنید."
         />
+        <ToastHost toast={toast} onClose={() => setToast(null)} />
         <Card>
-          <CardContent className="space-y-5 p-6">
-            <Field label="Broadcast name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Template">
-                <Select value={templateKey} onChange={(e) => setTemplateKey(e.target.value)} className="w-full">
-                  <option value="">Choose template</option>
-                  {templates.data?.map((t) => (
-                    <option key={`${t.key}-${t.channel}`} value={t.key}>{templateTitle(t)} · {formatChannel(t.channel)}</option>
-                  ))}
-                </Select>
-              </Field>
-              <Field label="Channel">
-                <Select value={channel} onChange={(e) => setChannel(e.target.value)} className="w-full">
-                  <option value="push">Push</option>
-                  <option value="email">Email</option>
-                  <option value="sms">SMS</option>
-                </Select>
-              </Field>
-            </div>
-            <Field label="Saved audience code" hint="Optional — use instead of a manual list">
-              <Input value={segmentKey} onChange={(e) => setSegmentKey(e.target.value)} placeholder="e.g. high-value-users" />
-            </Field>
-            <Field label="Recipients" hint="One per line — optional if you use a saved audience">
+          <CardContent className="space-y-4 p-5">
+            <label className="block space-y-1 text-sm">
+              <span>نام پخش همگانی</span>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Product announcement" />
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>قالب</span>
+              <Select value={templateKey} onChange={(e) => setTemplateKey(e.target.value)}>
+                <option value="">انتخاب قالب</option>
+                {(templates.data ?? []).map((t: { key: string }) => (
+                  <option key={t.key} value={t.key}>{t.key}</option>
+                ))}
+              </Select>
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>کانال</span>
+              <Select value={channel} onChange={(e) => setChannel(e.target.value)}>
+                <option value="push">Push</option>
+                <option value="email">Email</option>
+                <option value="sms">SMS</option>
+              </Select>
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>کد مخاطبان ذخیره‌شده</span>
+              <Input value={audienceKey} onChange={(e) => setAudienceKey(e.target.value)} placeholder="e.g. high-value-users" />
+              <span className="text-xs text-muted-foreground">اختیاری — به‌جای فهرست دستی</span>
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>گیرندگان</span>
               <textarea
+                className="min-h-[100px] w-full rounded-xl border bg-background p-3 text-sm"
                 value={recipients}
                 onChange={(e) => setRecipients(e.target.value)}
-                className="min-h-28 w-full rounded-xl border bg-background p-3 text-sm"
                 placeholder="user-1\nuser-2"
               />
-            </Field>
-            <Field label="Language"><Input value={locale} onChange={(e) => setLocale(e.target.value)} /></Field>
-            <Field label="Shared personalization">
+              <span className="text-xs text-muted-foreground">هر خط یک نفر — در صورت استفاده از مخاطبان ذخیره‌شده اختیاری است</span>
+            </label>
+            <label className="block space-y-1 text-sm">
+              <span>زبان</span>
+              <Input value={locale} onChange={(e) => setLocale(e.target.value)} />
+            </label>
+            <div>
+              <div className="mb-2 text-sm font-medium">شخصی‌سازی مشترک</div>
               <KeyValueEditor pairs={pairs} onChange={setPairs} />
-            </Field>
-            <Button disabled={!templateKey || (!segmentKey && !list.length)} onClick={() => setConfirm(true)}>
-              Review & send
-            </Button>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={() => setConfirmOpen(true)} disabled={busy || !templateKey}>
+                ارسال
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
-
       <ConfirmDialog
-        open={confirm}
-        onOpenChange={setConfirm}
-        title="Send this broadcast?"
-        confirmLabel="Yes, send to audience"
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="این پخش همگانی ارسال شود؟"
+        description={
+          <div className="space-y-1 text-sm">
+            <div>نام: {name || '—'}</div>
+            <div>کانال: {channel}</div>
+            <div>مخاطب: {audienceKey || recipients.split('\n').filter(Boolean).length + ' recipients'}</div>
+          </div>
+        }
         busy={busy}
         onConfirm={send}
-        description={
-          <ul className="list-disc space-y-1 pl-4">
-            <li>Name: <strong>{name}</strong></li>
-            <li>Channel: <strong>{formatChannel(channel)}</strong></li>
-            <li>Audience: <strong>{audienceSize}</strong></li>
-          </ul>
-        }
       />
     </div>
-  )
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <label className="block space-y-2 text-sm">
-      <span className="flex gap-2 font-medium">
-        {label}
-        {hint && <span className="text-[10px] font-normal text-muted-foreground">{hint}</span>}
-      </span>
-      {children}
-    </label>
   )
 }

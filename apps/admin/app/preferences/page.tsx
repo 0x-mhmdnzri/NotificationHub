@@ -37,9 +37,9 @@ export default function PreferencesPage() {
         channelOptIn: optIn,
         updatedAt: new Date().toISOString(),
       })
-      setToast({ tone: 'success', title: 'Preferences saved' })
+      setToast({ tone: 'success', title: 'ترجیحات ذخیره شد' })
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not save preferences', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'ذخیره ترجیحات ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -57,9 +57,9 @@ export default function PreferencesPage() {
         setOptIn((prev) => ({ ...prev, ...(res.channelOptIn as Record<string, boolean>) }))
       }
       setLoaded(true)
-      setToast({ tone: 'success', title: 'Preferences loaded' })
+      setToast({ tone: 'success', title: 'ترجیحات بارگذاری شد' })
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not load preferences', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'بارگذاری ترجیحات ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -70,23 +70,23 @@ export default function PreferencesPage() {
       <ToastHost toast={toast} onClose={() => setToast(null)} />
       <div className="mx-auto max-w-[900px]">
         <PageHeader
-          eyebrow="Audience"
-          title="Notification preferences"
-          description="Control how and when a person receives messages."
+          eyebrow="مخاطبان"
+          title="ترجیحات اعلان"
+          description="نحوه و زمان دریافت پیام توسط هر فرد را کنترل کنید."
         />
         <Card>
           <CardContent className="space-y-6 p-6">
-            <Field label="User">
+            <Field label="کاربر">
               <div className="flex gap-2">
-                <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="User ID" className="flex-1" />
+                <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="شناسه کاربر" className="flex-1" />
                 <Button variant="outline" disabled={!userId || busy} onClick={() => void load()}>
-                  Load
+                  بارگذاری
                 </Button>
               </div>
             </Field>
 
             <section>
-              <h3 className="mb-3 text-sm font-semibold">Channels</h3>
+              <h3 className="mb-3 text-sm font-semibold">کانال‌ها</h3>
               <div className="grid gap-2 sm:grid-cols-2">
                 {(['push', 'email', 'sms', 'webhook'] as const).map((c) => (
                   <label key={c} className="flex cursor-pointer items-center gap-3 rounded-xl border p-3 text-sm">
@@ -96,38 +96,38 @@ export default function PreferencesPage() {
                       onChange={(e) => setOptIn((o) => ({ ...o, [c]: e.target.checked }))}
                       className="h-4 w-4 accent-primary"
                     />
-                    Allow {formatChannel(c)}
+                    اجازه {formatChannel(c)}
                   </label>
                 ))}
               </div>
             </section>
 
-            <Field label="Preferred channel">
+            <Field label="کانال ترجیحی">
               <Select value={preferredChannel} onChange={(e) => setPreferredChannel(e.target.value)} className="w-full">
-                <option value="push">Push</option>
-                <option value="email">Email</option>
-                <option value="sms">SMS</option>
-                <option value="webhook">Webhook</option>
+                <option value="push">پوش</option>
+                <option value="email">ایمیل</option>
+                <option value="sms">پیامک</option>
+                <option value="webhook">وب‌هوک</option>
               </Select>
             </Field>
 
             <section>
-              <h3 className="mb-3 text-sm font-semibold">Quiet hours</h3>
-              <p className="mb-3 text-xs text-muted-foreground">Messages are held during this window (server timezone rules apply).</p>
+              <h3 className="mb-3 text-sm font-semibold">ساعات سکوت</h3>
+              <p className="mb-3 text-xs text-muted-foreground">پیام‌ها در این بازه نگه داشته می‌شوند (قوانین منطقه زمانی سرور اعمال می‌شود).</p>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="From"><Input value={start} onChange={(e) => setStart(e.target.value)} placeholder="22:00" /></Field>
-                <Field label="Until"><Input value={end} onChange={(e) => setEnd(e.target.value)} placeholder="08:00" /></Field>
+                <Field label="از"><Input value={start} onChange={(e) => setStart(e.target.value)} placeholder="22:00" /></Field>
+                <Field label="تا"><Input value={end} onChange={(e) => setEnd(e.target.value)} placeholder="08:00" /></Field>
               </div>
             </section>
 
-            <Field label="Daily limit" hint="Maximum messages per day">
+            <Field label="سقف روزانه" hint="حداکثر پیام در روز">
               <Input type="number" min={0} value={max} onChange={(e) => setMax(e.target.value)} />
             </Field>
 
             <Button disabled={busy || !userId} onClick={() => void save()}>
-              Save preferences
+              ذخیره ترجیحات
             </Button>
-            {loaded && <p className="text-xs text-muted-foreground">Showing last loaded values for this user.</p>}
+            {loaded && <p className="text-xs text-muted-foreground">آخرین مقادیر بارگذاری‌شده برای این کاربر نمایش داده می‌شود.</p>}
           </CardContent>
         </Card>
       </div>

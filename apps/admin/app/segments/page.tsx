@@ -16,18 +16,18 @@ import { friendlyError, humanizeKey } from '@/lib/ux/labels'
 import type { SegmentRule } from '@/types/api'
 
 const operatorLabel: Record<string, string> = {
-  eq: 'equals',
-  neq: 'does not equal',
-  gt: 'is greater than',
-  gte: 'is at least',
-  lt: 'is less than',
-  lte: 'is at most',
-  contains: 'contains',
+  eq: 'برابر است با',
+  neq: 'برابر نیست با',
+  gt: 'بزرگ‌تر از',
+  gte: 'حداقل',
+  lt: 'کوچک‌تر از',
+  lte: 'حداکثر',
+  contains: 'شامل',
 }
 
 export default function SegmentsPage() {
   const { tenantId } = useTenant()
-  const [name, setName] = useState('High value customers')
+  const [name, setName] = useState('مشتریان با ارزش بالا')
   const [key, setKey] = useState('high-value-users')
   const [rules, setRules] = useState<SegmentRule[]>([{ field: 'purchaseAmount', operator: 'gt', value: '5000000' }])
   const [matchAll, setMatchAll] = useState(true)
@@ -44,9 +44,9 @@ export default function SegmentsPage() {
     setBusy(true)
     try {
       await resourcesApi.segments.save({ key, tenantId, matchAll, rules })
-      setToast({ tone: 'success', title: 'Audience saved', description: `“${name || humanizeKey(key)}” is ready to use.` })
+      setToast({ tone: 'success', title: 'مخاطب ذخیره شد', description: `«${name || humanizeKey(key)}» آماده استفاده است.` })
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not save audience', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'ذخیره مخاطب ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -61,10 +61,10 @@ export default function SegmentsPage() {
       setMatchResult(matched)
       setToast({
         tone: 'success',
-        title: matched ? 'This person matches' : 'This person does not match',
+        title: matched ? 'این فرد با مخاطب مطابقت دارد' : 'این فرد مطابقت ندارد',
       })
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not test audience', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'آزمایش مخاطب ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -75,45 +75,45 @@ export default function SegmentsPage() {
       <ToastHost toast={toast} onClose={() => setToast(null)} />
       <div className="mx-auto max-w-[1100px]">
         <PageHeader
-          eyebrow="Content"
-          title="Audiences"
-          description="Define who belongs in a group — for campaigns and broadcasts."
+          eyebrow="محتوا"
+          title="سگمنت‌ها"
+          description="تعریف کنید چه کسانی در یک گروه قرار می‌گیرند — برای کمپین و پخش همگانی."
         />
 
         <div className="grid gap-5 lg:grid-cols-2">
           <Card>
             <CardContent className="space-y-5 p-6">
-              <h2 className="font-semibold">Audience rules</h2>
-              <Field label="Display name">
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="High value customers" />
+              <h2 className="font-semibold">قوانین مخاطب</h2>
+              <Field label="نام نمایشی">
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="مشتریان با ارزش بالا" />
               </Field>
-              <Field label="Internal code" hint="Used by the system">
+              <Field label="کد داخلی" hint="مورد استفاده سیستم">
                 <Input value={key} onChange={(e) => setKey(e.target.value)} />
               </Field>
 
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">People where</span>
+                  <span className="text-sm font-medium">افرادی که</span>
                   <Button type="button" size="sm" variant="outline" onClick={() => setMatchAll((v) => !v)}>
-                    Match {matchAll ? 'all' : 'any'} rules
+                    تطبیق {matchAll ? 'همه' : 'هر یک از'} قوانین
                   </Button>
                 </div>
                 {rules.map((r, i) => (
                   <div key={i} className="rounded-xl border bg-muted/20 p-3">
                     <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>Rule {i + 1}{i > 0 ? ` · ${matchAll ? 'AND' : 'OR'}` : ''}</span>
+                      <span>قانون {i + 1}{i > 0 ? ` · ${matchAll ? 'و' : 'یا'}` : ''}</span>
                       <Button type="button" size="icon" variant="ghost" onClick={() => setRules((x) => x.filter((_, j) => j !== i))}>
                         <Trash2 size={14} />
                       </Button>
                     </div>
                     <div className="grid gap-2 sm:grid-cols-3">
-                      <Input value={r.field} onChange={(e) => updateRule(i, { field: e.target.value })} placeholder="Attribute" />
+                      <Input value={r.field} onChange={(e) => updateRule(i, { field: e.target.value })} placeholder="ویژگی" />
                       <Select value={r.operator} onChange={(e) => updateRule(i, { operator: e.target.value })}>
                         {Object.entries(operatorLabel).map(([k, label]) => (
                           <option key={k} value={k}>{label}</option>
                         ))}
                       </Select>
-                      <Input value={r.value} onChange={(e) => updateRule(i, { value: e.target.value })} placeholder="Value" />
+                      <Input value={r.value} onChange={(e) => updateRule(i, { value: e.target.value })} placeholder="مقدار" />
                     </div>
                   </div>
                 ))}
@@ -123,15 +123,15 @@ export default function SegmentsPage() {
                   size="sm"
                   onClick={() => setRules((r) => [...r, { field: '', operator: 'eq', value: '' }])}
                 >
-                  <Plus size={14} /> Add rule
+                  <Plus size={14} /> افزودن قانون
                 </Button>
               </div>
 
               <div className="rounded-xl border border-dashed p-3 text-sm text-muted-foreground">
-                Summary:{' '}
+                خلاصه:{' '}
                 {rules.map((r, i) => (
                   <span key={i}>
-                    {i > 0 && <strong> {matchAll ? 'and' : 'or'} </strong>}
+                    {i > 0 && <strong> {matchAll ? 'و' : 'یا'} </strong>}
                     <strong>{r.field || '…'}</strong> {operatorLabel[r.operator] || r.operator}{' '}
                     <strong>{r.value || '…'}</strong>
                   </span>
@@ -139,22 +139,22 @@ export default function SegmentsPage() {
               </div>
 
               <Button disabled={busy || !key} onClick={() => void save()}>
-                Save audience
+                ذخیره مخاطب
               </Button>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="space-y-5 p-6">
-              <h2 className="font-semibold">Test a person</h2>
-              <p className="text-sm text-muted-foreground">Enter sample attributes to see if they would be included.</p>
-              <KeyValueEditor pairs={testPairs} onChange={setTestPairs} keyPlaceholder="Attribute" valuePlaceholder="Value" />
+              <h2 className="font-semibold">آزمایش یک فرد</h2>
+              <p className="text-sm text-muted-foreground">ویژگی‌های نمونه را وارد کنید تا ببینید آیا شامل می‌شود.</p>
+              <KeyValueEditor pairs={testPairs} onChange={setTestPairs} keyPlaceholder="ویژگی" valuePlaceholder="مقدار" />
               <Button disabled={busy || !key} variant="outline" onClick={() => void testMatch()}>
-                Check match
+                بررسی تطبیق
               </Button>
               {matchResult !== null && (
                 <Badge variant={matchResult ? 'success' : 'danger'}>
-                  {matchResult ? 'Matches this audience' : 'Does not match'}
+                  {matchResult ? 'با این مخاطب مطابقت دارد' : 'مطابقت ندارد'}
                 </Badge>
               )}
             </CardContent>

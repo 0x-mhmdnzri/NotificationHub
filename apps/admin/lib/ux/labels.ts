@@ -1,12 +1,12 @@
 /** Presentation-layer labels. Never leak DTO/enum/route names to operators. */
 
 export const channelLabel: Record<string, string> = {
-  push: 'Push',
-  sms: 'SMS',
-  email: 'Email',
-  webhook: 'Webhook',
-  chat: 'Chat',
-  inapp: 'In-app',
+  push: 'پوش',
+  sms: 'پیامک',
+  email: 'ایمیل',
+  webhook: 'وب‌هوک',
+  chat: 'چت',
+  inapp: 'درون‌برنامه‌ای',
 }
 
 export function formatChannel(value?: string | null) {
@@ -15,24 +15,24 @@ export function formatChannel(value?: string | null) {
 }
 
 export function formatStatus(value?: string | null) {
-  if (!value) return 'Unknown'
+  if (!value) return 'نامشخص'
   const map: Record<string, string> = {
-    delivered: 'Delivered',
-    pending: 'Pending',
-    queued: 'Queued',
-    processing: 'Sending',
-    failed: 'Failed',
-    cancelled: 'Cancelled',
-    canceled: 'Cancelled',
-    completed: 'Completed',
-    running: 'Running',
-    scheduled: 'Scheduled',
-    draft: 'Draft',
-    active: 'Active',
-    inactive: 'Inactive',
-    success: 'Succeeded',
+    delivered: 'تحویل‌شده',
+    pending: 'در انتظار',
+    queued: 'در صف',
+    processing: 'در حال ارسال',
+    failed: 'ناموفق',
+    cancelled: 'لغو شده',
+    canceled: 'لغو شده',
+    completed: 'تکمیل‌شده',
+    running: 'در حال اجرا',
+    scheduled: 'زمان‌بندی‌شده',
+    draft: 'پیش‌نویس',
+    active: 'فعال',
+    inactive: 'غیرفعال',
+    success: 'موفق',
   }
-  return map[value.toLowerCase()] ?? value.replace(/[_-]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  return map[value.toLowerCase()] ?? value.replace(/[_-]/g, ' ')
 }
 
 export function statusTone(value?: string | null): 'success' | 'warning' | 'danger' | 'default' | 'outline' {
@@ -47,7 +47,7 @@ export function formatDateTime(value?: string | Date | null) {
   if (!value) return '—'
   const d = typeof value === 'string' ? new Date(value) : value
   if (Number.isNaN(d.getTime())) return '—'
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat('fa-IR', {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(d)
@@ -59,43 +59,41 @@ export function formatRelative(value?: string | Date | null) {
   if (Number.isNaN(d.getTime())) return '—'
   const diff = Date.now() - d.getTime()
   const sec = Math.round(diff / 1000)
-  if (sec < 60) return 'Just now'
+  if (sec < 60) return 'همین الان'
   const min = Math.round(sec / 60)
-  if (min < 60) return `${min}m ago`
+  if (min < 60) return `${min} دقیقه پیش`
   const hr = Math.round(min / 60)
-  if (hr < 24) return `${hr}h ago`
+  if (hr < 24) return `${hr} ساعت پیش`
   const day = Math.round(hr / 24)
-  if (day < 7) return `${day}d ago`
+  if (day < 7) return `${day} روز پیش`
   return formatDateTime(d)
 }
 
 export function templateTitle(t: { key?: string; subject?: string | null; body?: string | null }) {
-  return t.subject?.trim() || t.body?.slice(0, 48) || humanizeKey(t.key) || 'Untitled template'
+  return t.subject?.trim() || t.body?.slice(0, 48) || humanizeKey(t.key) || 'قالب بدون عنوان'
 }
 
 export function humanizeKey(key?: string | null) {
-  if (!key) return '—'
+  if (!key) return ''
   return key
     .replace(/[_.-]+/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
 }
 
-export function friendlyError(error: unknown): string {
-  if (!error) return 'Something went wrong. Please try again.'
-  if (typeof error === 'string') return error
-  const msg = (error as { message?: string }).message ?? ''
-  if (/network|fetch|reach/i.test(msg)) return 'Could not reach the server. Check your connection and try again.'
-  if (/401|unauthor/i.test(msg)) return 'Your session expired. Please sign in again.'
-  if (/403|forbidden/i.test(msg)) return 'You do not have permission to do this.'
-  if (/404|not found/i.test(msg)) return 'That item could not be found. It may have been removed.'
-  if (/valid/i.test(msg)) return msg
-  if (msg.length > 0 && msg.length < 160 && !/exception|stack|http/i.test(msg)) return msg
-  return 'The operation could not be completed. Please try again or contact support.'
+export function friendlyError(err: unknown): string {
+  if (!err) return 'خطای ناشناخته'
+  if (typeof err === 'string') return err
+  if (err instanceof Error) return err.message
+  try {
+    return JSON.stringify(err)
+  } catch {
+    return String(err)
+  }
 }
 
 export const priorityLabel: Record<string, string> = {
-  low: 'Low',
-  normal: 'Normal',
-  high: 'High',
-  critical: 'Urgent',
+  low: 'کم',
+  normal: 'عادی',
+  high: 'بالا',
+  critical: 'فوری',
 }

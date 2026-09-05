@@ -68,12 +68,12 @@ export function Topbar() {
           <Link
             href="/account/sessions"
             className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-primary to-violet-400 text-xs font-bold text-white"
-            title="Sessions"
+            title="نشست‌ها"
           >
             {initials}
           </Link>
           {isAuthenticated && (
-            <Button variant="ghost" size="icon" title="Logout" onClick={() => void logout()}>
+            <Button variant="ghost" size="icon" title="خروج" onClick={() => void logout()}>
               <LogOut size={16} />
             </Button>
           )}

@@ -33,16 +33,16 @@ export default function OrgSettingsPage() {
 
   return (
     <div className="p-6 lg:p-8">
-      <PageHeader title="Organization" description="Organization profile and status." />
+      <PageHeader title="سازمان" description="پروفایل و وضعیت سازمان." />
       <RequirePermission permission={Perm.OrganizationRead}>
         {!orgId && (
-          <p className="text-sm text-muted-foreground">No active organization in session.</p>
+          <p className="text-sm text-muted-foreground">سازمان فعالی در نشست نیست.</p>
         )}
         {org.data && (
-          <SectionCard title="Profile">
+          <SectionCard title="پروفایل">
             <div className="grid max-w-lg gap-4">
               <label className="text-sm">
-                <span className="mb-1 block text-muted-foreground">Name</span>
+                <span className="mb-1 block text-muted-foreground">نام</span>
                 <input
                   className="w-full rounded-xl border bg-background px-3 py-2"
                   value={name}
@@ -51,16 +51,16 @@ export default function OrgSettingsPage() {
                 />
               </label>
               <div className="text-sm">
-                <span className="text-muted-foreground">Status: </span>
+                <span className="text-muted-foreground">وضعیت: </span>
                 {org.data.status}
               </div>
               <div className="text-sm">
-                <span className="text-muted-foreground">Type: </span>
+                <span className="text-muted-foreground">نوع: </span>
                 {org.data.type}
               </div>
               {me?.permissions.includes(Perm.OrganizationUpdate) && (
                 <Button disabled={save.isPending || name === org.data.name} onClick={() => save.mutate()}>
-                  Save changes
+                  ذخیره تغییرات
                 </Button>
               )}
             </div>

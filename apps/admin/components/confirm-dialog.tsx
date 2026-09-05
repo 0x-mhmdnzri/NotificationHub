@@ -8,8 +8,8 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmLabel = 'Confirm',
-  cancelLabel = 'Go back',
+  confirmLabel = 'تأیید',
+  cancelLabel = 'بازگشت',
   destructive,
   busy,
   onConfirm,
@@ -37,7 +37,7 @@ export function ConfirmDialog({
             disabled={busy}
             onClick={() => void onConfirm()}
           >
-            {busy ? 'Working…' : confirmLabel}
+            {busy ? 'در حال انجام…' : confirmLabel}
           </Button>
         </div>
       </div>

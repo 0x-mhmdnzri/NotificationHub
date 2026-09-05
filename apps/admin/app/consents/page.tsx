@@ -18,7 +18,7 @@ export default function ConsentsPage() {
   const [purpose, setPurpose] = useState('marketing')
   const [channel, setChannel] = useState('email')
   const [granted, setGranted] = useState(true)
-  const [source, setSource] = useState('admin panel')
+  const [source, setSource] = useState('پنل مدیریت')
   const [evidence, setEvidence] = useState('')
   const [evalResult, setEvalResult] = useState<'allowed' | 'denied' | null>(null)
   const [toast, setToast] = useState<{ tone: 'success' | 'error'; title: string; description?: string } | null>(null)
@@ -39,10 +39,10 @@ export default function ConsentsPage() {
       })
       setToast({
         tone: 'success',
-        title: granted ? 'Consent recorded as granted' : 'Consent recorded as withdrawn',
+        title: granted ? 'رضایت به‌عنوان اعطاشده ثبت شد' : 'رضایت به‌عنوان لغوشده ثبت شد',
       })
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not record consent', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'ثبت رضایت ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -59,7 +59,7 @@ export default function ConsentsPage() {
       const ok = typeof res === 'boolean' ? res : Boolean(res?.allowed ?? res?.granted)
       setEvalResult(ok ? 'allowed' : 'denied')
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not evaluate consent', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'بررسی رضایت ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -70,62 +70,62 @@ export default function ConsentsPage() {
       <ToastHost toast={toast} onClose={() => setToast(null)} />
       <div className="mx-auto max-w-[1100px]">
         <PageHeader
-          eyebrow="Audience"
-          title="Consent"
-          description="Record and check whether someone may receive a type of message."
+          eyebrow="مخاطبان"
+          title="رضایت"
+          description="ثبت و بررسی کنید که آیا فرد می‌تواند نوعی از پیام را دریافت کند."
         />
         <div className="grid gap-5 lg:grid-cols-2">
           <Card>
             <CardContent className="space-y-4 p-6">
-              <h2 className="font-semibold">Record consent</h2>
-              <Field label="Person"><Input value={subjectId} onChange={(e) => setSubjectId(e.target.value)} placeholder="User or subject ID" /></Field>
-              <Field label="Purpose">
+              <h2 className="font-semibold">ثبت رضایت</h2>
+              <Field label="فرد"><Input value={subjectId} onChange={(e) => setSubjectId(e.target.value)} placeholder="شناسه کاربر یا موضوع" /></Field>
+              <Field label="هدف">
                 <Select value={purpose} onChange={(e) => setPurpose(e.target.value)} className="w-full">
-                  <option value="marketing">Marketing</option>
-                  <option value="transactional">Transactional</option>
-                  <option value="security">Security alerts</option>
-                  <option value="product">Product updates</option>
+                  <option value="marketing">بازاریابی</option>
+                  <option value="transactional">تراکنشی</option>
+                  <option value="security">هشدار امنیتی</option>
+                  <option value="product">به‌روزرسانی محصول</option>
                 </Select>
               </Field>
-              <Field label="Channel">
+              <Field label="کانال">
                 <Select value={channel} onChange={(e) => setChannel(e.target.value)} className="w-full">
-                  <option value="email">Email</option>
-                  <option value="sms">SMS</option>
-                  <option value="push">Push</option>
-                  <option value="webhook">Webhook</option>
+                  <option value="email">ایمیل</option>
+                  <option value="sms">پیامک</option>
+                  <option value="push">پوش</option>
+                  <option value="webhook">وب‌هوک</option>
                 </Select>
               </Field>
               <div className="flex gap-2">
-                <Button type="button" variant={granted ? 'default' : 'outline'} onClick={() => setGranted(true)}>Granted</Button>
-                <Button type="button" variant={!granted ? 'default' : 'outline'} onClick={() => setGranted(false)}>Withdrawn</Button>
+                <Button type="button" variant={granted ? 'default' : 'outline'} onClick={() => setGranted(true)}>اعطاشده</Button>
+                <Button type="button" variant={!granted ? 'default' : 'outline'} onClick={() => setGranted(false)}>لغوشده</Button>
               </div>
-              <Field label="Source"><Input value={source} onChange={(e) => setSource(e.target.value)} /></Field>
-              <Field label="Evidence reference" hint="Optional ticket or form ID">
+              <Field label="منبع"><Input value={source} onChange={(e) => setSource(e.target.value)} /></Field>
+              <Field label="مرجع مدرک" hint="شناسه تیکت یا فرم (اختیاری)">
                 <Input value={evidence} onChange={(e) => setEvidence(e.target.value)} />
               </Field>
-              <Button disabled={busy || !subjectId} onClick={() => void record()}>Save consent record</Button>
+              <Button disabled={busy || !subjectId} onClick={() => void record()}>ذخیره رکورد رضایت</Button>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="space-y-4 p-6">
-              <h2 className="font-semibold">Can we send?</h2>
+              <h2 className="font-semibold">آیا می‌توانیم ارسال کنیم؟</h2>
               <p className="text-sm text-muted-foreground">
-                Check if this person may receive <strong>{purpose}</strong> messages on <strong>{formatChannel(channel)}</strong>.
+                بررسی کنید این فرد می‌تواند پیام‌های <strong>{purpose}</strong> را از طریق <strong>{formatChannel(channel)}</strong> دریافت کند.
               </p>
               <Button disabled={busy || !subjectId} variant="outline" onClick={() => void evaluate()}>
-                Check permission
+                بررسی مجوز
               </Button>
               {evalResult === 'allowed' && (
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4">
-                  <Badge variant="success">Allowed</Badge>
-                  <p className="mt-2 text-sm">Sending is permitted for this purpose and channel.</p>
+                  <Badge variant="success">مجاز</Badge>
+                  <p className="mt-2 text-sm">ارسال برای این هدف و کانال مجاز است.</p>
                 </div>
               )}
               {evalResult === 'denied' && (
                 <div className="rounded-xl border border-destructive/30 bg-destructive/5 p-4">
-                  <Badge variant="danger">Not allowed</Badge>
-                  <p className="mt-2 text-sm">Do not send until consent is granted for this purpose.</p>
+                  <Badge variant="danger">غیرمجاز</Badge>
+                  <p className="mt-2 text-sm">تا اعطای رضایت برای این هدف، ارسال نکنید.</p>
                 </div>
               )}
             </CardContent>

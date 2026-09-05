@@ -13,8 +13,8 @@ export function OperationPanel({
   description,
   children,
   onSubmit,
-  label = 'Save',
-  successMessage = 'Saved successfully.',
+  label = 'ذخیره',
+  successMessage = 'با موفقیت ذخیره شد.',
 }: {
   title: string
   description?: string
@@ -35,7 +35,7 @@ export function OperationPanel({
     } catch (e) {
       setToast({
         tone: 'error',
-        title: 'Could not save',
+        title: 'ذخیره ممکن نشد',
         description: e instanceof ApiError ? friendlyError(e) : friendlyError(e),
       })
     } finally {
@@ -58,7 +58,7 @@ export function OperationPanel({
           <div className="flex justify-end border-t pt-4">
             <Button onClick={() => void submit()} disabled={busy}>
               {busy ? <Loader2 size={15} className="animate-spin" /> : <Save size={15} />}
-              {busy ? 'Working…' : label}
+              {busy ? 'در حال انجام…' : label}
             </Button>
           </div>
         </CardContent>

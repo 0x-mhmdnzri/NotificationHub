@@ -1,0 +1,49 @@
+/* IRANSans FaNum — local only (no CDN)
+ * Files live under apps/admin/app/fonts/iransans/
+ * For Next.js static serve, copy or symlink to public/fonts/iransans/
+ */
+@font-face {
+  font-family: 'IRANSans';
+  font-style: normal;
+  font-weight: 200;
+  font-display: swap;
+  src:
+    url('./fonts/iransans/iransansWeb(FaNum)_UltraLight.woff2') format('woff2'),
+    url('./fonts/iransans/iransansWeb(FaNum)_UltraLight.woff') format('woff');
+}
+@font-face {
+  font-family: 'IRANSans';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src:
+    url('./fonts/iransans/iransansWeb(FaNum)_Light.woff2') format('woff2'),
+    url('./fonts/iransans/iransansWeb(FaNum)_Light.woff') format('woff');
+}
+@font-face {
+  font-family: 'IRANSans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src:
+    url('./fonts/iransans/iransansWeb(FaNum).woff2') format('woff2'),
+    url('./fonts/iransans/iransansWeb(FaNum).woff') format('woff');
+}
+@font-face {
+  font-family: 'IRANSans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src:
+    url('./fonts/iransans/iransansWeb(FaNum)_Medium.woff2') format('woff2'),
+    url('./fonts/iransans/iransansWeb(FaNum)_Medium.woff') format('woff');
+}
+@font-face {
+  font-family: 'IRANSans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src:
+    url('./fonts/iransans/iransansWeb(FaNum)_Bold.woff2') format('woff2'),
+    url('./fonts/iransans/iransansWeb(FaNum)_Bold.woff') format('woff');
+}
