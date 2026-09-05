@@ -21,7 +21,7 @@ export default function PluginsPage() {
       const res = (await resourcesApi.plugins()) as Array<Record<string, unknown>>
       setPlugins(Array.isArray(res) ? res : [])
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not load integrations', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'بارگذاری یکپارچه‌سازی‌ها ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -32,9 +32,9 @@ export default function PluginsPage() {
     try {
       const res = (await resourcesApi.messagingHealth()) as Record<string, unknown>
       setHealth(res)
-      setToast({ tone: 'success', title: 'Health check complete' })
+      setToast({ tone: 'success', title: 'بررسی سلامت انجام شد' })
     } catch (e) {
-      setToast({ tone: 'error', title: 'Health check failed', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'بررسی سلامت ناموفق بود', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -47,31 +47,31 @@ export default function PluginsPage() {
       <ToastHost toast={toast} onClose={() => setToast(null)} />
       <div className="mx-auto max-w-[1000px]">
         <PageHeader
-          eyebrow="Integrations"
-          title="Providers & health"
-          description="See which delivery providers are available and whether messaging is healthy."
+          eyebrow="یکپارچه‌سازی"
+          title="ارائه‌دهندگان و سلامت"
+          description="ببینید کدام ارائه‌دهندگان تحویل در دسترس‌اند و وضعیت پیام‌رسانی سالم است یا نه."
         />
 
         <div className="mb-5 flex flex-wrap gap-2">
-          <Button disabled={busy} onClick={() => void loadPlugins()}>Refresh providers</Button>
-          <Button disabled={busy} variant="outline" onClick={() => void checkHealth()}>Check messaging health</Button>
+          <Button disabled={busy} onClick={() => void loadPlugins()}>تازه‌سازی ارائه‌دهندگان</Button>
+          <Button disabled={busy} variant="outline" onClick={() => void checkHealth()}>بررسی سلامت پیام‌رسانی</Button>
         </div>
 
         {health && (
           <Card className="mb-5">
             <CardContent className="flex items-center justify-between gap-4 p-6">
               <div>
-                <div className="text-sm text-muted-foreground">Messaging infrastructure</div>
-                <div className="mt-1 text-lg font-semibold">{formatStatus(overall) || 'Checked'}</div>
+                <div className="text-sm text-muted-foreground">زیرساخت پیام‌رسانی</div>
+                <div className="mt-1 text-lg font-semibold">{formatStatus(overall) || 'بررسی‌شده'}</div>
               </div>
-              <Badge variant={statusTone(overall)}>{formatStatus(overall) || 'OK'}</Badge>
+              <Badge variant={statusTone(overall)}>{formatStatus(overall) || 'باشه'}</Badge>
             </CardContent>
           </Card>
         )}
 
         <div className="grid gap-3 sm:grid-cols-2">
           {plugins.length === 0 && (
-            <p className="text-sm text-muted-foreground col-span-full">No providers loaded yet. Press “Refresh providers”.</p>
+            <p className="text-sm text-muted-foreground col-span-full">هنوز ارائه‌دهنده‌ای بارگذاری نشده. «تازه‌سازی ارائه‌دهندگان» را بزنید.</p>
           )}
           {plugins.map((p, i) => {
             const name = String(p.name ?? p.Name ?? p.id ?? p.Id ?? `Provider ${i + 1}`)
