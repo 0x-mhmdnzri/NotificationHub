@@ -17,14 +17,13 @@ import { ApiError } from '@/lib/api/errors'
 import { notificationsApi } from '@/lib/api/notifications'
 import {
   formatChannel,
-  formatStatus,
   friendlyError,
   priorityLabel,
   templateTitle,
 } from '@/lib/ux/labels'
 import type { NotificationPriority, NotificationRequest } from '@/types/api'
 
-const STEPS = ['Audience', 'Content', 'Personalize', 'Delivery', 'Review'] as const
+const STEPS = ['مخاطب', 'محتوا', 'شخصی‌سازی', 'تحویل', 'بررسی'] as const
 const priorityMap: Record<string, NotificationPriority> = { low: 0, normal: 1, high: 2, critical: 3 }
 
 export default function NotificationsPage() {
@@ -59,7 +58,7 @@ export default function NotificationsPage() {
 
   function buildPayload(): NotificationRequest | null {
     if (!recipient.trim() || !templateKey.trim()) {
-      setToast({ tone: 'error', title: 'Missing information', description: 'Choose a recipient and a template before continuing.' })
+      setToast({ tone: 'error', title: 'اطلاعات ناقص', description: 'قبل از ادامه گیرنده و قالب را انتخاب کنید.' })
       return null
     }
     return {
@@ -89,12 +88,12 @@ export default function NotificationsPage() {
       setConfirmOpen(false)
       setToast({
         tone: 'success',
-        title: scheduledAt ? 'Notification scheduled' : 'Notification queued',
-        description: `Message for ${recipient.trim()} is on its way via ${formatChannel(channel)}.`,
+        title: scheduledAt ? 'اعلان زمان‌بندی شد' : 'اعلان در صف قرار گرفت',
+        description: `پیام برای ${recipient.trim()} از طریق ${formatChannel(channel)} ارسال می‌شود.`,
       })
       setStep(0)
     } catch (error) {
-      setToast({ tone: 'error', title: 'Could not send', description: friendlyError(error instanceof ApiError ? error : error) })
+      setToast({ tone: 'error', title: 'ارسال ممکن نشد', description: friendlyError(error instanceof ApiError ? error : error) })
     } finally {
       setBusy(false)
     }
@@ -112,11 +111,11 @@ export default function NotificationsPage() {
           : (res as { body?: string; subject?: string; content?: string })?.body ||
             (res as { subject?: string })?.subject ||
             (res as { content?: string })?.content ||
-            'Preview generated successfully.'
+            'پیش‌نمایش با موفقیت تولید شد.'
       setPreviewText(String(text))
-      setToast({ tone: 'success', title: 'Preview ready' })
+      setToast({ tone: 'success', title: 'پیش‌نمایش آماده است' })
     } catch (error) {
-      setToast({ tone: 'error', title: 'Preview failed', description: friendlyError(error) })
+      setToast({ tone: 'error', title: 'پیش‌نمایش ناموفق بود', description: friendlyError(error) })
     } finally {
       setBusy(false)
     }
@@ -127,12 +126,11 @@ export default function NotificationsPage() {
       <ToastHost toast={toast} onClose={() => setToast(null)} />
       <div className="mx-auto max-w-[1100px]">
         <PageHeader
-          eyebrow="Send"
-          title="Send a notification"
-          description="Choose who receives it, what they see, and when it should go out."
+          eyebrow="ارسال"
+          title="ارسال اعلان"
+          description="گیرنده، محتوا و زمان ارسال را مشخص کنید."
         />
 
-        {/* Step indicator */}
         <div className="mb-8 flex flex-wrap gap-2">
           {STEPS.map((label, i) => (
             <button
@@ -158,21 +156,21 @@ export default function NotificationsPage() {
             <CardContent className="space-y-6 p-6">
               {step === 0 && (
                 <>
-                  <h2 className="text-base font-semibold">Who should receive this?</h2>
-                  <Field label="Recipient" required hint="User ID, phone number, or email">
+                  <h2 className="text-base font-semibold">این پیام برای چه کسی است؟</h2>
+                  <Field label="گیرنده" required hint="شناسه کاربر، شماره موبایل یا ایمیل">
                     <Input
                       value={recipient}
                       onChange={(e) => setRecipient(e.target.value)}
-                      placeholder="e.g. user-1024 or +98912…"
+                      placeholder="مثلاً user-1024 یا +98912…"
                       autoFocus
                     />
                   </Field>
-                  <Field label="Channel">
+                  <Field label="کانال">
                     <Select value={channel} onChange={(e) => { setChannel(e.target.value); setTemplateKey('') }} className="w-full">
-                      <option value="push">Push</option>
-                      <option value="sms">SMS</option>
-                      <option value="email">Email</option>
-                      <option value="webhook">Webhook</option>
+                      <option value="push">پوش</option>
+                      <option value="sms">پیامک</option>
+                      <option value="email">ایمیل</option>
+                      <option value="webhook">وب‌هوک</option>
                     </Select>
                   </Field>
                 </>
@@ -180,10 +178,10 @@ export default function NotificationsPage() {
 
               {step === 1 && (
                 <>
-                  <h2 className="text-base font-semibold">What should they receive?</h2>
-                  <Field label="Template" required>
+                  <h2 className="text-base font-semibold">چه محتوایی دریافت کنند؟</h2>
+                  <Field label="قالب" required>
                     <Select value={templateKey} onChange={(e) => setTemplateKey(e.target.value)} className="w-full">
-                      <option value="">Choose a template</option>
+                      <option value="">انتخاب قالب</option>
                       {templatesQuery.data?.map((t) => (
                         <option key={`${t.key}-${t.channel}-${t.locale}`} value={t.key}>
                           {templateTitle(t)} · {formatChannel(t.channel)} · {t.locale}
@@ -192,21 +190,21 @@ export default function NotificationsPage() {
                     </Select>
                   </Field>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Language">
+                    <Field label="زبان">
                       <Input value={locale} onChange={(e) => setLocale(e.target.value)} placeholder="fa-IR" />
                     </Field>
-                    <Field label="Category">
+                    <Field label="دسته">
                       <Select value={category} onChange={(e) => setCategory(e.target.value)} className="w-full">
-                        <option value="transactional">Transactional</option>
-                        <option value="marketing">Marketing</option>
-                        <option value="security">Security</option>
-                        <option value="system">System</option>
+                        <option value="transactional">تراکنشی</option>
+                        <option value="marketing">بازاریابی</option>
+                        <option value="security">امنیتی</option>
+                        <option value="system">سیستمی</option>
                       </Select>
                     </Field>
                   </div>
                   {selectedTemplate?.subject && (
                     <div className="rounded-xl border bg-muted/30 p-4 text-sm">
-                      <div className="text-xs text-muted-foreground">Subject preview</div>
+                      <div className="text-xs text-muted-foreground">پیش‌نمایش موضوع</div>
                       <div className="mt-1 font-medium">{selectedTemplate.subject}</div>
                     </div>
                   )}
@@ -215,30 +213,30 @@ export default function NotificationsPage() {
 
               {step === 2 && (
                 <>
-                  <h2 className="text-base font-semibold">Personalization</h2>
+                  <h2 className="text-base font-semibold">شخصی‌سازی</h2>
                   <p className="text-sm text-muted-foreground">
-                    Fill in the values your template uses (amounts, names, codes). Leave blank if not needed.
+                    مقادیر مورد استفاده قالب (مبلغ، نام، کد و …) را وارد کنید. در صورت عدم نیاز خالی بگذارید.
                   </p>
-                  <KeyValueEditor pairs={pairs} onChange={setPairs} keyPlaceholder="Variable" valuePlaceholder="Value for this send" />
+                  <KeyValueEditor pairs={pairs} onChange={setPairs} keyPlaceholder="متغیر" valuePlaceholder="مقدار این ارسال" />
                 </>
               )}
 
               {step === 3 && (
                 <>
-                  <h2 className="text-base font-semibold">When and how to deliver</h2>
-                  <Field label="Priority">
+                  <h2 className="text-base font-semibold">زمان و نحوه تحویل</h2>
+                  <Field label="اولویت">
                     <Select value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full">
-                      <option value="low">Low</option>
-                      <option value="normal">Normal</option>
-                      <option value="high">High</option>
-                      <option value="critical">Urgent</option>
+                      <option value="low">کم</option>
+                      <option value="normal">عادی</option>
+                      <option value="high">بالا</option>
+                      <option value="critical">فوری</option>
                     </Select>
                   </Field>
-                  <Field label="Schedule" hint="Leave empty to send immediately">
+                  <Field label="زمان‌بندی" hint="خالی بگذارید تا فوری ارسال شود">
                     <Input type="datetime-local" value={scheduledAt} onChange={(e) => setScheduledAt(e.target.value)} />
                   </Field>
                   {scheduledAt && (
-                    <Field label="Time zone">
+                    <Field label="منطقه زمانی">
                       <Input value={timeZoneId} onChange={(e) => setTimeZoneId(e.target.value)} />
                     </Field>
                   )}
@@ -250,9 +248,9 @@ export default function NotificationsPage() {
                       className="mt-1 h-4 w-4 accent-primary"
                     />
                     <span>
-                      <span className="block text-sm font-medium">Try another provider if the first fails</span>
+                      <span className="block text-sm font-medium">در صورت شکست ارائه‌دهنده اول، ارائه‌دهنده دیگر را امتحان کن</span>
                       <span className="mt-1 block text-xs leading-5 text-muted-foreground">
-                        Recommended for important messages so a single provider outage does not block delivery.
+                        برای پیام‌های مهم توصیه می‌شود تا قطعی یک ارائه‌دهنده مانع تحویل نشود.
                       </span>
                     </span>
                   </label>
@@ -261,17 +259,17 @@ export default function NotificationsPage() {
                     className="text-xs font-medium text-primary"
                     onClick={() => setShowAdvanced((v) => !v)}
                   >
-                    {showAdvanced ? 'Hide advanced options' : 'Show advanced options'}
+                    {showAdvanced ? 'پنهان کردن گزینه‌های پیشرفته' : 'نمایش گزینه‌های پیشرفته'}
                   </button>
                   {showAdvanced && (
                     <div className="grid gap-4 rounded-xl border border-dashed p-4 sm:grid-cols-2">
-                      <Field label="Duplicate protection key" hint="Prevents double-send">
+                      <Field label="کلید جلوگیری از ارسال تکراری" hint="از ارسال دوبل جلوگیری می‌کند">
                         <Input value={idempotencyKey} onChange={(e) => setIdempotencyKey(e.target.value)} placeholder="payment-29381" />
                       </Field>
-                      <Field label="Preferred provider">
-                        <Input value={preferredProvider} onChange={(e) => setPreferredProvider(e.target.value)} placeholder="Automatic" />
+                      <Field label="ارائه‌دهنده ترجیحی">
+                        <Input value={preferredProvider} onChange={(e) => setPreferredProvider(e.target.value)} placeholder="خودکار" />
                       </Field>
-                      <Field label="Collapse key" hint="Replace older messages">
+                      <Field label="کلید ادغام" hint="جایگزین پیام‌های قدیمی‌تر">
                         <Input value={collapseKey} onChange={(e) => setCollapseKey(e.target.value)} />
                       </Field>
                     </div>
@@ -281,18 +279,18 @@ export default function NotificationsPage() {
 
               {step === 4 && (
                 <>
-                  <h2 className="text-base font-semibold">Review before sending</h2>
+                  <h2 className="text-base font-semibold">بررسی قبل از ارسال</h2>
                   <dl className="space-y-3 text-sm">
-                    <ReviewRow label="Recipient" value={recipient} />
-                    <ReviewRow label="Channel" value={formatChannel(channel)} />
-                    <ReviewRow label="Template" value={selectedTemplate ? templateTitle(selectedTemplate) : templateKey} />
-                    <ReviewRow label="Language" value={locale} />
-                    <ReviewRow label="Priority" value={priorityLabel[priority] ?? priority} />
-                    <ReviewRow label="When" value={scheduledAt ? `Scheduled · ${scheduledAt} (${timeZoneId})` : 'Immediately'} />
-                    <ReviewRow label="Fallback providers" value={allowFallback ? 'Yes' : 'No'} />
+                    <ReviewRow label="گیرنده" value={recipient} />
+                    <ReviewRow label="کانال" value={formatChannel(channel)} />
+                    <ReviewRow label="قالب" value={selectedTemplate ? templateTitle(selectedTemplate) : templateKey} />
+                    <ReviewRow label="زبان" value={locale} />
+                    <ReviewRow label="اولویت" value={priorityLabel[priority] ?? priority} />
+                    <ReviewRow label="زمان" value={scheduledAt ? `زمان‌بندی‌شده · ${scheduledAt} (${timeZoneId})` : 'فوری'} />
+                    <ReviewRow label="ارائه‌دهنده پشتیبان" value={allowFallback ? 'بله' : 'خیر'} />
                     {Object.keys(pairsToRecord(pairs)).length > 0 && (
                       <div className="rounded-xl border bg-muted/20 p-3">
-                        <div className="mb-2 text-xs text-muted-foreground">Personalization</div>
+                        <div className="mb-2 text-xs text-muted-foreground">شخصی‌سازی</div>
                         <ul className="space-y-1">
                           {pairs.filter((p) => p.key.trim()).map((p) => (
                             <li key={p.key} className="flex justify-between gap-4">
@@ -306,7 +304,7 @@ export default function NotificationsPage() {
                   </dl>
                   {previewText && (
                     <div className="rounded-xl border bg-background p-4">
-                      <div className="mb-2 text-xs font-medium text-muted-foreground">Content preview</div>
+                      <div className="mb-2 text-xs font-medium text-muted-foreground">پیش‌نمایش محتوا</div>
                       <p className="whitespace-pre-wrap text-sm leading-6">{previewText}</p>
                     </div>
                   )}
@@ -315,22 +313,22 @@ export default function NotificationsPage() {
 
               <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-5">
                 <Button variant="ghost" disabled={step === 0 || busy} onClick={() => setStep((s) => s - 1)}>
-                  <ChevronLeft size={16} /> Back
+                  <ChevronLeft size={16} /> بازگشت
                 </Button>
                 <div className="flex flex-wrap gap-2">
                   {step === 4 && (
                     <Button variant="outline" disabled={busy} onClick={() => void preview()}>
                       {busy ? <Loader2 className="animate-spin" size={16} /> : <Eye size={16} />}
-                      Preview
+                      پیش‌نمایش
                     </Button>
                   )}
                   {step < 4 ? (
                     <Button disabled={!canNext || busy} onClick={() => setStep((s) => s + 1)}>
-                      Continue <ChevronRight size={16} />
+                      ادامه <ChevronRight size={16} />
                     </Button>
                   ) : (
                     <Button disabled={busy} onClick={() => setConfirmOpen(true)}>
-                      <Send size={16} /> {scheduledAt ? 'Schedule' : 'Send'}
+                      <Send size={16} /> {scheduledAt ? 'زمان‌بندی' : 'ارسال'}
                     </Button>
                   )}
                 </div>
@@ -339,20 +337,20 @@ export default function NotificationsPage() {
           </Card>
 
           <div className="space-y-5">
-            <SectionCard title="Delivery checks">
+            <SectionCard title="بررسی‌های تحویل">
               <div className="space-y-3 text-sm">
-                <Row label="Consent" value="Checked on server" good />
-                <Row label="Provider fallback" value={allowFallback ? 'On' : 'Off'} good={allowFallback} />
-                <Row label="Duplicate protection" value={idempotencyKey ? 'On' : 'Off'} good={!!idempotencyKey} />
+                <Row label="رضایت" value="بررسی روی سرور" good />
+                <Row label="ارائه‌دهنده پشتیبان" value={allowFallback ? 'روشن' : 'خاموش'} good={allowFallback} />
+                <Row label="جلوگیری از ارسال تکراری" value={idempotencyKey ? 'روشن' : 'خاموش'} good={!!idempotencyKey} />
               </div>
             </SectionCard>
             <Card className="bg-primary text-primary-foreground shadow-lg shadow-primary/20">
               <CardContent className="p-5">
                 <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-                  <ShieldCheck size={16} /> Safe by design
+                  <ShieldCheck size={16} /> ایمن بر اساس طراحی
                 </div>
                 <p className="text-xs leading-5 text-primary-foreground/80">
-                  Tenant isolation, consent, and authorization are enforced by the server. This screen only helps you prepare the message.
+                  جداسازی مستأجر، رضایت و مجوز توسط سرور اعمال می‌شود. این صفحه فقط برای آماده‌سازی پیام است.
                 </p>
               </CardContent>
             </Card>
@@ -363,16 +361,16 @@ export default function NotificationsPage() {
       <ConfirmDialog
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
-        title={scheduledAt ? 'Schedule this notification?' : 'Send this notification?'}
-        confirmLabel={scheduledAt ? 'Yes, schedule it' : 'Yes, send it'}
+        title={scheduledAt ? 'این اعلان زمان‌بندی شود؟' : 'این اعلان ارسال شود؟'}
+        confirmLabel={scheduledAt ? 'بله، زمان‌بندی شود' : 'بله، ارسال شود'}
         busy={busy}
         onConfirm={send}
         description={
-          <ul className="list-disc space-y-1 pl-4">
-            <li>Recipient: <strong>{recipient}</strong></li>
-            <li>Channel: <strong>{formatChannel(channel)}</strong></li>
-            <li>Template: <strong>{selectedTemplate ? templateTitle(selectedTemplate) : templateKey}</strong></li>
-            <li>Timing: <strong>{scheduledAt || 'Immediately'}</strong></li>
+          <ul className="list-disc space-y-1 pr-4">
+            <li>گیرنده: <strong>{recipient}</strong></li>
+            <li>کانال: <strong>{formatChannel(channel)}</strong></li>
+            <li>قالب: <strong>{selectedTemplate ? templateTitle(selectedTemplate) : templateKey}</strong></li>
+            <li>زمان: <strong>{scheduledAt || 'فوری'}</strong></li>
           </ul>
         }
       />
@@ -397,7 +395,7 @@ function ReviewRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex justify-between gap-4 border-b border-dashed pb-2">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="text-right font-medium">{value || '—'}</dd>
+      <dd className="text-left font-medium">{value || '—'}</dd>
     </div>
   )
 }
