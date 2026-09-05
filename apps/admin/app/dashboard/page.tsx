@@ -3,7 +3,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { motion } from 'framer-motion'
-import { Activity, CheckCircle2, Send, Users, ArrowRight, Zap, AlertCircle } from 'lucide-react'
+import { Activity, CheckCircle2, Send, Users, ArrowLeft, Zap, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { StatCard } from '@/components/stat-card'
@@ -12,6 +12,7 @@ import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { flowApi } from '@/lib/api/flow'
 import { formatChannel, formatStatus } from '@/lib/ux/labels'
+import { useT } from '@/lib/i18n'
 
 function formatLag(ms?: number | null) {
   if (ms == null || Number.isNaN(ms)) return '—'
@@ -29,6 +30,7 @@ function statusTone(status: string) {
 }
 
 export default function Dashboard() {
+  const t = useT()
   const q = useQuery({
     queryKey: ['notifications', 'flow', 'dashboard'],
     queryFn: () => flowApi.snapshot(40),
@@ -67,20 +69,18 @@ export default function Dashboard() {
             <div>
               <div className="mb-2 flex items-center gap-2 text-xs font-medium text-emerald-600">
                 <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-                Live messaging plane
+                {t('liveMessagingPlane')}
               </div>
-              <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Live delivery snapshot for this tenant — queue, in-flight, delivered, and failures.
-              </p>
+              <h1 className="text-3xl font-bold tracking-tight">{t('dashboardTitle')}</h1>
+              <p className="mt-2 text-sm text-muted-foreground">{t('dashboardDesc')}</p>
             </div>
             <div className="flex gap-2">
               <Link href="/workflows/live">
-                <Button variant="outline">Delivery flow</Button>
+                <Button variant="outline">{t('openDeliveryFlow')}</Button>
               </Link>
               <Link href="/notifications">
                 <Button>
-                  <Send size={16} /> Send notification
+                  <Send size={16} /> {t('sendNotifBtn')}
                 </Button>
               </Link>
             </div>
@@ -97,28 +97,28 @@ export default function Dashboard() {
           ) : (
             <>
               <StatCard
-                label="In view (sample)"
+                label={t('inViewSample')}
                 value={String(totalInView)}
-                change={`${snap?.queued ?? 0} queued`}
+                change={`${snap?.queued ?? 0} ${t('queuedCount')}`}
                 icon={<Send size={18} />}
               />
               <StatCard
-                label="Delivery rate"
+                label={t('deliveryRate')}
                 value={deliveredRate == null ? '—' : `${deliveredRate.toFixed(1)}%`}
-                change={`${snap?.delivered ?? 0} delivered`}
+                change={`${snap?.delivered ?? 0} ${t('deliveredCount')}`}
                 icon={<CheckCircle2 size={18} />}
               />
               <StatCard
-                label="Failed / dead"
+                label={t('failedDead')}
                 value={String(snap?.failed ?? 0)}
-                change={`${snap?.sending ?? 0} sending`}
+                change={`${snap?.sending ?? 0} ${t('sendingCount')}`}
                 negative={(snap?.failed ?? 0) > 0}
                 icon={<Users size={18} />}
               />
               <StatCard
-                label="Avg. latency"
+                label={t('avgLatency')}
                 value={formatLag(snap?.avgLatencyMs)}
-                change="from flow sample"
+                change={t('fromFlowSample')}
                 icon={<Zap size={18} />}
               />
             </>
@@ -126,7 +126,7 @@ export default function Dashboard() {
         </div>
 
         <div className="mt-4 grid gap-4 xl:grid-cols-[1.6fr_1fr]">
-          <SectionCard title="Channel mix" subtitle="Share of recent messages by channel">
+          <SectionCard title={t('channelMix')} subtitle={t('channelMixSub')}>
             {loading ? (
               <div className="space-y-4">
                 {[0, 1, 2].map((i) => (
@@ -134,13 +134,13 @@ export default function Dashboard() {
                 ))}
               </div>
             ) : channelShares.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">No messages in the current sample.</p>
+              <p className="py-10 text-center text-sm text-muted-foreground">{t('noMessagesSample')}</p>
             ) : (
               <div className="space-y-5">
                 {channelShares.map((c) => (
                   <div key={c.channel}>
                     <div className="mb-2 flex justify-between text-sm">
-                      <span className="capitalize">{formatChannel(c.channel)}</span>
+                      <span>{formatChannel(c.channel)}</span>
                       <span className="font-medium">
                         {c.pct.toFixed(0)}% · {c.count}
                       </span>
@@ -152,7 +152,7 @@ export default function Dashboard() {
             )}
           </SectionCard>
 
-          <SectionCard title="Pipeline health" subtitle="Live stage counts">
+          <SectionCard title={t('pipelineHealth')} subtitle={t('pipelineHealthSub')}>
             {loading ? (
               <div className="space-y-4">
                 {[0, 1, 2, 3].map((i) => (
@@ -163,10 +163,10 @@ export default function Dashboard() {
               <div className="space-y-5">
                 {(
                   [
-                    ['Queued', snap?.queued ?? 0],
-                    ['Sending', snap?.sending ?? 0],
-                    ['Delivered', snap?.delivered ?? 0],
-                    ['Failed', snap?.failed ?? 0],
+                    [t('stageQueued'), snap?.queued ?? 0],
+                    [t('stageSending'), snap?.sending ?? 0],
+                    [t('stageDelivered'), snap?.delivered ?? 0],
+                    [t('stageFailed'), snap?.failed ?? 0],
                   ] as const
                 ).map(([label, value]) => (
                   <div key={label}>
@@ -174,20 +174,18 @@ export default function Dashboard() {
                       <span>{label}</span>
                       <span className="font-medium">{value}</span>
                     </div>
-                    <Progress
-                      value={totalInView ? (value / totalInView) * 100 : 0}
-                    />
+                    <Progress value={totalInView ? (value / totalInView) * 100 : 0} />
                   </div>
                 ))}
                 <div className="mt-2 rounded-xl bg-muted/60 p-4">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <Activity size={16} className="text-primary" />
-                    Messaging health
+                    {t('messagingHealth')}
                   </div>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {(snap?.failed ?? 0) > 0
-                      ? `${snap?.failed} failure(s) in the current sample — check the delivery flow log.`
-                      : 'No failures in the current sample.'}
+                      ? `${snap?.failed} ${t('failuresInSample')}`
+                      : t('noFailuresSample')}
                   </p>
                 </div>
               </div>
@@ -197,11 +195,11 @@ export default function Dashboard() {
 
         <div className="mt-4 grid gap-4 xl:grid-cols-[1.35fr_.65fr]">
           <SectionCard
-            title="Recent notifications"
-            subtitle="Latest items from the live flow sample"
+            title={t('recentNotifications')}
+            subtitle={t('recentNotificationsSub')}
             action={
               <Link href="/workflows/live" className="flex items-center gap-1 text-xs font-medium text-primary">
-                Open flow <ArrowRight size={13} />
+                {t('openFlow')} <ArrowLeft size={13} />
               </Link>
             }
           >
@@ -212,17 +210,17 @@ export default function Dashboard() {
                 ))}
               </div>
             ) : recent.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">No recent notifications.</p>
+              <p className="py-10 text-center text-sm text-muted-foreground">{t('noRecentNotifications')}</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[650px] text-sm">
-                  <thead className="text-left text-xs text-muted-foreground">
+                  <thead className="text-right text-xs text-muted-foreground">
                     <tr>
-                      <th className="pb-3 font-medium">Recipient</th>
-                      <th className="pb-3 font-medium">Channel</th>
-                      <th className="pb-3 font-medium">Status</th>
-                      <th className="pb-3 font-medium">Provider</th>
-                      <th className="pb-3 font-medium">Latency</th>
+                      <th className="pb-3 font-medium">{t('colRecipient')}</th>
+                      <th className="pb-3 font-medium">{t('colChannel')}</th>
+                      <th className="pb-3 font-medium">{t('colStatus')}</th>
+                      <th className="pb-3 font-medium">{t('colProvider')}</th>
+                      <th className="pb-3 font-medium">{t('colLatency')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -235,7 +233,7 @@ export default function Dashboard() {
                             {formatStatus(r.status)}
                           </span>
                         </td>
-                        <td className="py-3 text-muted-foreground">{r.providerId || 'default'}</td>
+                        <td className="py-3 text-muted-foreground">{r.providerId || 'پیش‌فرض'}</td>
                         <td className="py-3 text-muted-foreground">{formatLag(r.latencyMs)}</td>
                       </tr>
                     ))}
@@ -245,7 +243,7 @@ export default function Dashboard() {
             )}
           </SectionCard>
 
-          <SectionCard title="Activity" subtitle="Humanized delivery events">
+          <SectionCard title={t('activity')} subtitle={t('activitySub')}>
             {loading ? (
               <div className="space-y-4">
                 {[0, 1, 2, 3].map((i) => (
@@ -259,7 +257,7 @@ export default function Dashboard() {
                 ))}
               </div>
             ) : events.length === 0 ? (
-              <p className="py-10 text-center text-sm text-muted-foreground">No events yet.</p>
+              <p className="py-10 text-center text-sm text-muted-foreground">{t('noEventsYet')}</p>
             ) : (
               <div className="space-y-5">
                 {events.map((ev, i) => {
@@ -277,7 +275,7 @@ export default function Dashboard() {
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium leading-snug">{ev.message}</div>
                         <div className="mt-1 text-[10px] text-muted-foreground">
-                          {new Date(ev.at).toLocaleString()}
+                          {new Date(ev.at).toLocaleString('fa-IR')}
                         </div>
                       </div>
                     </div>
@@ -289,9 +287,7 @@ export default function Dashboard() {
         </div>
 
         {q.isError && (
-          <p className="mt-4 text-sm text-destructive">
-            Could not load live snapshot. Check API auth and tenant context.
-          </p>
+          <p className="mt-4 text-sm text-destructive">{t('loadSnapshotError')}</p>
         )}
       </div>
     </div>
