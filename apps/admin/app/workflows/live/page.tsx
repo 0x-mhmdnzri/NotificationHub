@@ -10,12 +10,12 @@ export default function WorkflowLivePage() {
     <div className="grid-bg min-h-full p-5 md:p-8">
       <div className="mx-auto max-w-[1500px] space-y-6">
         <PageHeader
-          title="Delivery flow"
-          description="Watch notifications move from your app through the delivery plugin — queue, in-flight, delivered, or failed — with a plain-language log."
+          title="جریان تحویل"
+          description="حرکت اعلان‌ها از اپ تا افزونه تحویل را ببینید — صف، در حال ارسال، تحویل‌شده یا ناموفق."
           action={
             <Link href="/workflows">
               <Button variant="outline" size="sm">
-                Workflow builder
+                سازنده گردش‌کار
               </Button>
             </Link>
           }
