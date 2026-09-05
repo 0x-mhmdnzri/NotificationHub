@@ -15,23 +15,23 @@ export default function StatusPage() {
   const [query, setQuery] = useState('')
   const q = useNotificationStatus(query || undefined)
   const data = (q.data ?? {}) as Record<string, unknown>
-  const status = String(data.status ?? 'Unknown')
+  const status = String(data.status ?? 'نامشخص')
   const terminal = ['delivered', 'failed', 'cancelled', 'rejected'].includes(status.toLowerCase())
 
   return (
     <div className="grid-bg min-h-full p-5 md:p-8">
       <div className="mx-auto max-w-[1100px]">
         <PageHeader
-          eyebrow="Operations"
-          title="Delivery status"
-          description="Look up a single message and see whether it was delivered."
+          eyebrow="عملیات"
+          title="وضعیت تحویل"
+          description="یک پیام را جستجو کنید و ببینید آیا تحویل شده است."
         />
         <Card>
           <CardContent className="p-5">
             <div className="flex gap-2">
-              <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="Message reference" />
+              <Input value={id} onChange={(e) => setId(e.target.value)} placeholder="مرجع پیام" />
               <Button onClick={() => setQuery(id.trim())} disabled={!id.trim()}>
-                <Search size={16} /> Look up
+                <Search size={16} /> جستجو
               </Button>
             </div>
           </CardContent>
@@ -42,7 +42,7 @@ export default function StatusPage() {
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle>Message</CardTitle>
+                  <CardTitle>پیام</CardTitle>
                   <Badge variant={statusTone(status)}>{formatStatus(status)}</Badge>
                 </div>
               </CardHeader>
@@ -53,28 +53,28 @@ export default function StatusPage() {
                     <div className="text-xl font-semibold">{formatStatus(status)}</div>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {q.isFetching
-                        ? 'Refreshing…'
+                        ? 'در حال بروزرسانی…'
                         : q.isError
-                          ? 'This message could not be found or loaded.'
+                          ? 'این پیام یافت نشد یا بارگذاری ممکن نشد.'
                           : terminal
-                            ? 'Final state'
-                            : 'Still in progress — this view updates automatically'}
+                            ? 'وضعیت نهایی'
+                            : 'هنوز در جریان است — این نما به‌صورت خودکار بروزرسانی می‌شود'}
                     </p>
                   </div>
                 </div>
                 <dl className="grid gap-3 border-t pt-4 text-sm sm:grid-cols-2">
-                  <Row label="Recipient" value={String(data.recipient ?? '—')} />
-                  <Row label="Channel" value={formatChannel(String(data.channel ?? ''))} />
-                  <Row label="Template" value={String(data.templateKey ?? data.template ?? '—')} />
-                  <Row label="Created" value={formatDateTime(String(data.createdAt ?? data.scheduledAt ?? ''))} />
-                  <Row label="Provider" value={String(data.provider ?? data.preferredProvider ?? '—')} />
+                  <Row label="گیرنده" value={String(data.recipient ?? '—')} />
+                  <Row label="کانال" value={formatChannel(String(data.channel ?? ''))} />
+                  <Row label="قالب" value={String(data.templateKey ?? data.template ?? '—')} />
+                  <Row label="ایجاد" value={formatDateTime(String(data.createdAt ?? data.scheduledAt ?? ''))} />
+                  <Row label="ارائه‌دهنده" value={String(data.provider ?? data.preferredProvider ?? '—')} />
                 </dl>
               </CardContent>
             </Card>
             <Card>
-              <CardHeader><CardTitle>Tracking</CardTitle></CardHeader>
+              <CardHeader><CardTitle>پیگیری</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm text-muted-foreground">
-                <p>{terminal ? 'Updates stopped — delivery finished.' : 'Checking every few seconds for changes.'}</p>
+                <p>{terminal ? 'بروزرسانی متوقف شد — تحویل تمام شده.' : 'هر چند ثانیه یک‌بار تغییرات بررسی می‌شود.'}</p>
               </CardContent>
             </Card>
           </div>
