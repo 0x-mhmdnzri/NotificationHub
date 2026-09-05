@@ -6,12 +6,11 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ToastHost } from '@/components/toast-host'
 import { resourcesApi } from '@/lib/api/resources'
 import { useTenant } from '@/providers/tenant-provider'
-import { formatChannel, friendlyError } from '@/lib/ux/labels'
+import { friendlyError } from '@/lib/ux/labels'
 
 function maskToken(t?: string) {
   if (!t) return '—'
@@ -35,10 +34,10 @@ export default function DevicesPage() {
     setBusy(true)
     try {
       await resourcesApi.devices.register({ userId, platform, token, locale, tenantId })
-      setToast({ tone: 'success', title: 'Device registered' })
+      setToast({ tone: 'success', title: 'دستگاه ثبت شد' })
       setToken('')
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not register device', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'ثبت دستگاه ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -56,7 +55,7 @@ export default function DevicesPage() {
         })),
       )
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not load devices', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'بارگذاری دستگاه‌ها ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -68,10 +67,10 @@ export default function DevicesPage() {
     try {
       await resourcesApi.devices.unregister({ userId: lookup, token: revokeToken, tenantId })
       setRevokeToken(null)
-      setToast({ tone: 'success', title: 'Device removed' })
+      setToast({ tone: 'success', title: 'دستگاه حذف شد' })
       await list()
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not remove device', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'حذف دستگاه ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -82,57 +81,57 @@ export default function DevicesPage() {
       <ToastHost toast={toast} onClose={() => setToast(null)} />
       <div className="mx-auto max-w-[1100px]">
         <PageHeader
-          eyebrow="Audience"
-          title="Devices"
-          description="Manage phones and browsers that can receive push notifications."
+          eyebrow="مخاطبان"
+          title="دستگاه‌ها"
+          description="مدیریت گوشی‌ها و مرورگرهایی که می‌توانند اعلان پوش دریافت کنند."
         />
         <div className="grid gap-5 lg:grid-cols-2">
           <Card>
             <CardContent className="space-y-4 p-6">
-              <h2 className="font-semibold">Register a device</h2>
-              <Field label="User">
-                <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="User ID" />
+              <h2 className="font-semibold">ثبت دستگاه</h2>
+              <Field label="کاربر">
+                <Input value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="شناسه کاربر" />
               </Field>
-              <Field label="Platform">
+              <Field label="پلتفرم">
                 <Select value={platform} onChange={(e) => setPlatform(e.target.value)}>
-                  <option value="ios">iPhone / iPad</option>
-                  <option value="android">Android</option>
-                  <option value="web">Web browser</option>
+                  <option value="ios">آیفون / آیپد</option>
+                  <option value="android">اندروید</option>
+                  <option value="web">مرورگر وب</option>
                 </Select>
               </Field>
-              <Field label="Device token" hint="Sensitive — stored securely on the server">
+              <Field label="توکن دستگاه" hint="حساس — به‌صورت امن روی سرور ذخیره می‌شود">
                 <Input value={token} onChange={(e) => setToken(e.target.value)} type="password" autoComplete="off" />
               </Field>
-              <Field label="Language">
+              <Field label="زبان">
                 <Input value={locale} onChange={(e) => setLocale(e.target.value)} />
               </Field>
               <Button disabled={busy || !userId || !token} onClick={() => void register()}>
-                Register device
+                ثبت دستگاه
               </Button>
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="space-y-4 p-6">
-              <h2 className="font-semibold">Find devices for a user</h2>
-              <Field label="User">
-                <Input value={lookup} onChange={(e) => setLookup(e.target.value)} placeholder="User ID" />
+              <h2 className="font-semibold">یافتن دستگاه‌های یک کاربر</h2>
+              <Field label="کاربر">
+                <Input value={lookup} onChange={(e) => setLookup(e.target.value)} placeholder="شناسه کاربر" />
               </Field>
               <Button disabled={busy || !lookup} variant="outline" onClick={() => void list()}>
-                Show devices
+                نمایش دستگاه‌ها
               </Button>
               <div className="space-y-2">
                 {devices.length === 0 && (
-                  <p className="text-sm text-muted-foreground">No devices loaded yet.</p>
+                  <p className="text-sm text-muted-foreground">هنوز دستگاهی بارگذاری نشده.</p>
                 )}
                 {devices.map((d, i) => (
                   <div key={i} className="flex items-center justify-between rounded-xl border p-3 text-sm">
                     <div>
-                      <div className="font-medium">{d.platform === 'ios' ? 'iOS' : d.platform === 'android' ? 'Android' : d.platform || 'Device'}</div>
+                      <div className="font-medium">{d.platform === 'ios' ? 'iOS' : d.platform === 'android' ? 'اندروید' : d.platform || 'دستگاه'}</div>
                       <div className="text-xs text-muted-foreground">{maskToken(d.token)} · {d.locale || '—'}</div>
                     </div>
                     <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setRevokeToken(d.token || null)}>
-                      Remove
+                      حذف
                     </Button>
                   </div>
                 ))}
@@ -145,12 +144,12 @@ export default function DevicesPage() {
       <ConfirmDialog
         open={!!revokeToken}
         onOpenChange={(v) => !v && setRevokeToken(null)}
-        title="Remove this device?"
-        confirmLabel="Yes, remove it"
+        title="این دستگاه حذف شود؟"
+        confirmLabel="بله، حذف شود"
         destructive
         busy={busy}
         onConfirm={revoke}
-        description="This device will no longer receive push notifications until it is registered again."
+        description="این دستگاه تا ثبت مجدد، اعلان پوش دریافت نمی‌کند."
       />
     </div>
   )
