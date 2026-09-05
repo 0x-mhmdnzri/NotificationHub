@@ -1,12 +1,12 @@
 /** Presentation-layer labels. Never leak DTO/enum/route names to operators. */
 
 export const channelLabel: Record<string, string> = {
-  push: 'اعلان فشاری',
+  push: 'پوش',
   sms: 'پیامک',
   email: 'ایمیل',
   webhook: 'وب‌هوک',
   chat: 'چت',
-  inapp: 'داخل‌اپ',
+  inapp: 'درون‌برنامه‌ای',
 }
 
 export function formatChannel(value?: string | null) {
@@ -32,7 +32,7 @@ export function formatStatus(value?: string | null) {
     inactive: 'غیرفعال',
     success: 'موفق',
   }
-  return map[value.toLowerCase()] ?? value.replace(/[_-]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+  return map[value.toLowerCase()] ?? value.replace(/[_-]/g, ' ')
 }
 
 export function statusTone(value?: string | null): 'success' | 'warning' | 'danger' | 'default' | 'outline' {
@@ -78,7 +78,6 @@ export function humanizeKey(key?: string | null) {
   return key
     .replace(/[_.-]+/g, ' ')
     .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 export function friendlyError(err: unknown): string {
@@ -90,4 +89,11 @@ export function friendlyError(err: unknown): string {
   } catch {
     return String(err)
   }
+}
+
+export const priorityLabel: Record<string, string> = {
+  low: 'کم',
+  normal: 'عادی',
+  high: 'بالا',
+  critical: 'فوری',
 }
