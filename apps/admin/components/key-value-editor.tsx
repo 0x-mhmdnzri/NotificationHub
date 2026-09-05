@@ -10,8 +10,8 @@ export type KeyValuePair = { key: string; value: string }
 export function KeyValueEditor({
   pairs,
   onChange,
-  keyPlaceholder = 'Field name',
-  valuePlaceholder = 'Value',
+  keyPlaceholder = 'نام فیلد',
+  valuePlaceholder = 'مقدار',
 }: {
   pairs: KeyValuePair[]
   onChange: (next: KeyValuePair[]) => void
@@ -34,7 +34,7 @@ export function KeyValueEditor({
     <div className="space-y-2">
       {pairs.length === 0 && (
         <p className="rounded-xl border border-dashed p-4 text-center text-xs text-muted-foreground">
-          No personalization fields yet. Add fields that your template expects (for example amount or name).
+          هنوز فیلد شخصی‌سازی نیست. فیلدهایی که قالب انتظار دارد اضافه کنید (مثلاً amount یا name).
         </p>
       )}
       {pairs.map((p, i) => (
@@ -51,13 +51,13 @@ export function KeyValueEditor({
             placeholder={valuePlaceholder}
             className="flex-1"
           />
-          <Button type="button" size="icon" variant="ghost" onClick={() => remove(i)} aria-label="Remove field">
+          <Button type="button" size="icon" variant="ghost" onClick={() => remove(i)} aria-label="حذف فیلد">
             <Trash2 size={15} />
           </Button>
         </div>
       ))}
       <Button type="button" variant="outline" size="sm" onClick={add}>
-        <Plus size={14} /> Add field
+        <Plus size={14} /> افزودن فیلد
       </Button>
     </div>
   )

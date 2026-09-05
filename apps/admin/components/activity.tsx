@@ -1,36 +1,19 @@
 'use client'
 
-import { CheckCircle2, Clock3, AlertCircle } from 'lucide-react'
+import { cn } from '@/lib/utils'
 
-export type ActivityItem = {
-  title: string
-  description: string
-  time: string
-  type?: 'success' | 'warning' | 'info'
-}
-
-export function Activity({ items }: { items: ActivityItem[] }) {
+export function Activity({ items, className }: { items: { id: string; title: string; time: string; tone?: string }[]; className?: string }) {
   if (!items.length) {
-    return <p className="py-8 text-center text-sm text-muted-foreground">No activity yet.</p>
+    return <p className={cn('text-sm text-muted-foreground', className)}>هنوز فعالیتی نیست.</p>
   }
-
   return (
-    <div className="space-y-5">
+    <div className={cn('space-y-3', className)}>
       {items.map((item) => (
-        <div key={`${item.title}-${item.time}`} className="flex gap-3">
-          <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-muted">
-            {item.type === 'success' ? (
-              <CheckCircle2 size={16} className="text-emerald-500" />
-            ) : item.type === 'warning' ? (
-              <AlertCircle size={16} className="text-amber-500" />
-            ) : (
-              <Clock3 size={16} className="text-primary" />
-            )}
-          </div>
+        <div key={item.id} className="flex gap-3">
+          <div className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary" />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium">{item.title}</div>
-            <div className="truncate text-xs text-muted-foreground">{item.description}</div>
-            <div className="mt-1 text-[10px] text-muted-foreground">{item.time}</div>
+            <div className="text-sm">{item.title}</div>
+            <div className="text-xs text-muted-foreground">{item.time}</div>
           </div>
         </div>
       ))}
