@@ -1,14 +1,15 @@
 'use client'
 
-import { Dialog } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
+import { Dialog } from '../ui/dialog'
+import { Button } from '../ui/button'
 
 export function ConfirmDialog({
   open,
   onOpenChange,
   title,
   description,
-  confirmLabel = 'Confirm',
+  confirmLabel = 'تأیید',
+  cancelLabel = 'بازگشت',
   destructive,
   busy,
   onConfirm,
@@ -16,25 +17,29 @@ export function ConfirmDialog({
   open: boolean
   onOpenChange: (v: boolean) => void
   title: string
-  description: string
+  description: React.ReactNode
   confirmLabel?: string
+  cancelLabel?: string
   destructive?: boolean
   busy?: boolean
   onConfirm: () => void | Promise<void>
 }) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={title} description={description}>
-      <div className="flex justify-end gap-2 border-t p-5">
-        <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-          Go back
-        </Button>
-        <Button
-          variant={destructive ? 'destructive' : 'default'}
-          disabled={busy}
-          onClick={() => void onConfirm()}
-        >
-          {confirmLabel}
-        </Button>
+    <Dialog open={open} onOpenChange={onOpenChange} title={title} description={typeof description === 'string' ? description : undefined}>
+      <div className="space-y-5 p-5">
+        {typeof description !== 'string' && <div className="text-sm leading-6 text-muted-foreground">{description}</div>}
+        <div className="flex justify-end gap-2 border-t pt-4">
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
+            {cancelLabel}
+          </Button>
+          <Button
+            variant={destructive ? 'destructive' : 'default'}
+            disabled={busy}
+            onClick={() => void onConfirm()}
+          >
+            {busy ? 'در حال انجام…' : confirmLabel}
+          </Button>
+        </div>
       </div>
     </Dialog>
   )

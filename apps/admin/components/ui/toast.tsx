@@ -32,8 +32,8 @@ export function Toast({
           <p className="text-sm font-semibold">{title}</p>
           {description && <p className="mt-1 text-xs leading-5 text-muted-foreground">{description}</p>}
         </div>
-        <button onClick={onClose} className="rounded-lg p-1 text-muted-foreground transition hover:bg-muted hover:text-foreground" aria-label="Close">
-          <X className="h-4 w-4" />
+        <button type="button" onClick={onClose} className="rounded-lg p-1 text-muted-foreground hover:bg-muted" aria-label="بستن">
+          <X size={16} />
         </button>
       </div>
     </div>
