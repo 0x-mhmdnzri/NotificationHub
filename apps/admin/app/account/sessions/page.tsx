@@ -23,35 +23,35 @@ export default function SessionsPage() {
   return (
     <div className="p-6 lg:p-8">
       <PageHeader
-        title="Sessions"
-        description="Active sign-ins across devices. Revoking invalidates refresh tokens."
+        title="نشست‌ها"
+        description="ورودهای فعال روی دستگاه‌ها. ابطال، توکن تازه‌سازی را باطل می‌کند."
       />
       <div className="mb-4 flex justify-end">
         <Button variant="ghost" onClick={() => revokeAll.mutate()} disabled={revokeAll.isPending}>
-          Revoke all
+          ابطال همه
         </Button>
       </div>
-      <SectionCard title="Active sessions">
+      <SectionCard title="نشست‌های فعال">
         <div className="space-y-3">
           {(sessions.data ?? []).map((s) => (
             <div key={s.id} className="flex flex-col gap-2 rounded-xl border p-4 sm:flex-row sm:items-center">
               <div className="flex-1 text-sm">
-                <div className="font-medium">{s.userAgent || 'Unknown device'}</div>
+                <div className="font-medium">{s.userAgent || 'دستگاه ناشناس'}</div>
                 <div className="text-xs text-muted-foreground">
-                  {s.ip || '—'} · last seen {new Date(s.lastSeenAt).toLocaleString()} ·{' '}
-                  {s.isActive ? 'active' : 'revoked'}
+                  {s.ip || '—'} · آخرین بازدید {new Date(s.lastSeenAt).toLocaleString('fa-IR')} ·{' '}
+                  {s.isActive ? 'فعال' : 'باطل‌شده'}
                 </div>
               </div>
               {s.isActive && (
                 <Button size="sm" variant="ghost" onClick={() => revoke.mutate(s.id)}>
-                  Revoke
+                  ابطال
                 </Button>
               )}
             </div>
           ))}
-          {sessions.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+          {sessions.isLoading && <p className="text-sm text-muted-foreground">در حال بارگذاری…</p>}
           {!sessions.isLoading && !(sessions.data?.length) && (
-            <p className="text-sm text-muted-foreground">No sessions recorded.</p>
+            <p className="text-sm text-muted-foreground">نشستی ثبت نشده است.</p>
           )}
         </div>
       </SectionCard>
