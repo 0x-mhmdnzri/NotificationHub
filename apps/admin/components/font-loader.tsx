@@ -1,18 +1,9 @@
 'use client'
 
-import { useEffect } from 'react'
-
-/** Prefer local IRANSans FaNum modules when present; CDN fallback already in CSS. */
+/**
+ * Fonts load from CSS (fonts-cdn-fallback.css → family IRANSans).
+ * No runtime import of local base64 modules (avoids module-not-found).
+ */
 export function FontLoader() {
-  useEffect(() => {
-    void (async () => {
-      try {
-        const mod = await import('@/lib/fonts/load-iransans')
-        await mod.loadIranSans()
-      } catch {
-        // modules not bundled yet — CDN IRANSans alias remains
-      }
-    })()
-  }, [])
   return null
 }
