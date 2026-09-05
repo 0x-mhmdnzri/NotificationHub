@@ -66,9 +66,9 @@ export default function CampaignsPage() {
       setCampaignId(id)
       setCampaignName(name)
       setOpen(false)
-      setToast({ tone: 'success', title: 'Campaign created', description: `“${name}” is ready for recipients.` })
+      setToast({ tone: 'success', title: 'کمپین ایجاد شد', description: `«${name}» آماده دریافت مخاطب است.` })
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not create campaign', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'ایجاد کمپین ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -80,9 +80,9 @@ export default function CampaignsPage() {
     try {
       await resourcesApi.campaigns.recipients(campaignId, { addresses, channels })
       setRecipients('')
-      setToast({ tone: 'success', title: `${addresses.length} recipients added` })
+      setToast({ tone: 'success', title: `${addresses.length} گیرنده اضافه شد` })
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not add recipients', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'افزودن گیرنده ممکن نشد', description: friendlyError(e) })
     }
   }
 
@@ -93,9 +93,9 @@ export default function CampaignsPage() {
     form.append('file', file)
     try {
       await resourcesApi.campaigns.importCsv(campaignId, form)
-      setToast({ tone: 'success', title: 'Import started', description: file.name })
+      setToast({ tone: 'success', title: 'ورود فایل شروع شد', description: file.name })
     } catch (err) {
-      setToast({ tone: 'error', title: 'Import failed', description: friendlyError(err) })
+      setToast({ tone: 'error', title: 'ورود فایل ناموفق بود', description: friendlyError(err) })
     }
     if (fileRef.current) fileRef.current.value = ''
   }
@@ -106,7 +106,7 @@ export default function CampaignsPage() {
       const p = (await resourcesApi.campaigns.progress(campaignId)) as typeof progress
       setProgress(p)
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not refresh progress', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'بروزرسانی پیشرفت ممکن نشد', description: friendlyError(e) })
     }
   }
 
@@ -116,10 +116,10 @@ export default function CampaignsPage() {
     try {
       await resourcesApi.campaigns.send(campaignId)
       setConfirmSend(false)
-      setToast({ tone: 'success', title: 'Campaign started' })
+      setToast({ tone: 'success', title: 'کمپین شروع شد' })
       await inspect()
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not start campaign', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'شروع کمپین ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -131,10 +131,10 @@ export default function CampaignsPage() {
     try {
       await resourcesApi.campaigns.cancel(campaignId)
       setConfirmCancel(false)
-      setToast({ tone: 'success', title: 'Campaign cancelled' })
+      setToast({ tone: 'success', title: 'کمپین لغو شد' })
       await inspect()
     } catch (e) {
-      setToast({ tone: 'error', title: 'Could not cancel', description: friendlyError(e) })
+      setToast({ tone: 'error', title: 'لغو ممکن نشد', description: friendlyError(e) })
     } finally {
       setBusy(false)
     }
@@ -147,12 +147,12 @@ export default function CampaignsPage() {
       <ToastHost toast={toast} onClose={() => setToast(null)} />
       <div className="mx-auto max-w-[1500px]">
         <PageHeader
-          eyebrow="Send"
-          title="Campaigns"
-          description="Reach many people with one message. Build the audience, review, then start."
+          eyebrow="ارسال"
+          title="کمپین‌ها"
+          description="با یک پیام به افراد زیادی برسید. مخاطب را بسازید، بررسی کنید، سپس شروع کنید."
           action={
             <Button onClick={() => setOpen(true)}>
-              <Plus size={16} /> New campaign
+              <Plus size={16} /> کمپین جدید
             </Button>
           }
         />
@@ -160,7 +160,7 @@ export default function CampaignsPage() {
         <div className="grid gap-5 lg:grid-cols-[1fr_380px]">
           <Card>
             <CardHeader>
-              <CardTitle>{campaignName || 'Campaign workspace'}</CardTitle>
+              <CardTitle>{campaignName || 'فضای کار کمپین'}</CardTitle>
             </CardHeader>
             <CardContent>
               {!campaignId ? (
@@ -168,35 +168,35 @@ export default function CampaignsPage() {
                   <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl bg-primary/10 text-primary">
                     <Megaphone size={22} />
                   </div>
-                  <h3 className="mt-4 font-semibold">No campaign selected</h3>
+                  <h3 className="mt-4 font-semibold">کمپینی انتخاب نشده</h3>
                   <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-                    Create a campaign, add people by list or spreadsheet, then start sending when you are ready.
+                    یک کمپین بسازید، افراد را با فهرست یا فایل اضافه کنید، سپس وقتی آماده بودید ارسال را شروع کنید.
                   </p>
                   <Button className="mt-5" onClick={() => setOpen(true)}>
-                    <Plus size={15} /> Create campaign
+                    <Plus size={15} /> ایجاد کمپین
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-6">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={statusTone(progress?.status)}>{formatStatus(progress?.status) || 'Ready'}</Badge>
-                    <span className="text-xs text-muted-foreground">Working campaign</span>
+                    <Badge variant={statusTone(progress?.status)}>{formatStatus(progress?.status) || 'آماده'}</Badge>
+                    <span className="text-xs text-muted-foreground">کمپین در حال کار</span>
                   </div>
 
                   <div className="rounded-xl border bg-muted/20 p-4">
-                    <div className="mb-3 text-sm font-medium">Audience</div>
+                    <div className="mb-3 text-sm font-medium">مخاطب</div>
                     <textarea
                       value={recipients}
                       onChange={(e) => setRecipients(e.target.value)}
-                      placeholder="One recipient per line (user ID, email, or phone)"
+                      placeholder="هر خط یک گیرنده (شناسه کاربر، ایمیل یا موبایل)"
                       className="min-h-28 w-full rounded-xl border bg-background p-3 text-sm"
                     />
                     <div className="mt-3 flex flex-wrap gap-2">
                       <Button variant="outline" onClick={() => void addRecipients()} disabled={!recipients.trim()}>
-                        <Plus size={14} /> Add list
+                        <Plus size={14} /> افزودن فهرست
                       </Button>
                       <Button variant="outline" onClick={() => fileRef.current?.click()}>
-                        <Upload size={14} /> Import spreadsheet
+                        <Upload size={14} /> ورود از فایل
                       </Button>
                       <input ref={fileRef} type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => void importCsv(e)} />
                     </div>
@@ -204,13 +204,13 @@ export default function CampaignsPage() {
 
                   <div className="flex flex-wrap gap-2">
                     <Button onClick={() => setConfirmSend(true)}>
-                      <Play size={15} /> Start campaign
+                      <Play size={15} /> شروع کمپین
                     </Button>
                     <Button variant="outline" onClick={() => void inspect()}>
-                      Refresh progress
+                      بروزرسانی پیشرفت
                     </Button>
                     <Button variant="ghost" className="text-destructive" onClick={() => setConfirmCancel(true)}>
-                      <XCircle size={15} /> Cancel campaign
+                      <XCircle size={15} /> لغو کمپین
                     </Button>
                   </div>
                 </div>
@@ -220,28 +220,28 @@ export default function CampaignsPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Progress</CardTitle>
+              <CardTitle>پیشرفت</CardTitle>
             </CardHeader>
             <CardContent>
-              {!campaignId && <p className="text-sm text-muted-foreground">Progress appears after you create a campaign.</p>}
+              {!campaignId && <p className="text-sm text-muted-foreground">پس از ایجاد کمپین، پیشرفت اینجا نمایش داده می‌شود.</p>}
               {campaignId && !progress && (
-                <p className="text-sm text-muted-foreground">Press “Refresh progress” to load the latest numbers.</p>
+                <p className="text-sm text-muted-foreground">برای بارگذاری آخرین اعداد، «بروزرسانی پیشرفت» را بزنید.</p>
               )}
               {progress && (
                 <div className="space-y-4">
                   <div>
                     <div className="mb-2 flex justify-between text-xs">
-                      <span>Completion</span>
+                      <span>تکمیل</span>
                       <span className="font-medium">{pct}%</span>
                     </div>
                     <Progress value={pct} />
                   </div>
                   <div className="grid grid-cols-2 gap-3 text-sm">
-                    <Stat label="Total" value={progress.total} />
-                    <Stat label="Processed" value={progress.processed} />
-                    <Stat label="Succeeded" value={progress.successful} good />
-                    <Stat label="Failed" value={progress.failed} bad />
-                    <Stat label="Waiting" value={progress.pending} />
+                    <Stat label="مجموع" value={progress.total} />
+                    <Stat label="پردازش‌شده" value={progress.processed} />
+                    <Stat label="موفق" value={progress.successful} good />
+                    <Stat label="ناموفق" value={progress.failed} bad />
+                    <Stat label="در انتظار" value={progress.pending} />
                   </div>
                 </div>
               )}
@@ -253,16 +253,16 @@ export default function CampaignsPage() {
       <Dialog
         open={open}
         onOpenChange={setOpen}
-        title="New campaign"
-        description="Name the campaign, pick a template and channels, then add your audience."
+        title="کمپین جدید"
+        description="نام کمپین، قالب و کانال‌ها را انتخاب کنید، سپس مخاطب را اضافه کنید."
       >
         <div className="space-y-5 p-5">
-          <Field label="Campaign name">
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Weekend payment reminders" />
+          <Field label="نام کمپین">
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="یادآوری پرداخت آخر هفته" />
           </Field>
-          <Field label="Message template">
+          <Field label="قالب پیام">
             <Select value={templateKey} onChange={(e) => setTemplateKey(e.target.value)}>
-              <option value="">Choose a template</option>
+              <option value="">انتخاب قالب</option>
               {templates.data?.map((t) => (
                 <option key={`${t.key}-${t.channel}-${t.locale}`} value={t.key}>
                   {templateTitle(t)} · {formatChannel(t.channel)}
@@ -270,7 +270,7 @@ export default function CampaignsPage() {
               ))}
             </Select>
           </Field>
-          <Field label="Channels">
+          <Field label="کانال‌ها">
             <div className="flex flex-wrap gap-2">
               {['email', 'sms', 'push', 'webhook'].map((c) => (
                 <button
@@ -286,16 +286,16 @@ export default function CampaignsPage() {
               ))}
             </div>
           </Field>
-          <Field label="Schedule" hint="Optional — leave empty to start manually">
+          <Field label="زمان‌بندی" hint="اختیاری — خالی بگذارید تا دستی شروع شود">
             <Input type="datetime-local" value={scheduled} onChange={(e) => setScheduled(e.target.value)} />
           </Field>
-          <Field label="Shared personalization" hint="Optional values applied to all recipients">
+          <Field label="شخصی‌سازی مشترک" hint="مقادیر اختیاری که به همه گیرنده‌ها اعمال می‌شود">
             <KeyValueEditor pairs={pairs} onChange={setPairs} />
           </Field>
           <div className="flex justify-end border-t pt-4">
             <Button onClick={() => void create()} disabled={busy || !name || !templateKey || !channels.length}>
               {busy ? <Loader2 className="animate-spin" size={15} /> : <Megaphone size={15} />}
-              Create campaign
+              ایجاد کمپین
             </Button>
           </div>
         </div>
@@ -304,26 +304,26 @@ export default function CampaignsPage() {
       <ConfirmDialog
         open={confirmSend}
         onOpenChange={setConfirmSend}
-        title="Start this campaign?"
-        confirmLabel="Yes, start sending"
+        title="این کمپین شروع شود؟"
+        confirmLabel="بله، ارسال شروع شود"
         busy={busy}
         onConfirm={send}
         description={
           <p>
-            Messages will begin going out to the audience of <strong>{campaignName || 'this campaign'}</strong>.
-            Make sure recipients and content are correct before continuing.
+            پیام‌ها به مخاطب <strong>{campaignName || 'این کمپین'}</strong> ارسال می‌شوند.
+            قبل از ادامه مطمئن شوید گیرندگان و محتوا درست هستند.
           </p>
         }
       />
       <ConfirmDialog
         open={confirmCancel}
         onOpenChange={setConfirmCancel}
-        title="Cancel this campaign?"
-        confirmLabel="Yes, cancel it"
+        title="این کمپین لغو شود؟"
+        confirmLabel="بله، لغو شود"
         destructive
         busy={busy}
         onConfirm={cancel}
-        description="Queued messages that have not been sent yet will stop. Messages already delivered cannot be recalled."
+        description="پیام‌های در صف که هنوز ارسال نشده‌اند متوقف می‌شوند. پیام‌های تحویل‌شده قابل بازگردانی نیستند."
       />
     </div>
   )
