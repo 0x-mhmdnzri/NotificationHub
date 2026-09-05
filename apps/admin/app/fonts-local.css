@@ -1,0 +1,46 @@
+/* IRANSans FaNum — local only (no CDN) */
+@font-face {
+  font-family: 'IRANSans';
+  font-style: normal;
+  font-weight: 200;
+  font-display: swap;
+  src:
+    url('/fonts/iransans/IRANSans-FaNum_UltraLight.woff2') format('woff2'),
+    url('/fonts/iransans/IRANSans-FaNum_UltraLight.woff') format('woff');
+}
+@font-face {
+  font-family: 'IRANSans';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  src:
+    url('/fonts/iransans/IRANSans-FaNum_Light.woff2') format('woff2'),
+    url('/fonts/iransans/IRANSans-FaNum_Light.woff') format('woff');
+}
+@font-face {
+  font-family: 'IRANSans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src:
+    url('/fonts/iransans/IRANSans-FaNum_Regular.woff2') format('woff2'),
+    url('/fonts/iransans/IRANSans-FaNum_Regular.woff') format('woff');
+}
+@font-face {
+  font-family: 'IRANSans';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src:
+    url('/fonts/iransans/IRANSans-FaNum_Medium.woff2') format('woff2'),
+    url('/fonts/iransans/IRANSans-FaNum_Medium.woff') format('woff');
+}
+@font-face {
+  font-family: 'IRANSans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src:
+    url('/fonts/iransans/IRANSans-FaNum_Bold.woff2') format('woff2'),
+    url('/fonts/iransans/IRANSans-FaNum_Bold.woff') format('woff');
+}

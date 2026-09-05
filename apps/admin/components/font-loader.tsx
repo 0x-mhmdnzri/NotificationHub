@@ -1,8 +1,8 @@
 'use client'
 
 /**
- * Fonts load from CSS (fonts-cdn-fallback.css → family IRANSans).
- * No runtime import of local base64 modules (avoids module-not-found).
+ * Fonts load from local CSS (fonts-local.css → family IRANSans under /fonts/iransans/).
+ * No CDN and no runtime base64 modules.
  */
 export function FontLoader() {
   return null
