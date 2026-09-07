@@ -12,15 +12,15 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.4" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
     <PackageVersion Include="Scrutor" Version="4.2.2" />
-    <PackageVersion Include="StackExchange.Redis" Version="2.8.31" />
+    <PackageVersion Include="StackExchange.Redis" Version="3.1.31" />
 
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.4" />
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="9.0.4" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.4" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.4" />
     <PackageVersion Include="Microsoft.Extensions.Http" Version="9.0.4" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="9.0.4" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.4" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.5" />
     <PackageVersion Include="Microsoft.Extensions.Options" Version="9.0.4" />
 
     <PackageVersion Include="MediatR" Version="12.4.1" />
